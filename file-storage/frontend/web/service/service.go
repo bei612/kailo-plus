@@ -99,6 +99,9 @@ func init() {
 			// DD-138(4), 07 §4.8.3: Kailo notification delivery, same directory
 			// client; nothing starts outside Kailo mode or without that client.
 			service.AfterServe(startKailoNotify),
+			// DD-163, 07 §4.8.8: hourly Kailo storage snapshot, same directory
+			// client; nothing starts outside Kailo mode or without that client.
+			service.AfterServe(startKailoUsage),
 			service.Migrations([]*service.Migration{
 				{
 					TargetVersion: service.FirstRun(),

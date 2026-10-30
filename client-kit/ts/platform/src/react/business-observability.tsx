@@ -6,10 +6,16 @@
 // DD-123：「组织额度」一节只对 Tenant admin 与 auditor 出现（其余 403 整节不渲染）；
 // 设置走受治理动作 tenant.quota.set（显式确认、无审批），与其他治理写入共用同一
 // 提交、结果不明同键重查的路径。
+// DD-163：同一页面另有对每名成员可见的「我的用量」（只读本人），以及只对 Tenant admin 与
+// auditor 出现的「按组件用量」；组织额度增加组件额度项与成员上限。
 
 import {
   type ActionCommand,
   type BusinessOperationPage,
+  type ComponentUsagePage,
+  type MemberUsagePage,
+  MemberUsageState,
+  NativePageCategory,
   type BusinessOperationSummary,
   type BusinessOperationView,
   TenantQuotaFeature,
@@ -185,6 +191,7 @@ export function UsageBillingPage() {
   return (
     <div className="flex flex-col gap-6" data-testid="usage-billing">
       <p className="text-xs text-muted-foreground">{t("usage.explain")}</p>
+      <MyUsageSection />
       <TenantQuotaSection />
       <div className="flex flex-wrap items-center gap-2">
         <ScopeSelect
@@ -199,6 +206,7 @@ export function UsageBillingPage() {
         <Button onClick={controls.refresh}>{t("platform.refresh")}</Button>
       </div>
       <WindowText from={from} to={to} />
+      {controls.scope === undefined ? <ComponentUsageSection from={from} to={to} workspaces={controls.workspaces ?? []} /> : null}
       <LoadState state={state} reload={reload} tenantScope={controls.scope === undefined}>
         {(view: UsageBillingView) => (
           <>
@@ -336,19 +344,52 @@ const quotaOrder: Record<TenantQuotaFeature, number> = {
   [TenantQuotaFeature.AgentTokens]: 0,
   [TenantQuotaFeature.AutomationRuns]: 1,
   [TenantQuotaFeature.AgentMemoryWrites]: 2,
+  [TenantQuotaFeature.ComponentTokens]: 3,
+  [TenantQuotaFeature.KnowledgeAnswers]: 4,
+  [TenantQuotaFeature.DataQueries]: 5,
+  [TenantQuotaFeature.FileStorage]: 6,
 };
 
 const quotaFeatureLabel: Record<TenantQuotaFeature, PlatformMessageKey> = {
   [TenantQuotaFeature.AgentTokens]: "quota.feature.agentTokens",
   [TenantQuotaFeature.AutomationRuns]: "quota.feature.automationRuns",
   [TenantQuotaFeature.AgentMemoryWrites]: "quota.feature.agentMemoryWrites",
+  [TenantQuotaFeature.ComponentTokens]: "quota.feature.componentTokens",
+  [TenantQuotaFeature.KnowledgeAnswers]: "quota.feature.knowledgeAnswers",
+  [TenantQuotaFeature.DataQueries]: "quota.feature.dataQueries",
+  [TenantQuotaFeature.FileStorage]: "quota.feature.fileStorage",
 };
 
 const quotaExhaustedLabel: Record<TenantQuotaFeature, PlatformMessageKey> = {
   [TenantQuotaFeature.AgentTokens]: "quota.exhausted.agentTokens",
   [TenantQuotaFeature.AutomationRuns]: "quota.exhausted.automationRuns",
   [TenantQuotaFeature.AgentMemoryWrites]: "quota.exhausted.agentMemoryWrites",
+  [TenantQuotaFeature.ComponentTokens]: "quota.exhausted.componentTokens",
+  [TenantQuotaFeature.KnowledgeAnswers]: "quota.exhausted.knowledgeAnswers",
+  [TenantQuotaFeature.DataQueries]: "quota.exhausted.dataQueries",
+  [TenantQuotaFeature.FileStorage]: "quota.exhausted.fileStorage",
 };
+
+/** DD-163(3)：只有带成员维度的额度项可设成员上限。 */
+const MEMBER_QUOTA_FEATURES: ReadonlySet<TenantQuotaFeature> = new Set([
+  TenantQuotaFeature.KnowledgeAnswers,
+  TenantQuotaFeature.DataQueries,
+]);
+
+/** 云盘存储以字节计量；管理员按 GiB 输入，页面按二进制单位呈现。 */
+const GIB = 1_073_741_824;
+const QUOTA_GIB_MAX = Math.floor(QUOTA_LIMIT_MAX / GIB);
+
+function formatBytes(locale: string, bytes: number): string {
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: unit === 0 ? 0 : 1 }).format(value)} ${units[unit]}`;
+}
 
 /** 只接受契约内的页：额度项不重复、数值非负、时间可解析；否则按读取失败处理，不猜。 */
 function validQuotas(page: TenantQuotaPage | null | undefined): TenantQuotaView[] | null {
@@ -358,6 +399,8 @@ function validQuotas(page: TenantQuotaPage | null | undefined): TenantQuotaView[
     if (!q || typeof q.feature !== "string" || !Object.hasOwn(quotaOrder, q.feature) || seen.has(q.feature)
       || typeof q.hasAccess !== "boolean" || typeof q.hardLimit !== "boolean"
       || (q.limitPerPeriod !== undefined && !(Number.isSafeInteger(q.limitPerPeriod) && q.limitPerPeriod >= 0))
+      || (q.memberLimitPerPeriod !== undefined
+        && !(MEMBER_QUOTA_FEATURES.has(q.feature) && Number.isSafeInteger(q.memberLimitPerPeriod) && q.memberLimitPerPeriod >= 0))
       || (q.usage !== undefined && !(typeof q.usage === "number" && Number.isFinite(q.usage) && q.usage >= 0))
       || (q.periodResetAt !== undefined && Number.isNaN(new Date(q.periodResetAt).getTime())))
       return null;
@@ -366,12 +409,22 @@ function validQuotas(page: TenantQuotaPage | null | undefined): TenantQuotaView[
   return [...page.quotas].sort((a, b) => quotaOrder[a.feature] - quotaOrder[b.feature]);
 }
 
-/** 输入框里的每月上限；只接受 0..QUOTA_LIMIT_MAX 的十进制整数。 */
-function parseQuotaLimit(value: string): number | null {
+/** 输入框里的每月上限；只接受 0..QUOTA_LIMIT_MAX 的十进制整数（云盘存储为 0..QUOTA_GIB_MAX 的 GiB）。 */
+function parseQuotaLimit(value: string, feature?: TenantQuotaFeature): number | null {
   const text = value.trim();
   if (!/^\d{1,13}$/.test(text)) return null;
   const limit = Number(text);
+  if (feature === TenantQuotaFeature.FileStorage)
+    return Number.isSafeInteger(limit) && limit <= QUOTA_GIB_MAX ? limit * GIB : null;
   return Number.isSafeInteger(limit) && limit <= QUOTA_LIMIT_MAX ? limit : null;
+}
+
+/** 成员上限输入：留空表示不设；否则同上限规则，且不高于组织上限。 */
+function parseMemberLimit(value: string, limit: number | null): number | null | "invalid" {
+  if (value.trim() === "") return null;
+  const member = parseQuotaLimit(value);
+  if (member === null || (limit !== null && member > limit)) return "invalid";
+  return member;
 }
 
 function quotaOutcomeText(t: ReturnType<typeof useT>, outcome: ChannelActionOutcome): string {
@@ -384,7 +437,7 @@ function quotaOutcomeText(t: ReturnType<typeof useT>, outcome: ChannelActionOutc
   }
 }
 
-type QuotaDraft = { quota: TenantQuotaView; value: string; step: "edit" | "review" };
+type QuotaDraft = { quota: TenantQuotaView; value: string; member: string; step: "edit" | "review" };
 
 /**
  * DD-123 (5)：组织额度。上限、已用与剩余直接来自 OpenMeter，缺失的事实显示「—」或「未设置」，
@@ -408,30 +461,46 @@ export function TenantQuotaSection() {
   const quotas = state.status === "ok" ? validQuotas(state.data) : null;
   // 后端只对此刻持有 Tenant manage 的调用者给出可执行动作键；审计员只读，不出现设置入口
   const settable = state.status === "ok" && state.data?.setActionKey === QUOTA_ACTION_KEY;
-  const number = (value: number) => new Intl.NumberFormat(locale).format(value);
-  const limitText = (q: TenantQuotaView) => (q.limitPerPeriod === undefined ? t("quota.notSet") : number(q.limitPerPeriod));
-  const usedText = (q: TenantQuotaView) => (q.usage === undefined ? "—" : number(q.usage));
+  const plain = (value: number) => new Intl.NumberFormat(locale).format(value);
+  const amount = (feature: TenantQuotaFeature, value: number) =>
+    feature === TenantQuotaFeature.FileStorage ? formatBytes(locale, value) : plain(value);
+  const limitText = (q: TenantQuotaView) => (q.limitPerPeriod === undefined ? t("quota.notSet") : amount(q.feature, q.limitPerPeriod));
+  const usedText = (q: TenantQuotaView) => (q.usage === undefined ? "—" : amount(q.feature, q.usage));
+  const memberText = (q: TenantQuotaView) => !MEMBER_QUOTA_FEATURES.has(q.feature) ? "—"
+    : q.memberLimitPerPeriod === undefined ? t("quota.notSet") : plain(q.memberLimitPerPeriod);
   const resetText = (at: TenantQuotaView["periodResetAt"]) => at === undefined ? "—" : t("quota.utc", {
     at: new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(at)),
   });
   const locked = action.busy || action.unknown;
-  const parsed = draft ? parseQuotaLimit(draft.value) : null;
-  const reviewLimit = draft?.step === "review" ? parsed : null;
+  const parsed = draft ? parseQuotaLimit(draft.value, draft.quota.feature) : null;
+  const memberCapable = draft !== null && MEMBER_QUOTA_FEATURES.has(draft.quota.feature);
+  const parsedMember = draft && memberCapable ? parseMemberLimit(draft.member, parsed) : null;
+  const draftValid = parsed !== null && parsedMember !== "invalid";
+  const reviewLimit = draft?.step === "review" && draftValid ? parsed : null;
+  const reviewMember = parsedMember === "invalid" ? null : parsedMember;
+  const storageDraft = draft?.quota.feature === TenantQuotaFeature.FileStorage;
 
   const open = (quota: TenantQuotaView) => {
     if (locked) return;
     action.dismiss();
-    setDraft({ quota, value: quota.limitPerPeriod === undefined ? "" : String(quota.limitPerPeriod), step: "edit" });
+    const current = quota.limitPerPeriod === undefined ? ""
+      : quota.feature === TenantQuotaFeature.FileStorage ? String(Math.floor(quota.limitPerPeriod / GIB))
+        : String(quota.limitPerPeriod);
+    // 每次设置是完整设置：成员上限预填现值，避免调整组织上限时被无意清除
+    const member = quota.memberLimitPerPeriod === undefined ? "" : String(quota.memberLimitPerPeriod);
+    setDraft({ quota, value: current, member, step: "edit" });
   };
   const review = (event: FormEvent) => {
     event.preventDefault();
-    if (draft && parsed !== null) setDraft({ ...draft, step: "review" });
+    if (draft && draftValid) setDraft({ ...draft, step: "review" });
   };
-  const confirm = async (quota: TenantQuotaView, limitPerPeriod: number) => {
+  const confirm = async (quota: TenantQuotaView, limitPerPeriod: number, memberLimitPerPeriod: number | null) => {
     // EXPLICIT：确认位随命令冻结；幂等键由共用提交路径在首次发送前生成
     const command: Omit<ActionCommand, "idempotencyKey"> = {
       actionKey: QUOTA_ACTION_KEY,
-      tenantQuotaSetting: { feature: quota.feature, limitPerPeriod },
+      tenantQuotaSetting: memberLimitPerPeriod === null
+        ? { feature: quota.feature, limitPerPeriod }
+        : { feature: quota.feature, limitPerPeriod, memberLimitPerPeriod },
       explicitConfirmation: true,
     };
     const result = await action.submit(command);
@@ -474,6 +543,7 @@ export function TenantQuotaSection() {
             head={[
               t("usage.feature"),
               t("quota.limit"),
+              t("quota.memberLimit"),
               t("quota.used"),
               t("quota.remaining"),
               t("quota.kind"),
@@ -486,9 +556,10 @@ export function TenantQuotaSection() {
               <tr key={q.feature} data-testid="tenant-quota-row" data-feature={q.feature}>
                 <Cell title={q.feature}>{t(quotaFeatureLabel[q.feature])}</Cell>
                 <Cell mono>{limitText(q)}</Cell>
+                <Cell mono>{memberText(q)}</Cell>
                 <Cell mono>{usedText(q)}</Cell>
                 <Cell mono>
-                  {q.limitPerPeriod === undefined || q.usage === undefined ? "—" : number(Math.max(q.limitPerPeriod - q.usage, 0))}
+                  {q.limitPerPeriod === undefined || q.usage === undefined ? "—" : amount(q.feature, Math.max(q.limitPerPeriod - q.usage, 0))}
                 </Cell>
                 <Cell>{t(q.hardLimit ? "quota.hard" : "quota.soft")}</Cell>
                 <Cell>{resetText(q.periodResetAt)}</Cell>
@@ -522,9 +593,14 @@ export function TenantQuotaSection() {
                   {t("quota.reviewText", {
                     feature: t(quotaFeatureLabel[draft.quota.feature]),
                     from: limitText(draft.quota),
-                    to: number(reviewLimit),
+                    to: amount(draft.quota.feature, reviewLimit),
                   })}
                 </p>
+                {memberCapable ? (
+                  <p className="text-sm" data-testid="tenant-quota-member-review">
+                    {reviewMember === null ? t("quota.memberNone") : t("quota.memberReview", { limit: plain(reviewMember) })}
+                  </p>
+                ) : null}
                 {draft.quota.usage !== undefined && reviewLimit <= draft.quota.usage ? (
                   <p role="alert" className="text-sm text-destructive">
                     {t("quota.belowUsage", { used: usedText(draft.quota) })}
@@ -532,7 +608,7 @@ export function TenantQuotaSection() {
                 ) : null}
                 <div className="flex justify-end gap-2">
                   <Button disabled={action.busy} onClick={() => setDraft({ ...draft, step: "edit" })}>{t("platform.back")}</Button>
-                  <Button disabled={action.busy} onClick={() => void confirm(draft.quota, reviewLimit)}>
+                  <Button disabled={action.busy} onClick={() => void confirm(draft.quota, reviewLimit, reviewMember)}>
                     {action.busy ? t("platform.loading") : t("quota.confirm")}
                   </Button>
                 </div>
@@ -540,7 +616,7 @@ export function TenantQuotaSection() {
             ) : (
               <form className="flex flex-col gap-3" onSubmit={review} noValidate>
                 <label className="flex flex-col gap-1 text-sm">
-                  <span>{t("quota.newLimit")}</span>
+                  <span>{t(storageDraft ? "quota.newLimitGib" : "quota.newLimit")}</span>
                   <Input
                     inputMode="numeric"
                     autoComplete="off"
@@ -551,17 +627,182 @@ export function TenantQuotaSection() {
                   />
                 </label>
                 {draft.value.trim() !== "" && parsed === null ? (
-                  <p role="alert" className="text-sm text-destructive">{t("quota.invalid")}</p>
+                  <p role="alert" className="text-sm text-destructive">{t(storageDraft ? "quota.invalidGib" : "quota.invalid")}</p>
+                ) : null}
+                {memberCapable ? (
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span>{t("quota.memberLimitInput")}</span>
+                    <Input
+                      inputMode="numeric"
+                      autoComplete="off"
+                      data-testid="tenant-quota-member-input"
+                      aria-invalid={parsedMember === "invalid"}
+                      value={draft.member}
+                      onChange={(event) => setDraft({ ...draft, member: event.target.value, step: "edit" })}
+                    />
+                  </label>
+                ) : null}
+                {parsedMember === "invalid" ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    {t(parseQuotaLimit(draft.member) === null ? "quota.invalid" : "quota.memberAboveLimit")}
+                  </p>
                 ) : null}
                 <div className="flex justify-end gap-2">
                   <Button onClick={() => setDraft(null)}>{t("platform.cancel")}</Button>
-                  <Button type="submit" disabled={parsed === null}>{t("quota.review")}</Button>
+                  <Button type="submit" disabled={!draftValid}>{t("quota.review")}</Button>
                 </div>
               </form>
             )}
           </DialogContent>
         ) : null}
       </Dialog>
+    </Section>
+  );
+}
+
+const memberStateKey: Record<MemberUsageState, PlatformMessageKey> = {
+  [MemberUsageState.Available]: "usage.mine.state.available",
+  [MemberUsageState.MemberLimitReached]: "usage.mine.state.memberLimitReached",
+  [MemberUsageState.TenantExhausted]: "usage.mine.state.tenantExhausted",
+  [MemberUsageState.Unavailable]: "usage.mine.state.unavailable",
+};
+
+const memberStateTone: Record<MemberUsageState, "positive" | "negative" | "neutral"> = {
+  [MemberUsageState.Available]: "positive",
+  [MemberUsageState.MemberLimitReached]: "negative",
+  [MemberUsageState.TenantExhausted]: "negative",
+  [MemberUsageState.Unavailable]: "neutral",
+};
+
+/** 只接受契约内的页：额度项与状态在封闭集合内、数值非负；否则按读取失败处理。 */
+function validMyUsage(page: MemberUsagePage | null | undefined): MemberUsagePage["items"] | null {
+  if (!page || !Array.isArray(page.items)) return null;
+  for (const item of page.items) {
+    if (!item || !Object.hasOwn(quotaOrder, item.feature) || !Object.hasOwn(memberStateKey, item.state)
+      || (item.used !== undefined && !(typeof item.used === "number" && Number.isFinite(item.used) && item.used >= 0))
+      || (item.memberLimitPerPeriod !== undefined && !(Number.isSafeInteger(item.memberLimitPerPeriod) && item.memberLimitPerPeriod >= 0)))
+      return null;
+  }
+  return [...page.items].sort((a, b) => quotaOrder[a.feature] - quotaOrder[b.feature]);
+}
+
+/**
+ * DD-163(4)「我的用量」：每名成员都看到本人本期已用、本人上限与是否可用；不显示组织上限与
+ * 组织已用。组织额度用完只以状态提示，请成员联系管理员。
+ */
+export function MyUsageSection() {
+  const client = useBffClient();
+  const t = useT();
+  const locale = useLocale();
+  const [state, reload] = useLoad("usage-me", client.myUsage);
+  const items = state.status === "ok" ? validMyUsage(state.data) : null;
+  const number = (value: number) => new Intl.NumberFormat(locale).format(value);
+  return (
+    <Section title={t("usage.mine.title")} testId="my-usage">
+      <p className="text-xs text-muted-foreground">{t("usage.mine.explain")}</p>
+      {state.status === "pending" ? (
+        <p role="status" className="text-sm text-muted-foreground">{t("platform.loading")}</p>
+      ) : !items ? (
+        <Notice role="alert">
+          <span>{t("platform.loadFailed")}</span>
+          <Button onClick={reload}>{t("platform.retry")}</Button>
+        </Notice>
+      ) : (
+        <Table head={[t("usage.feature"), t("usage.mine.used"), t("usage.mine.limit"), t("platform.state"), t("quota.resetAt")]}>
+          {items.map((item) => (
+            <tr key={item.feature} data-testid="my-usage-row" data-feature={item.feature} data-state={item.state}>
+              <Cell title={item.feature}>{t(quotaFeatureLabel[item.feature])}</Cell>
+              <Cell mono>{item.used === undefined ? "—" : number(item.used)}</Cell>
+              <Cell mono>{item.memberLimitPerPeriod === undefined ? t("usage.mine.noLimit") : number(item.memberLimitPerPeriod)}</Cell>
+              <Cell>
+                <span role={item.state === MemberUsageState.Available ? undefined : "status"}>
+                  <Badge tone={memberStateTone[item.state]}>{t(memberStateKey[item.state])}</Badge>
+                </span>
+              </Cell>
+              <Cell>
+                {item.periodResetAt === undefined ? "—" : t("quota.utc", {
+                  at: new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })
+                    .format(new Date(item.periodResetAt)),
+                })}
+              </Cell>
+            </tr>
+          ))}
+        </Table>
+      )}
+    </Section>
+  );
+}
+
+const componentMeterLabel: Readonly<Record<string, PlatformMessageKey>> = {
+  component_model_tokens: "usage.components.meter.componentModelTokens",
+  knowledge_answer_count: "usage.components.meter.knowledgeAnswers",
+  data_query_count: "usage.components.meter.dataQueries",
+  file_storage_bytes: "usage.components.meter.fileStorageBytes",
+};
+
+const componentCategoryLabel: Record<NativePageCategory, PlatformMessageKey> = {
+  [NativePageCategory.FileStorage]: "bindings.native.files",
+  [NativePageCategory.Knowledge]: "bindings.native.knowledge",
+  [NativePageCategory.DataQuery]: "bindings.native.data",
+};
+
+/**
+ * DD-163(4) 按组件用量：Tenant admin 与 auditor 看到所选区间内各组件 meter 按组件拆分的已入账
+ * 用量，组件以呈现类别名（云盘、知识库、问数）标注；成员（403）整节不出现。
+ */
+export function ComponentUsageSection({ from, to, workspaces }: { from: string; to: string; workspaces: WorkspaceView[] }) {
+  const client = useBffClient();
+  const t = useT();
+  const locale = useLocale();
+  const [state, reload] = useLoad(`usage-components:${from}:${to}`, () => client.componentUsage(from, to));
+  if (state.status === "error" && isForbidden(state.error)) return null;
+  const page: ComponentUsagePage | null = state.status === "ok" && state.data && Array.isArray(state.data.meters)
+    ? state.data : null;
+  const scopeName = (workspaceId?: string) => workspaceId === undefined ? t("usage.components.wholeOrganization")
+    : workspaces.find((w) => w.id === workspaceId)?.name ?? workspaceId;
+  const quantity = (meter: string, value: string) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return value;
+    return meter === "file_storage_bytes" ? formatBytes(locale, parsed) : new Intl.NumberFormat(locale).format(parsed);
+  };
+  return (
+    <Section title={t("usage.components.title")} testId="component-usage">
+      <p className="text-xs text-muted-foreground">{t("usage.components.explain")}</p>
+      {state.status === "pending" ? (
+        <p role="status" className="text-sm text-muted-foreground">{t("platform.loading")}</p>
+      ) : !page ? (
+        <Notice role="alert">
+          <span>{t("platform.loadFailed")}</span>
+          <Button onClick={reload}>{t("platform.retry")}</Button>
+        </Notice>
+      ) : (
+        <Table head={[t("usage.meter"), t("usage.components.component"), t("usage.components.scope"), t("platform.state"), t("usage.quantity")]}>
+          {page.meters.flatMap((meter) => {
+            const label = Object.hasOwn(componentMeterLabel, meter.meterKey) ? t(componentMeterLabel[meter.meterKey]) : meter.meterKey;
+            if (meter.bindings.length === 0) {
+              return [(
+                <tr key={meter.meterKey} data-testid="component-usage-row" data-meter={meter.meterKey}>
+                  <Cell title={meter.meterKey}>{label}</Cell>
+                  <Cell>—</Cell>
+                  <Cell>—</Cell>
+                  <Cell><span title={meter.state}>{enumLabel(locale, meterUsageStateMessages, meter.state)}</span></Cell>
+                  <Cell mono>—</Cell>
+                </tr>
+              )];
+            }
+            return meter.bindings.map((binding) => (
+              <tr key={`${meter.meterKey}:${binding.bindingId}`} data-testid="component-usage-row" data-meter={meter.meterKey}
+                data-binding={binding.bindingId}>
+                <Cell title={meter.meterKey}>{label}</Cell>
+                <Cell>{binding.nativePageCategory ? t(componentCategoryLabel[binding.nativePageCategory]) : "—"}</Cell>
+                <Cell>{scopeName(binding.workspaceId)}</Cell>
+                <Cell><span title={meter.state}>{enumLabel(locale, meterUsageStateMessages, meter.state)}</span></Cell>
+                <Cell mono>{quantity(meter.meterKey, binding.quantity)}</Cell>
+              </tr>
+            ));
+          })}
+        </Table>
+      )}
     </Section>
   );
 }

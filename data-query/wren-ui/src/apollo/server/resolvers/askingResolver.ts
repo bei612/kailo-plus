@@ -52,6 +52,10 @@ import {
   NativeQueryRefusal,
 } from '../services/nativeQueryAdmission';
 import { isGovernedQueryMode } from '../services/nativeQueryMode';
+import {
+  admitKailoDataQuery,
+  reportKailoDataQuery,
+} from '../services/kailoUsage';
 
 const logger = getLogger('AskingResolver');
 logger.level = 'debug';
@@ -543,6 +547,8 @@ export class AskingResolver {
         await this.authorizeNativeAskingTask(previous.queryId, ctx);
       }
     }
+    // DD-163, `07` §4.8.8: the Kailo quota admits the question first.
+    await admitKailoDataQuery(ctx);
     const task = await askingService.createAskingTask(data, {
       threadId,
       language: WrenAILanguage[project.language] || WrenAILanguage.EN,
@@ -556,6 +562,7 @@ export class AskingResolver {
       question,
       taskId: task.id,
     });
+    reportKailoDataQuery(ctx, task.id);
     return task;
   }
 
@@ -959,6 +966,8 @@ export class AskingResolver {
         return { id: previous.queryId };
       }
     }
+    // DD-163: a re-run is a new question for the Kailo quota.
+    await admitKailoDataQuery(ctx);
     const task = await askingService.rerunAskingTask(responseId, {
       language: WrenAILanguage[project.language] || WrenAILanguage.EN,
       nativeScope,
@@ -971,6 +980,7 @@ export class AskingResolver {
     ctx.telemetry.sendEvent(TelemetryEvent.HOME_RERUN_ASKING_TASK, {
       responseId,
     });
+    reportKailoDataQuery(ctx, task.id);
     return task;
   }
 

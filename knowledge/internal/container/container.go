@@ -225,6 +225,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// DD-138(4), 07 §4.8.3: Kailo notifications for new shares (no-op outside
 	// Kailo mode or without the member directory configuration).
 	must(container.Provide(service.NewKailoNotifier))
+	must(container.Provide(service.NewKailoUsage))
 	must(container.Decorate(service.DecorateKBShareServiceForKailo))
 	must(container.Decorate(service.DecorateAgentShareServiceForKailo))
 	must(container.Provide(service.NewKnowledgeService))
@@ -1940,16 +1941,23 @@ func startTemporaryDocumentCleanup(svc interfaces.TemporaryDocumentService, clea
 // (DD-138(4), 07 §4.8.3); both are no-ops unless Kailo mode and the directory
 // are configured.
 func startKailoDirectorySync(
-	runner *service.KailoDirectorySyncRunner, notifier *service.KailoNotifier, cleaner interfaces.ResourceCleaner,
+	runner *service.KailoDirectorySyncRunner, notifier *service.KailoNotifier, usage *service.KailoUsage,
+	cleaner interfaces.ResourceCleaner,
 ) {
 	runner.Start(context.Background())
 	notifier.Start(context.Background())
+	usage.Start(context.Background())
 	cleaner.RegisterWithName("KailoDirectorySyncRunner", func() error {
 		runner.Stop()
 		return nil
 	})
 	cleaner.RegisterWithName("KailoNotifier", func() error {
 		notifier.Stop()
+		return nil
+	})
+	// DD-163, 07 §4.8.8: Kailo usage reports with the same directory client.
+	cleaner.RegisterWithName("KailoUsage", func() error {
+		usage.Stop()
 		return nil
 	})
 }

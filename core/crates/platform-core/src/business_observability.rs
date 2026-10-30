@@ -498,10 +498,17 @@ pub async fn usage_billing(
     )
     .fetch_all(&state.pool)
     .await;
-    let meter_keys = match meter_keys {
+    let mut meter_keys = match meter_keys {
         Ok(k) => k,
         Err(e) => return Refusal::from(e).respond(None),
     };
+    // DD-163(4)：组件 meter 不由 ActionDefinition 登记，随 Core 固定；Tenant 总量同表呈现，
+    // 按组件拆分见 /api/v1/usage/components。
+    for meter in crate::component_usage::VIEW_METERS {
+        if !meter_keys.iter().any(|key| key == meter) {
+            meter_keys.push(meter.to_owned());
+        }
+    }
     let mut meters = Vec::with_capacity(meter_keys.len());
     for meter_key in meter_keys {
         let Some(customer_id) = customer.as_deref() else {

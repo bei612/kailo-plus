@@ -1002,8 +1002,11 @@ async fn admit(
                 caller_audits.push((ae, definition));
             }
         }
-        // DD-124(6): `component_model_tokens` is metered and audited, but it is
-        // not a Tenant quota item in phase one, so there is no CHECK here.
+        // DD-163(3), DD-128(3): `component_model_tokens` is metered under the
+        // Tenant quota item `component_tokens`; every call is a CHECK against
+        // the Tenant Customer's hard-limit entitlement. Exhausted is 429 and the
+        // call is not forwarded, so no usage arises from it.
+        crate::component_usage::model_tokens_check(state, current.tenant_id).await?;
     }
     crate::service_api::audit_gate(state)
         .await

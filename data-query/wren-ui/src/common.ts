@@ -56,6 +56,7 @@ import {
   KailoNotifier,
   KailoNotifications,
 } from './apollo/server/services/kailoNotifications';
+import { KailoUsage } from './apollo/server/services/kailoUsage';
 import { KailoShareService } from './apollo/server/services/kailoShare';
 
 export const serverConfig = getConfig();
@@ -123,6 +124,9 @@ export const initComponents = () => {
     kailoUserRepository,
     kailoMemberDirectory,
   );
+  // DD-163, `07` §4.8.8: Kailo quota admission and usage reports with the
+  // same directory client; a no-op without the directory configuration.
+  const kailoUsage = new KailoUsage(kailoDirectoryConfiguration);
   const kailoShareService = new KailoShareService(
     kailoNotifications,
     kailoMemberDirectory,
@@ -259,6 +263,7 @@ export const initComponents = () => {
     kailoMemberDirectorySync,
     kailoNotifications,
     kailoShareService,
+    kailoUsage,
 
     // adaptors
     wrenEngineAdaptor,

@@ -538,6 +538,16 @@ pub(crate) enum MeterUsage {
     NotRegistered,
 }
 
+/// DD-163(4)：一个已登记 meter 在区间内按一个维度分行的原生 committed usage。
+/// 行值保持 OpenMeter 十进制原文；缺该维度的行（事件未带该维度）单独不计入任何分组。
+pub(crate) enum GroupedUsage {
+    Committed {
+        aggregation: String,
+        rows: Vec<(String, String)>,
+    },
+    NotRegistered,
+}
+
 /// 原生 entitlement-access 的读取投影；数值保持 OpenMeter 十进制原文。
 pub(crate) struct EntitlementFact {
     pub feature_key: String,
@@ -606,9 +616,11 @@ pub(crate) struct NativeUsagePeriod {
     pub anchor: Option<DateTime<Utc>>,
 }
 
-/// 当前周期只取结束时刻（下一次按月重置），开始时刻不另存。
+/// 当前周期：结束时刻是下一次按月重置；开始时刻供 DD-163 成员用量按同一周期查询。
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 pub(crate) struct EntitlementPeriod {
+    #[serde(default)]
+    pub from: Option<DateTime<Utc>>,
     pub to: DateTime<Utc>,
 }
 
@@ -1762,6 +1774,106 @@ impl OpenMeter {
             // 单一 Customer 过滤后不应出现多行或别的 Customer；不选第一行。
             _ => Err(Error::Unknown),
         }
+    }
+
+    /// DD-163(4)：该 Tenant 唯一 Customer 在区间内按 `group_by` 维度分行的原生
+    /// committed usage，可再按一个受控维度等值过滤（成员视图按 `member_principal_id`）。
+    /// 维度名只取 Core 固定的平台 meter 维度；结果每行都必须属于该 Customer。
+    pub(crate) async fn grouped_meter_usage(
+        &self,
+        customer_id: &str,
+        key: &str,
+        group_by: &str,
+        filter: Option<(&str, &str)>,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+    ) -> Result<GroupedUsage, Error> {
+        if !valid_customer_id(customer_id)
+            || !valid_resource_key(key)
+            || !valid_resource_key(group_by)
+            || filter.is_some_and(|(name, value)| !valid_resource_key(name) || value.is_empty())
+        {
+            return Err(Error::Precondition);
+        }
+        let mut meter_url = self.collection_url("meters")?;
+        meter_url
+            .query_pairs_mut()
+            .append_pair("filter[key][eq]", key);
+        let native: Vec<Meter> = self.collection(meter_url).await?;
+        let live: Vec<&Meter> = native
+            .iter()
+            .filter(|m| m.key == key && m.deleted_at.is_none())
+            .collect();
+        let [meter] = live.as_slice() else {
+            return Ok(GroupedUsage::NotRegistered);
+        };
+        if !valid_customer_id(&meter.id) {
+            return Err(Error::Conflict);
+        }
+        let declared = |name: &str| {
+            meter
+                .dimensions
+                .as_ref()
+                .is_some_and(|d| d.contains_key(name))
+        };
+        if !declared(group_by) || filter.is_some_and(|(name, _)| !declared(name)) {
+            return Err(Error::Precondition);
+        }
+        let mut dimensions = serde_json::Map::new();
+        dimensions.insert(
+            "customer_id".into(),
+            serde_json::json!({ "eq": customer_id }),
+        );
+        if let Some((name, value)) = filter {
+            dimensions.insert(name.into(), serde_json::json!({ "eq": value }));
+        }
+        let mut query_url = self.collection_url("meters")?;
+        query_url
+            .path_segments_mut()
+            .map_err(|_| Error::Unknown)?
+            .push(&meter.id)
+            .push("query");
+        let response = self
+            .http
+            .post(query_url)
+            .json(&serde_json::json!({
+                "from": from.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                "to": to.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                "group_by_dimensions": ["customer_id", group_by],
+                "filters": { "dimensions": dimensions },
+            }))
+            .send()
+            .await
+            .map_err(|_| Error::Unknown)?;
+        if response.status() != StatusCode::OK {
+            return Err(status_error(response.status()));
+        }
+        let result: MeterQueryResult = response.json().await.map_err(|_| Error::Unknown)?;
+        let mut rows = Vec::with_capacity(result.data.len());
+        for row in result.data {
+            if row.dimensions.get("customer_id").map(String::as_str) != Some(customer_id)
+                || !valid_numeric(&row.value)
+            {
+                return Err(Error::Unknown);
+            }
+            if let Some((name, value)) = filter {
+                if row
+                    .dimensions
+                    .get(name)
+                    .is_some_and(|actual| actual != value)
+                {
+                    return Err(Error::Unknown);
+                }
+            }
+            match row.dimensions.get(group_by) {
+                Some(value) if !value.is_empty() => rows.push((value.clone(), row.value)),
+                _ => {}
+            }
+        }
+        Ok(GroupedUsage::Committed {
+            aggregation: meter.aggregation.clone(),
+            rows,
+        })
     }
 
     /// `.design/11` §7：原生 entitlement/credit 只读展示，不复制余额。

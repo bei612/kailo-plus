@@ -53,6 +53,7 @@ mod component_notification;
 mod component_release;
 mod component_search;
 mod component_task;
+mod component_usage;
 mod conversations;
 mod custom_emoji;
 mod delegation_query;

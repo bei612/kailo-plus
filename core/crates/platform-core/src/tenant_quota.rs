@@ -45,6 +45,9 @@ pub(crate) const ACTION: &str = "tenant.quota.set";
 pub(crate) const MAX_LIMIT: i64 = 1_000_000_000_000;
 /// entitlement metadata 中的意图键：回读与对账只按它确认「这一次」写入。
 pub(crate) const INTENT_METADATA_KEY: &str = "kailo_action_execution_id";
+/// DD-163(3)：成员上限写在同一 Tenant entitlement 的 metadata，与上限同一次写入、
+/// 同一意图回读核对；没有这个键即没有成员上限。
+pub(crate) const MEMBER_LIMIT_METADATA_KEY: &str = "kailo_member_limit";
 const ORIGIN_METADATA_KEY: &str = "kailo_quota_origin";
 const ORIGIN_SET: &str = "SET";
 const ORIGIN_DEFAULT: &str = "DEFAULT";
@@ -63,6 +66,30 @@ pub(crate) const MEMORY_BYTES_METER: &str = "agent_memory_plaintext_bytes";
 /// binding 的 meter 引用只能是它。它一期不是额度项：没有 feature，`tenant.quota.set`
 /// 的封闭额度项集合不含它。组件专属 meter 一期不登记。
 pub(crate) const COMPONENT_MODEL_TOKENS_METER: &str = "component_model_tokens";
+/// DD-163(1)：随 Core 固定、经 `07` §4.8.8 组件上报入账的组件 meter。meter 只由部署
+/// 引导登记，不由 release manifest 声明。
+pub(crate) const KNOWLEDGE_ANSWER_METER: &str = "knowledge_answer_count";
+pub(crate) const DATA_QUERY_METER: &str = "data_query_count";
+pub(crate) const FILE_STORAGE_BYTES_METER: &str = "file_storage_bytes";
+/// 组件上报 meter 的共同维度（Core 从 binding 与 active generation 构造）。
+const COMPONENT_DIMENSIONS: [(&str, &str); 4] = [
+    ("workspace_id", "$.workspace_id"),
+    ("component_binding_id", "$.component_binding_id"),
+    ("component_release_id", "$.component_release_id"),
+    (
+        "component_projection_generation",
+        "$.component_projection_generation",
+    ),
+];
+/// DD-163(1)：count meter 的成员维度——Core 在目录范围内解析出的 HUMAN Principal。
+pub(crate) const MEMBER_DIMENSION: &str = "member_principal_id";
+const COMPONENT_MEMBER_DIMENSIONS: [(&str, &str); 5] = [
+    COMPONENT_DIMENSIONS[0],
+    COMPONENT_DIMENSIONS[1],
+    COMPONENT_DIMENSIONS[2],
+    COMPONENT_DIMENSIONS[3],
+    (MEMBER_DIMENSION, "$.member_principal_id"),
+];
 
 const INSTALLATION_DIMENSION: (&str, &str) = (
     "agent_installation_resource_id",
@@ -80,7 +107,7 @@ pub(crate) struct PlatformMeter {
     pub dimensions: &'static [(&'static str, &'static str)],
 }
 
-pub(crate) static PLATFORM_METERS: [PlatformMeter; 6] = [
+pub(crate) static PLATFORM_METERS: [PlatformMeter; 9] = [
     PlatformMeter {
         key: AGENT_TOKENS_METER,
         name: "Agent model tokens",
@@ -149,6 +176,30 @@ pub(crate) static PLATFORM_METERS: [PlatformMeter; 6] = [
             ("model", "$.model"),
         ],
     },
+    PlatformMeter {
+        key: KNOWLEDGE_ANSWER_METER,
+        name: "Knowledge answers",
+        aggregation: "count",
+        event_type: "kailo.component.knowledge.answer",
+        value_property: None,
+        dimensions: &COMPONENT_MEMBER_DIMENSIONS,
+    },
+    PlatformMeter {
+        key: DATA_QUERY_METER,
+        name: "Data queries",
+        aggregation: "count",
+        event_type: "kailo.component.data.query",
+        value_property: None,
+        dimensions: &COMPONENT_MEMBER_DIMENSIONS,
+    },
+    PlatformMeter {
+        key: FILE_STORAGE_BYTES_METER,
+        name: "File storage bytes",
+        aggregation: "latest",
+        event_type: "kailo.component.storage.bytes",
+        value_property: Some("$.bytes"),
+        dimensions: &COMPONENT_DIMENSIONS,
+    },
 ];
 
 /// 一期平台额度项（feature）、它计量的 meter 与默认每月硬限制。
@@ -158,15 +209,18 @@ pub(crate) struct PlatformFeature {
     pub name: &'static str,
     pub meter: &'static str,
     pub default_limit: i64,
+    /// DD-163(3)：可设成员上限（meter 带成员维度）的额度项。
+    pub member_limit: bool,
 }
 
-pub(crate) static PLATFORM_FEATURES: [PlatformFeature; 3] = [
+pub(crate) static PLATFORM_FEATURES: [PlatformFeature; 7] = [
     PlatformFeature {
         quota: TenantQuotaFeature::AgentTokens,
         key: "agent_tokens",
         name: "Agent tokens",
         meter: AGENT_TOKENS_METER,
         default_limit: 10_000_000,
+        member_limit: false,
     },
     PlatformFeature {
         quota: TenantQuotaFeature::AutomationRuns,
@@ -174,6 +228,7 @@ pub(crate) static PLATFORM_FEATURES: [PlatformFeature; 3] = [
         name: "Automation runs",
         meter: AUTOMATION_RUN_METER,
         default_limit: 10_000,
+        member_limit: false,
     },
     PlatformFeature {
         quota: TenantQuotaFeature::AgentMemoryWrites,
@@ -181,14 +236,56 @@ pub(crate) static PLATFORM_FEATURES: [PlatformFeature; 3] = [
         name: "Agent memory writes",
         meter: MEMORY_WRITE_METER,
         default_limit: 100_000,
+        member_limit: false,
+    },
+    PlatformFeature {
+        quota: TenantQuotaFeature::ComponentTokens,
+        key: "component_tokens",
+        name: "Component model tokens",
+        meter: COMPONENT_MODEL_TOKENS_METER,
+        default_limit: 10_000_000,
+        member_limit: false,
+    },
+    PlatformFeature {
+        quota: TenantQuotaFeature::KnowledgeAnswers,
+        key: "knowledge_answers",
+        name: "Knowledge answers",
+        meter: KNOWLEDGE_ANSWER_METER,
+        default_limit: 10_000,
+        member_limit: true,
+    },
+    PlatformFeature {
+        quota: TenantQuotaFeature::DataQueries,
+        key: "data_queries",
+        name: "Data queries",
+        meter: DATA_QUERY_METER,
+        default_limit: 10_000,
+        member_limit: true,
+    },
+    PlatformFeature {
+        quota: TenantQuotaFeature::FileStorage,
+        key: "file_storage",
+        name: "File storage",
+        meter: FILE_STORAGE_BYTES_METER,
+        default_limit: 107_374_182_400,
+        member_limit: false,
     },
 ];
+
+/// 固定额度项的平台定义；额度项集合封闭。
+pub(crate) fn platform_feature(key: &str) -> Option<&'static PlatformFeature> {
+    PLATFORM_FEATURES.iter().find(|feature| feature.key == key)
+}
 
 pub(crate) fn feature_key(feature: &TenantQuotaFeature) -> &'static str {
     match feature {
         TenantQuotaFeature::AgentTokens => "agent_tokens",
         TenantQuotaFeature::AutomationRuns => "automation_runs",
         TenantQuotaFeature::AgentMemoryWrites => "agent_memory_writes",
+        TenantQuotaFeature::ComponentTokens => "component_tokens",
+        TenantQuotaFeature::KnowledgeAnswers => "knowledge_answers",
+        TenantQuotaFeature::DataQueries => "data_queries",
+        TenantQuotaFeature::FileStorage => "file_storage",
     }
 }
 
@@ -200,26 +297,49 @@ fn invalid() -> Refusal {
 // 纯规则：参数、目录形状、请求与回读
 // ---------------------------------------------------------------------------
 
-/// 规范化 `tenantQuotaSetting`：额度项属一期封闭集合，上限是 0..=MAX_LIMIT 的整数。
+/// 规范化 `tenantQuotaSetting`：额度项属封闭集合，上限是 0..=MAX_LIMIT 的整数；成员上限
+/// 只对带成员维度的额度项有效（DD-163(3)），其余额度项给出即 `INVALID_PARAMETERS`。
+/// 没有成员上限的设置与 DD-123 原规范形状逐字相同。
 pub(crate) fn normalize(setting: &contracts::TenantQuotaSetting) -> Result<Value, Refusal> {
     if !(0..=MAX_LIMIT).contains(&setting.limit_per_period) {
         return Err(invalid());
     }
-    Ok(json!({
-        "feature": feature_key(&setting.feature),
+    let key = feature_key(&setting.feature);
+    let mut value = json!({
+        "feature": key,
         "limitPerPeriod": setting.limit_per_period,
-    }))
+    });
+    if let Some(member) = setting.member_limit_per_period {
+        let capable = platform_feature(key).is_some_and(|feature| feature.member_limit);
+        if !capable || !(0..=MAX_LIMIT).contains(&member) {
+            return Err(invalid());
+        }
+        value["memberLimitPerPeriod"] = member.into();
+    }
+    Ok(value)
+}
+
+/// 一次设置冻结的额度事实。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Setting {
+    pub feature: &'static str,
+    pub limit: i64,
+    pub member_limit: Option<i64>,
 }
 
 /// 冻结参数的读回：只接受 `normalize` 的规范形状。
-pub(crate) fn setting(p: &Params) -> Result<(&'static str, i64), Refusal> {
+pub(crate) fn setting(p: &Params) -> Result<Setting, Refusal> {
     let value = p.tenant_quota_setting.as_ref().ok_or_else(invalid)?;
     let parsed: contracts::TenantQuotaSetting =
         serde_json::from_value(value.clone()).map_err(|_| invalid())?;
     if normalize(&parsed)? != *value {
         return Err(invalid());
     }
-    Ok((feature_key(&parsed.feature), parsed.limit_per_period))
+    Ok(Setting {
+        feature: feature_key(&parsed.feature),
+        limit: parsed.limit_per_period,
+        member_limit: parsed.member_limit_per_period,
+    })
 }
 
 /// DD-123 (1) 的目录形状：目标 Tenant、manage@tenant、SYNC、显式确认、无审批、
@@ -256,11 +376,12 @@ pub(crate) fn month_start(now: DateTime<Utc>) -> DateTime<Utc> {
 pub(crate) fn entitlement_request(
     feature: &str,
     limit: i64,
+    member_limit: Option<i64>,
     anchor: DateTime<Utc>,
     intent: Uuid,
     origin: &str,
 ) -> Value {
-    json!({
+    let mut body = json!({
         "type": "metered",
         "featureKey": feature,
         "isSoftLimit": false,
@@ -275,7 +396,28 @@ pub(crate) fn entitlement_request(
             (INTENT_METADATA_KEY): intent.to_string(),
             (ORIGIN_METADATA_KEY): origin,
         },
-    })
+    });
+    if let Some(member) = member_limit {
+        body["metadata"][MEMBER_LIMIT_METADATA_KEY] = Value::String(member.to_string());
+    }
+    body
+}
+
+/// DD-163(3)：entitlement metadata 中的成员上限；不是本平台写入的整数即视为不可核验。
+pub(crate) fn member_limit(entitlement: &NativeEntitlement) -> Result<Option<i64>, ()> {
+    let Some(raw) = entitlement
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get(MEMBER_LIMIT_METADATA_KEY))
+    else {
+        return Ok(None);
+    };
+    match raw.parse::<i64>() {
+        Ok(value) if (0..=MAX_LIMIT).contains(&value) && value.to_string() == *raw => {
+            Ok(Some(value))
+        }
+        _ => Err(()),
+    }
 }
 
 /// 原生每期发放量的整数读回；非整数、负数或越界都不是本平台写入的额度。
@@ -308,14 +450,21 @@ fn intent_of(entitlement: &NativeEntitlement) -> Option<&str> {
         .map(String::as_str)
 }
 
-/// 回读查证：确实是这次意图写入的、未删除的按月硬限制，且发放量等于意图上限。
-pub(crate) fn matches_intent(entitlement: &NativeEntitlement, intent: Uuid, limit: i64) -> bool {
+/// 回读查证：确实是这次意图写入的、未删除的按月硬限制，发放量等于意图上限，成员上限
+/// 与意图逐字一致（没有成员上限的意图不得带该键）。
+pub(crate) fn matches_intent(
+    entitlement: &NativeEntitlement,
+    intent: Uuid,
+    limit: i64,
+    member: Option<i64>,
+) -> bool {
     entitlement.kind == "metered"
         && entitlement.deleted_at.is_none()
         && entitlement.is_soft_limit == Some(false)
         && intent_of(entitlement) == Some(intent.to_string().as_str())
         && monthly(entitlement)
         && issued_limit(entitlement) == Some(limit)
+        && member_limit(entitlement) == Ok(member)
 }
 
 /// 完整历史（含被替换者）里这次意图的原生事实。
@@ -328,7 +477,12 @@ pub(crate) enum Observed {
     Inconsistent,
 }
 
-pub(crate) fn classify(history: Vec<NativeEntitlement>, intent: Uuid, limit: i64) -> Observed {
+pub(crate) fn classify(
+    history: Vec<NativeEntitlement>,
+    intent: Uuid,
+    limit: i64,
+    member: Option<i64>,
+) -> Observed {
     let id = intent.to_string();
     let mut ours: Vec<NativeEntitlement> = history
         .into_iter()
@@ -343,7 +497,7 @@ pub(crate) fn classify(history: Vec<NativeEntitlement>, intent: Uuid, limit: i64
     if entitlement.deleted_at.is_some() {
         return Observed::Superseded;
     }
-    if matches_intent(&entitlement, intent, limit) {
+    if matches_intent(&entitlement, intent, limit, member) {
         Observed::Verified(Box::new(entitlement))
     } else {
         Observed::Inconsistent
@@ -374,6 +528,7 @@ pub(crate) fn quota_view(
             hard_limit: true,
             has_access: false,
             limit_per_period: None,
+            member_limit_per_period: None,
             period_reset_at: None,
             usage: None,
         };
@@ -387,6 +542,7 @@ pub(crate) fn quota_view(
         hard_limit: !entitlement.is_soft_limit.unwrap_or(false),
         has_access: value.is_some_and(|value| value.has_access),
         limit_per_period: issued_limit(entitlement),
+        member_limit_per_period: member_limit(entitlement).ok().flatten(),
         period_reset_at: reset,
         usage: value
             .and_then(|value| value.usage)
@@ -468,13 +624,14 @@ pub(crate) struct Intent {
     pub action_execution_id: Uuid,
     pub feature_key: String,
     pub limit_per_period: i64,
+    pub member_limit_per_period: Option<i64>,
     pub openmeter_customer_id: String,
     pub dispatch_started: bool,
     pub outcome: Option<String>,
 }
 
 const INTENT_COLUMNS: &str = "action_execution_id, feature_key, limit_per_period,
-     openmeter_customer_id, dispatch_started, outcome";
+     member_limit_per_period, openmeter_customer_id, dispatch_started, outcome";
 
 async fn lock_intent(
     tx: &mut Transaction<'_, Postgres>,
@@ -536,6 +693,7 @@ async fn plan(
         request: entitlement_request(
             &intent.feature_key,
             intent.limit_per_period,
+            intent.member_limit_per_period,
             anchor,
             intent.action_execution_id,
             origin,
@@ -602,7 +760,8 @@ async fn observe(openmeter: &OpenMeter, intent: &Intent) -> Applied {
         Err(_) => return Applied::Unknown,
     };
     let limit = intent.limit_per_period;
-    match classify(history, intent.action_execution_id, limit) {
+    let member = intent.member_limit_per_period;
+    match classify(history, intent.action_execution_id, limit, member) {
         Observed::Verified(entitlement) => match openmeter.entitlement(customer, feature).await {
             Ok(Some(current)) if current.id == entitlement.id => Applied::Verified(entitlement),
             _ => Applied::Unknown,
@@ -674,7 +833,7 @@ pub(crate) async fn prewrite(
     ae: &Execution,
     p: &Params,
 ) -> Result<(), Refusal> {
-    let (feature, limit) = setting(p)?;
+    let frozen = setting(p)?;
     let namespace = g.openmeter.namespace();
     let customer = active_customer(tx, ae.tenant_id, namespace)
         .await?
@@ -682,16 +841,17 @@ pub(crate) async fn prewrite(
     sqlx::query(
         "insert into admission.tenant_quota_intent
              (action_execution_id, tenant_id, feature_key, limit_per_period, origin,
-              openmeter_namespace, openmeter_customer_id)
-         values ($1, $2, $3, $4, $5, $6, $7)",
+              openmeter_namespace, openmeter_customer_id, member_limit_per_period)
+         values ($1, $2, $3, $4, $5, $6, $7, $8)",
     )
     .bind(ae.id)
     .bind(ae.tenant_id)
-    .bind(feature)
-    .bind(limit)
+    .bind(frozen.feature)
+    .bind(frozen.limit)
     .bind(ORIGIN_SET)
     .bind(namespace)
     .bind(customer)
+    .bind(frozen.member_limit)
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -1474,8 +1634,25 @@ mod tests {
                 ("agent_tokens", "agent_total_tokens", 10_000_000),
                 ("automation_runs", "automation_run", 10_000),
                 ("agent_memory_writes", "agent_memory_write_count", 100_000),
+                ("component_tokens", "component_model_tokens", 10_000_000),
+                ("knowledge_answers", "knowledge_answer_count", 10_000),
+                ("data_queries", "data_query_count", 10_000),
+                ("file_storage", "file_storage_bytes", 107_374_182_400),
             ]
         );
+        let members: Vec<&str> = PLATFORM_FEATURES
+            .iter()
+            .filter(|feature| feature.member_limit)
+            .map(|feature| feature.key)
+            .collect();
+        assert_eq!(members, vec!["knowledge_answers", "data_queries"]);
+        for feature in PLATFORM_FEATURES.iter().filter(|f| f.member_limit) {
+            let meter = PLATFORM_METERS
+                .iter()
+                .find(|meter| meter.key == feature.meter)
+                .expect("member quota meter");
+            assert!(meter.dimensions.iter().any(|(d, _)| *d == MEMBER_DIMENSION));
+        }
         for feature in &PLATFORM_FEATURES {
             assert_eq!(feature_key(&feature.quota), feature.key);
             assert!(PLATFORM_METERS.iter().any(|m| m.key == feature.meter));
@@ -1508,7 +1685,7 @@ mod tests {
     }
 
     #[test]
-    fn component_model_meter_is_metered_but_never_a_quota_item() {
+    fn component_model_meter_is_the_component_tokens_quota_item() {
         let meter = PLATFORM_METERS
             .iter()
             .find(|meter| meter.key == COMPONENT_MODEL_TOKENS_METER)
@@ -1527,20 +1704,111 @@ mod tests {
         ] {
             assert_eq!(body["dimensions"][dimension], format!("$.{dimension}"));
         }
-        for feature in &PLATFORM_FEATURES {
-            assert_ne!(feature.meter, COMPONENT_MODEL_TOKENS_METER);
-            assert_ne!(feature.key, COMPONENT_MODEL_TOKENS_METER);
-        }
+        // DD-163(3)：模型 token 计入额度项 component_tokens；meter 键本身仍不是额度项。
+        let quota: Vec<&str> = PLATFORM_FEATURES
+            .iter()
+            .filter(|feature| feature.meter == COMPONENT_MODEL_TOKENS_METER)
+            .map(|feature| feature.key)
+            .collect();
+        assert_eq!(quota, vec!["component_tokens"]);
         let setting = json!({"feature":COMPONENT_MODEL_TOKENS_METER,"limitPerPeriod":1});
         let parsed = serde_json::from_value::<contracts::TenantQuotaSetting>(setting);
-        assert!(parsed.is_err(), "tenant.quota.set has no such quota item");
+        assert!(parsed.is_err(), "the meter key is not a quota item");
+    }
+
+    #[test]
+    fn component_report_meters_have_fixed_shapes() {
+        let body = |key: &str| {
+            PLATFORM_METERS
+                .iter()
+                .find(|meter| meter.key == key)
+                .map(meter_request)
+                .unwrap_or_default()
+        };
+        for key in [KNOWLEDGE_ANSWER_METER, DATA_QUERY_METER] {
+            assert_eq!(body(key)["aggregation"], "count");
+            assert!(body(key).get("value_property").is_none());
+            assert_eq!(
+                body(key)["dimensions"][MEMBER_DIMENSION],
+                "$.member_principal_id"
+            );
+            assert_eq!(
+                body(key)["dimensions"]["component_binding_id"],
+                "$.component_binding_id"
+            );
+        }
+        let storage = body(FILE_STORAGE_BYTES_METER);
+        assert_eq!(storage["aggregation"], "latest");
+        assert_eq!(storage["value_property"], "$.bytes");
+        assert!(storage["dimensions"].get(MEMBER_DIMENSION).is_none());
+        assert_eq!(storage["event_type"], "kailo.component.storage.bytes");
+    }
+
+    #[test]
+    fn member_limit_rides_on_the_same_entitlement() {
+        let intent = Uuid::new_v4();
+        let anchor = month_start(Utc::now());
+        let body = entitlement_request(
+            "knowledge_answers",
+            100,
+            Some(2),
+            anchor,
+            intent,
+            ORIGIN_SET,
+        );
+        assert_eq!(body["metadata"][MEMBER_LIMIT_METADATA_KEY], "2");
+        let plain = entitlement_request("knowledge_answers", 100, None, anchor, intent, ORIGIN_SET);
+        assert!(plain["metadata"].get(MEMBER_LIMIT_METADATA_KEY).is_none());
+        let mut native = entitlement(intent, 100.0);
+        assert!(matches_intent(&native, intent, 100, None));
+        assert!(!matches_intent(&native, intent, 100, Some(2)));
+        native
+            .metadata
+            .get_or_insert_with(BTreeMap::new)
+            .insert(MEMBER_LIMIT_METADATA_KEY.into(), "2".into());
+        assert!(matches_intent(&native, intent, 100, Some(2)));
+        assert!(!matches_intent(&native, intent, 100, None));
+        assert_eq!(member_limit(&native), Ok(Some(2)));
+        native
+            .metadata
+            .get_or_insert_with(BTreeMap::new)
+            .insert(MEMBER_LIMIT_METADATA_KEY.into(), "02".into());
+        assert_eq!(member_limit(&native), Err(()));
+        assert!(!matches_intent(&native, intent, 100, Some(2)));
+    }
+
+    #[test]
+    fn member_limit_only_for_member_dimension_items() {
+        let parse = |feature: TenantQuotaFeature, member: Option<i64>| {
+            normalize(&contracts::TenantQuotaSetting {
+                feature,
+                limit_per_period: 10,
+                member_limit_per_period: member,
+            })
+        };
+        assert_eq!(
+            parse(TenantQuotaFeature::KnowledgeAnswers, Some(2)).ok(),
+            Some(
+                json!({"feature":"knowledge_answers","limitPerPeriod":10,"memberLimitPerPeriod":2})
+            )
+        );
+        assert!(parse(TenantQuotaFeature::DataQueries, Some(0)).is_ok());
+        assert!(parse(TenantQuotaFeature::DataQueries, Some(-1)).is_err());
+        assert!(parse(TenantQuotaFeature::AutomationRuns, Some(2)).is_err());
+        assert!(parse(TenantQuotaFeature::FileStorage, Some(2)).is_err());
+        assert!(parse(TenantQuotaFeature::ComponentTokens, Some(2)).is_err());
+        // 不带成员上限的设置与 DD-123 原规范形状逐字相同。
+        assert_eq!(
+            parse(TenantQuotaFeature::AgentTokens, None).ok(),
+            Some(json!({"feature":"agent_tokens","limitPerPeriod":10}))
+        );
     }
 
     #[test]
     fn entitlement_request_is_monthly_hard_limit_with_intent_metadata() {
         let intent = Uuid::new_v4();
         let anchor = month_start(Utc::now());
-        let body = entitlement_request("agent_tokens", 42, anchor, intent, ORIGIN_SET);
+        let body = entitlement_request("agent_tokens", 42, None, anchor, intent, ORIGIN_SET);
         assert_eq!(body["type"], "metered");
         assert_eq!(body["featureKey"], "agent_tokens");
         assert_eq!(body["isSoftLimit"], false);
@@ -1556,20 +1824,25 @@ mod tests {
     #[test]
     fn readback_requires_exact_intent_hard_monthly_limit() {
         let intent = Uuid::new_v4();
-        assert!(matches_intent(&entitlement(intent, 42.0), intent, 42));
-        assert!(!matches_intent(&entitlement(intent, 42.0), intent, 41));
+        assert!(matches_intent(&entitlement(intent, 42.0), intent, 42, None));
+        assert!(!matches_intent(
+            &entitlement(intent, 42.0),
+            intent,
+            41,
+            None
+        ));
         let foreign = entitlement(Uuid::new_v4(), 42.0);
-        assert!(!matches_intent(&foreign, intent, 42));
+        assert!(!matches_intent(&foreign, intent, 42, None));
         let mut soft = entitlement(intent, 42.0);
         soft.is_soft_limit = Some(true);
-        assert!(!matches_intent(&soft, intent, 42));
+        assert!(!matches_intent(&soft, intent, 42, None));
         let mut daily = entitlement(intent, 42.0);
         daily.usage_period = Some(NativeUsagePeriod {
             interval: Some("DAY".into()),
             interval_iso: Some("P1D".into()),
             anchor: None,
         });
-        assert!(!matches_intent(&daily, intent, 42));
+        assert!(!matches_intent(&daily, intent, 42, None));
         assert_eq!(issued_limit(&entitlement(intent, 1.5)), None);
         assert_eq!(issued_limit(&entitlement(intent, -1.0)), None);
     }
@@ -1577,17 +1850,20 @@ mod tests {
     #[test]
     fn classify_never_treats_absence_as_a_reason_to_rewrite() {
         let intent = Uuid::new_v4();
-        assert_eq!(classify(Vec::new(), intent, 42), Observed::Absent);
+        assert_eq!(classify(Vec::new(), intent, 42, None), Observed::Absent);
         let other = entitlement(Uuid::new_v4(), 42.0);
-        assert_eq!(classify(vec![other], intent, 42), Observed::Absent);
+        assert_eq!(classify(vec![other], intent, 42, None), Observed::Absent);
         let ours = entitlement(intent, 42.0);
         let verified = Observed::Verified(Box::new(ours.clone()));
-        assert_eq!(classify(vec![ours.clone()], intent, 42), verified);
+        assert_eq!(classify(vec![ours.clone()], intent, 42, None), verified);
         let mut replaced = ours.clone();
         replaced.deleted_at = Some(Utc::now());
-        assert_eq!(classify(vec![replaced], intent, 42), Observed::Superseded);
+        assert_eq!(
+            classify(vec![replaced], intent, 42, None),
+            Observed::Superseded
+        );
         let twice = vec![ours.clone(), ours];
-        assert_eq!(classify(twice, intent, 42), Observed::Inconsistent);
+        assert_eq!(classify(twice, intent, 42, None), Observed::Inconsistent);
     }
 
     #[test]
@@ -1614,6 +1890,7 @@ mod tests {
             normalize(&contracts::TenantQuotaSetting {
                 feature: TenantQuotaFeature::AutomationRuns,
                 limit_per_period: limit,
+                member_limit_per_period: None,
             })
         };
         let zero = json!({"feature": "automation_runs", "limitPerPeriod": 0});
@@ -1645,7 +1922,10 @@ mod tests {
         assert_eq!(none.usage, None);
         let mut native = entitlement(Uuid::new_v4(), 10.0);
         let reset = Utc::now();
-        native.current_usage_period = Some(EntitlementPeriod { to: reset });
+        native.current_usage_period = Some(EntitlementPeriod {
+            from: None,
+            to: reset,
+        });
         let value = NativeEntitlementValue {
             has_access: false,
             usage: Some(12.0),

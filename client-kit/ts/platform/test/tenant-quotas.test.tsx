@@ -68,12 +68,12 @@ describe("TenantQuotaSection", () => {
     expect(t.send.mock.calls[0]?.[0]).toMatchObject({ path: "/api/v1/tenant/quotas" });
     expect(rows(host).map((r) => r.dataset.feature)).toEqual(["agent_tokens", "automation_runs", "agent_memory_writes"]);
     const cells = (feature: string) => [...row(host, feature).querySelectorAll("td")].map((c) => c.textContent);
-    expect(cells("agent_tokens").slice(0, 5)).toEqual(["Agent tokens", "1,000", "1,200", "0", "Hard"]);
-    expect(cells("agent_tokens")[5]).toContain("(UTC)");
-    expect(cells("agent_tokens")[6]).toBe("No access");
-    expect(cells("automation_runs").slice(0, 5)).toEqual(["Automation runs", "10,000", "25", "9,975", "Soft"]);
+    expect(cells("agent_tokens").slice(0, 6)).toEqual(["Agent tokens", "1,000", "—", "1,200", "0", "Hard"]);
+    expect(cells("agent_tokens")[6]).toContain("(UTC)");
+    expect(cells("agent_tokens")[7]).toBe("No access");
+    expect(cells("automation_runs").slice(0, 6)).toEqual(["Automation runs", "10,000", "—", "25", "9,975", "Soft"]);
     // Absent facts are not shown as zero.
-    expect(cells("agent_memory_writes").slice(0, 6)).toEqual(["Memory writes", "Not set", "—", "—", "Hard", "—"]);
+    expect(cells("agent_memory_writes").slice(0, 7)).toEqual(["Memory writes", "Not set", "—", "—", "—", "Hard", "—"]);
     const banners = [...host.querySelectorAll("[data-testid=tenant-quota-exhausted]")];
     expect(banners.map((b) => b.getAttribute("data-feature"))).toEqual(["agent_tokens"]);
     expect(banners[0]?.getAttribute("role")).toBe("alert");
@@ -207,5 +207,182 @@ describe("TenantQuotaSection", () => {
     expect(host.querySelector("[data-testid=tenant-quota-outcome]")?.textContent).toContain("Request rejected");
     expect(rows(host).every((r) => r.querySelector("button")?.disabled === false)).toBe(true);
     expect(posts(t)).toHaveLength(1);
+  });
+});
+
+// DD-163(3)(4): component quota items, the per-member limit and the two usage views.
+const componentQuotas = {
+  setActionKey: "tenant.quota.set",
+  quotas: [
+    { feature: "knowledge_answers", limitPerPeriod: 100, memberLimitPerPeriod: 5, usage: 7, hasAccess: true, hardLimit: true },
+    { feature: "file_storage", limitPerPeriod: 107374182400, usage: 1610612736, hasAccess: true, hardLimit: true },
+    { feature: "component_tokens", limitPerPeriod: 10, usage: 10, hasAccess: false, hardLimit: true },
+    { feature: "data_queries", limitPerPeriod: 50, hasAccess: true, hardLimit: true },
+  ],
+};
+const componentRoutes = (action: (r: BffRequest) => BffReply) =>
+  transport((r) => (r.path === "/api/v1/tenant/quotas" ? { status: 200, body: componentQuotas } : action(r)));
+const memberInput = () => {
+  const input = document.querySelector<HTMLInputElement>("[data-testid=tenant-quota-member-input]");
+  if (!input) throw new Error("no member input");
+  return input;
+};
+
+describe("TenantQuotaSection with component items (DD-163)", () => {
+  it("orders component items after platform items, shows member limits, bytes and banners", async () => {
+    const host = await mount(componentRoutes(() => recorded));
+    await settle();
+    expect(rows(host).map((r) => r.dataset.feature)).toEqual(["component_tokens", "knowledge_answers", "data_queries", "file_storage"]);
+    const cells = (feature: string) => [...row(host, feature).querySelectorAll("td")].map((c) => c.textContent);
+    expect(cells("knowledge_answers").slice(0, 5)).toEqual(["Knowledge answers", "100", "5", "7", "93"]);
+    expect(cells("data_queries").slice(0, 3)).toEqual(["Data queries", "50", "Not set"]);
+    expect(cells("file_storage").slice(0, 5)).toEqual(["File storage", "100 GiB", "—", "1.5 GiB", "98.5 GiB"]);
+    const banners = [...host.querySelectorAll("[data-testid=tenant-quota-exhausted]")];
+    expect(banners.map((b) => b.getAttribute("data-feature"))).toEqual(["component_tokens"]);
+    expect(banners[0]?.textContent).toContain("model calls from Files, Knowledge and Data Q&A are being rejected");
+  });
+
+  it("a member limit on a non-member item is out of contract (read failure)", async () => {
+    const host = await mount(transport(() => ({ status: 200, body: { quotas: [
+      { feature: "component_tokens", memberLimitPerPeriod: 3, hasAccess: true, hardLimit: true }] } })));
+    await settle();
+    expect(rows(host)).toHaveLength(0);
+    expect(host.querySelector("[role=alert]")).not.toBeNull();
+  });
+
+  it("sets the organization and per-member limit together; the current member limit is prefilled", async () => {
+    const t = componentRoutes(() => recorded);
+    const host = await mount(t);
+    await settle();
+    await click(button(row(host, "knowledge_answers"), "Set quota"));
+    expect(quotaInput().value).toBe("100");
+    expect(memberInput().value).toBe("5");
+    await type(memberInput(), "500");
+    expect(document.querySelector("[data-testid=tenant-quota-dialog] [role=alert]")?.textContent)
+      .toBe("The per-member limit cannot exceed the organization limit.");
+    expect(button(document.body, "Review").disabled).toBe(true);
+    await type(memberInput(), "3");
+    await click(button(document.body, "Review"));
+    expect(document.querySelector("[data-testid=tenant-quota-member-review]")?.textContent).toBe("Each member may use at most 3 per month.");
+    await click(button(document.body, "Confirm and set"));
+    const body = posts(t)[0]?.body as Record<string, unknown>;
+    expect(body.tenantQuotaSetting).toEqual({ feature: "knowledge_answers", limitPerPeriod: 100, memberLimitPerPeriod: 3 });
+  });
+
+  it("clearing the member limit sends a setting without it (removes the per-member limit)", async () => {
+    const t = componentRoutes(() => recorded);
+    const host = await mount(t);
+    await settle();
+    await click(button(row(host, "knowledge_answers"), "Set quota"));
+    await type(memberInput(), "");
+    await click(button(document.body, "Review"));
+    expect(document.querySelector("[data-testid=tenant-quota-member-review]")?.textContent).toBe("No per-member limit.");
+    await click(button(document.body, "Confirm and set"));
+    const body = posts(t)[0]?.body as Record<string, unknown>;
+    expect(body.tenantQuotaSetting).toEqual({ feature: "knowledge_answers", limitPerPeriod: 100 });
+  });
+
+  it("file storage is entered in GiB and sent in bytes; non-member items have no member input", async () => {
+    const t = componentRoutes(() => recorded);
+    const host = await mount(t);
+    await settle();
+    await click(button(row(host, "file_storage"), "Set quota"));
+    expect(quotaInput().value).toBe("100");
+    expect(document.querySelector("[data-testid=tenant-quota-member-input]")).toBeNull();
+    await type(quotaInput(), "932");
+    expect(document.querySelector("[data-testid=tenant-quota-dialog] [role=alert]")?.textContent)
+      .toBe("Enter a whole number of GiB from 0 to 931.");
+    await type(quotaInput(), "200");
+    await click(button(document.body, "Review"));
+    expect(document.querySelector("[data-testid=tenant-quota-review]")?.textContent).toContain("to 200 GiB");
+    await click(button(document.body, "Confirm and set"));
+    const body = posts(t)[0]?.body as Record<string, unknown>;
+    expect(body.tenantQuotaSetting).toEqual({ feature: "file_storage", limitPerPeriod: 214748364800 });
+  });
+});
+
+const myUsage = {
+  items: [
+    { feature: "data_queries", state: "TENANT_EXHAUSTED", used: 2, periodResetAt: "2026-11-01T00:00:00Z" },
+    { feature: "knowledge_answers", state: "MEMBER_LIMIT_REACHED", used: 5, memberLimitPerPeriod: 5,
+      periodResetAt: "2026-11-01T00:00:00Z" },
+  ],
+};
+const componentUsage = {
+  from: "2026-10-01T00:00:00Z",
+  to: "2026-10-31T00:00:00Z",
+  meters: [
+    { meterKey: "component_model_tokens", aggregation: "sum", state: "COMMITTED", bindings: [
+      { bindingId: "b-know", nativePageCategory: "knowledge", workspaceId: "ws-1", quantity: "1200" },
+      { bindingId: "b-data", nativePageCategory: "data_query", quantity: "300" }] },
+    { meterKey: "knowledge_answer_count", aggregation: "count", state: "COMMITTED", bindings: [
+      { bindingId: "b-know", nativePageCategory: "knowledge", workspaceId: "ws-1", quantity: "7" }] },
+    { meterKey: "data_query_count", aggregation: "count", state: "NO_COMMITTED_USAGE", bindings: [] },
+    { meterKey: "file_storage_bytes", aggregation: "latest", state: "UNAVAILABLE", bindings: [] },
+  ],
+};
+
+function usagePage(route: Route, locale: "en" | "zh-CN" = "en") {
+  return render(
+    <PlatformProvider client={createBffClient(transport(route))} locale={locale}>
+      <UsageBillingPage />
+    </PlatformProvider>,
+  );
+}
+
+describe("usage page views (DD-163(4))", () => {
+  it("a member sees only their own usage: no organization numbers, no component split", async () => {
+    const page = await usagePage((r) => r.path === "/api/v1/usage/me" ? { status: 200, body: myUsage } : forbidden);
+    await settle();
+    const mine = page.querySelector("[data-testid=my-usage]");
+    expect(mine).not.toBeNull();
+    const items = [...page.querySelectorAll<HTMLElement>("[data-testid=my-usage-row]")];
+    expect(items.map((r) => r.dataset.feature)).toEqual(["knowledge_answers", "data_queries"]);
+    const cells = (i: number) => [...(items[i]?.querySelectorAll("td") ?? [])].map((c) => c.textContent);
+    expect(cells(0).slice(0, 4)).toEqual(["Knowledge answers", "5", "5", "Your limit for this month is used up"]);
+    expect(cells(1).slice(0, 4)).toEqual(["Data queries", "2", "No personal limit",
+      "The organization's quota is used up — contact an admin"]);
+    expect(page.querySelector("[data-testid=tenant-quotas]")).toBeNull();
+    expect(page.querySelector("[data-testid=component-usage]")).toBeNull();
+  });
+
+  it("the member view is localized", async () => {
+    const page = await usagePage((r) => r.path === "/api/v1/usage/me" ? { status: 200, body: myUsage } : forbidden, "zh-CN");
+    await settle();
+    const text = page.querySelector("[data-testid=my-usage]")?.textContent ?? "";
+    expect(text).toContain("我的用量");
+    expect(text).toContain("组织额度已用完，请联系管理员");
+    expect(text).toContain("你本月的额度已用完");
+  });
+
+  it("a failed member read is a retryable failure, not an empty list", async () => {
+    const page = await usagePage((r) => r.path === "/api/v1/usage/me"
+      ? { status: 503, body: { class: ErrorClass.Unknown, reason: ReasonCode.DependencyUnavailable } } : forbidden);
+    await settle();
+    const mine = page.querySelector("[data-testid=my-usage]");
+    expect(mine?.querySelector("[role=alert]")).not.toBeNull();
+    expect(mine?.querySelectorAll("[data-testid=my-usage-row]")).toHaveLength(0);
+  });
+
+  it("admins see the per-component split labelled by category, never by component name", async () => {
+    const page = await usagePage((r) => {
+      if (r.path === "/api/v1/usage/me") return { status: 200, body: { items: [] } };
+      if (r.path.startsWith("/api/v1/usage/components?")) return { status: 200, body: componentUsage };
+      if (r.path === "/api/v1/workspaces") return { status: 200, body: [{ id: "ws-1", name: "Sales", slug: "sales" }] };
+      return forbidden;
+    });
+    await settle();
+    const section = page.querySelector("[data-testid=component-usage]");
+    expect(section).not.toBeNull();
+    const rowsOf = [...page.querySelectorAll<HTMLElement>("[data-testid=component-usage-row]")];
+    expect(rowsOf.map((r) => `${r.dataset.meter}:${r.dataset.binding ?? ""}`)).toEqual([
+      "component_model_tokens:b-know", "component_model_tokens:b-data", "knowledge_answer_count:b-know",
+      "data_query_count:", "file_storage_bytes:"]);
+    const cells = (i: number) => [...(rowsOf[i]?.querySelectorAll("td") ?? [])].map((c) => c.textContent);
+    expect(cells(0)).toEqual(["Model tokens", "Knowledge", "Sales", "Committed", "1,200"]);
+    expect(cells(1)).toEqual(["Model tokens", "Data Q&A", "Whole organization", "Committed", "300"]);
+    expect(cells(3).slice(3)).toEqual(["No stored events in this period", "—"]);
+    expect(cells(4).slice(3)).toEqual(["Cannot be verified", "—"]);
+    expect(section?.textContent).not.toContain("b-know");
   });
 });

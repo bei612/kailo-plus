@@ -898,6 +898,11 @@ func (h *Handler) KnowledgeQA(c *gin.Context) {
 		c.Error(err)
 		return
 	}
+	// DD-163: the Kailo quota admits the question before any native work.
+	if err := h.admitKailoAnswer(reqCtx.ctx, c); err != nil {
+		_ = c.Error(err)
+		return
+	}
 
 	// Execute normal mode QA, generate title unless disabled
 	if request.LocalBrowserEnabled {
@@ -926,6 +931,11 @@ func (h *Handler) AgentQA(c *gin.Context) {
 	reqCtx, request, err := h.parseQARequest(c, "AgentQA")
 	if err != nil {
 		c.Error(err)
+		return
+	}
+	// DD-163: the Kailo quota admits the question before any native work.
+	if err := h.admitKailoAnswer(reqCtx.ctx, c); err != nil {
+		_ = c.Error(err)
 		return
 	}
 
@@ -1725,6 +1735,8 @@ func (h *Handler) completeAssistantMessage(
 	}
 	// DD-138(4), 07 §4.8.3: long answers are announced through Kailo.
 	h.notifyKailoAnswerCompleted(bgCtx, assistantMessage, userQuery)
+	// DD-163, 07 §4.8.8: one completed answer is one Kailo knowledge answer.
+	h.reportKailoAnswer(bgCtx, assistantMessage, userQuery)
 }
 
 // recordTurnMemory runs the long-term memory write path for a finished turn.
