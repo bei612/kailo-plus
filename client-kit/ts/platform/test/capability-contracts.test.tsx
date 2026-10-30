@@ -117,7 +117,11 @@ describe("shared Catalog capability contract management", () => {
     expect(dialog()!.textContent).toContain("Existing connections keep working");
     expect(button(dialog()!, "Deprecate").className).toContain("bg-danger");
     await click(button(dialog()!, "Deprecate"));
-    await click(host.querySelector<HTMLButtonElement>('button[aria-label="Refresh"]')!);
+    // The directory re-read after the uncertain write is denied: the receipt and command stay.
+    expect(host.querySelector("[data-testid=capability-contracts] [data-testid=permission-state]")).not.toBeNull();
+    expect(dialog()?.textContent).toContain("The result is unknown");
+    await click(button(dialog()!, "Cancel"));
+    expect(dialog()).toBeNull();
     await click(button(host, "Re-check same request"));
     const commands = t.send.mock.calls.filter(([r]) => r.method === "POST").map(([r]) => r.body);
     expect(commands).toHaveLength(2);
