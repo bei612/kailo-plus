@@ -76,7 +76,7 @@ release:
   # 网关 SS-AGW-END-SESSION 与组件接收端闭合前不宣称退出联动。
   artifacts:
     - name: core
-      digest: sha256:6a5d7488d46dc86bd971a507532bc935d39f05a59eab75e3b4161f09b258015e
+      digest: sha256:3baec0da7bdefe3beecfe2704e445e2a18557e40c21074ec10c377896c20231d
     - name: web-client
-      digest: sha256:60107088c25d12b1ad398f0aede7b3cf617443ffffca11afc3b7e8ba1a7b6380
+      digest: sha256:80a92fdc5a2ce922b6c781d636d95f5c5bd3af5f29186a401952759b03b74905
   gate: blocked_until_seams_closed
