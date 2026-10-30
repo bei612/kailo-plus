@@ -16,6 +16,7 @@ import { Button } from "./profile/buzz/shared/ui/button";
 import { useBffClient, useReasonText, useT } from "./context";
 import { useLoad } from "./use-load";
 import { BffError, writeFailure } from "../transport";
+import { newIdempotencyKey } from "../governance";
 
 type People = { members: ConversationParticipant[]; workspaces: WorkspaceView[] };
 
@@ -116,7 +117,7 @@ function ShareEditor({ intent, people, peopleFailed, onClose }: { intent: Compon
     const body = normalizedGrants(grants, intent.ownerPrincipalId);
     const serialized = JSON.stringify(body);
     if (!attempt.current || attempt.current.body !== serialized || state.kind !== "unknown")
-      attempt.current = { key: crypto.randomUUID(), body: serialized };
+      attempt.current = { key: newIdempotencyKey(), body: serialized };
     setState({ kind: "saving" });
     try {
       const submission = await client.submitAction({
