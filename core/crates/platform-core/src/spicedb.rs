@@ -876,6 +876,34 @@ impl SpiceDb {
         self.write_native_updates(updates).await
     }
 
+    /// DD-168(2)：随 Resource 移交时替换 Asset 的 owner；tenant/resource 箭头同一请求重写（幂等）。
+    pub(crate) async fn replace_asset_owner(
+        &self,
+        id: &str,
+        tenant: &str,
+        resource: &str,
+        old_owner: &str,
+        owner: &str,
+    ) -> Result<String, SpiceDbError> {
+        let relationship = |relation: &str, subject_type: &str, subject: &str| {
+            serde_json::json!({
+                "resource":{"objectType":"asset","objectId":id},"relation":relation,
+                "subject":{"object":{"objectType":subject_type,"objectId":subject}}
+            })
+        };
+        let mut updates = vec![
+            serde_json::json!({"operation":"OPERATION_TOUCH","relationship":relationship("tenant","tenant",tenant)}),
+            serde_json::json!({"operation":"OPERATION_TOUCH","relationship":relationship("resource","resource",resource)}),
+        ];
+        if old_owner != owner {
+            updates.push(serde_json::json!({"operation":"OPERATION_DELETE",
+                "relationship":relationship("owner","principal",old_owner)}));
+        }
+        updates.push(serde_json::json!({"operation":"OPERATION_TOUCH",
+            "relationship":relationship("owner","principal",owner)}));
+        self.write_native_updates(updates).await
+    }
+
     pub(crate) async fn asset_projection_matches(
         &self,
         id: &str,

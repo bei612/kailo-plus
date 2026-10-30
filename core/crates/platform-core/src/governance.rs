@@ -2366,10 +2366,19 @@ async fn resolve_target(
             let id = p
                 .resource_id
                 .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
-            let r = crate::agent_definition::resource(conn, tenant, id, lock)
-                .await?
-                .ok_or(Refusal::Precondition(ReasonCode::TargetNotFound))?;
-            if r.state != "ACTIVE"
+            // DD-168(2)：移交适用于任一 HUMAN owner 的 ResourceType；改名仍只对 Agent 定义。
+            let r = if sem == Semantic::ResourceTransferOwner {
+                crate::agent_definition::resource_any(conn, tenant, id, lock).await?
+            } else {
+                crate::agent_definition::resource(conn, tenant, id, lock).await?
+            }
+            .ok_or(Refusal::Precondition(ReasonCode::TargetNotFound))?;
+            let state_ok = if sem == Semantic::ResourceTransferOwner {
+                crate::agent_definition::transferable_state(&r.state)
+            } else {
+                r.state == "ACTIVE"
+            };
+            if !state_ok
                 || r.projection_action_execution_id.is_some()
                 || p.resource_version != Some(r.version)
                 || frozen.is_some_and(|f| f != r.id)
@@ -2385,6 +2394,24 @@ async fn resolve_target(
                 }
                 if !crate::agent_definition::active_owner(conn, tenant, owner).await? {
                     return Err(Refusal::Precondition(ReasonCode::TargetNotFound));
+                }
+                // 随 Resource 移交的 Asset 不能有未收敛的投影。
+                let assets = crate::agent_definition::inherited_assets(
+                    conn, tenant, r.id, r.owner_principal_id, lock,
+                )
+                .await?;
+                if assets.iter().any(|(_, pending)| pending.is_some()) {
+                    return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+                }
+                // 已启用的自动化以原 owner 的委托运行：须先暂停或停用再移交（DD-168(2)）。
+                let enabled: bool = sqlx::query_scalar(
+                    "select exists(select 1 from catalog.automation_definition where resource_id=$1 and state='ENABLED')",
+                )
+                .bind(r.id)
+                .fetch_one(&mut *conn)
+                .await?;
+                if enabled {
+                    return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
                 }
             }
             Ok(Target {

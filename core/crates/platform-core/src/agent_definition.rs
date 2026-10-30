@@ -42,6 +42,41 @@ pub(crate) async fn resource(
         .bind(id).bind(tenant).fetch_optional(conn).await
 }
 
+/// DD-168(2)：`resource.transfer_owner` 的目标可以是任一 HUMAN owner 的 ResourceType，
+/// 不只 Agent 定义。只读 `catalog.resource` 本身；类型专属的前提由准入另行核对。
+pub(crate) async fn resource_any(
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    id: Uuid,
+    lock: bool,
+) -> Result<Option<Resource>, sqlx::Error> {
+    sqlx::query_as(&format!(
+        "select r.id,r.tenant_id,r.owner_principal_id,r.home_workspace_id,r.state,r.version,r.projection_action_execution_id
+         from catalog.resource r where r.id=$1 and r.tenant_id=$2{}", if lock { " for update of r" } else { "" }))
+        .bind(id).bind(tenant).fetch_optional(conn).await
+}
+
+/// 移交的 Resource 状态：`ACTIVE` 与保留只读（binding 停用、路由停用后仍有 owner，撤权要求移交）。
+pub(crate) fn transferable_state(state: &str) -> bool {
+    matches!(state, "ACTIVE" | "RETAINED_READ_ONLY")
+}
+
+/// DD-168(2)：随 Resource 一并移交的 Asset——父为该 Resource、owner 为原 owner、尚未终结。
+/// 锁序 Resource→Asset，与 Version 写者一致。
+pub(crate) async fn inherited_assets(
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    resource: Uuid,
+    owner: Uuid,
+    lock: bool,
+) -> Result<Vec<(Uuid, Option<Uuid>)>, sqlx::Error> {
+    sqlx::query_as(&format!(
+        "select id,projection_action_execution_id from catalog.asset
+         where tenant_id=$1 and resource_id=$2 and owner_principal_id=$3 and state not in ('DELETED','FAILED')
+         order by id{}", if lock { " for update" } else { "" }))
+        .bind(tenant).bind(resource).bind(owner).fetch_all(conn).await
+}
+
 pub(crate) async fn active_owner(
     conn: &mut PgConnection,
     tenant: Uuid,
@@ -145,6 +180,50 @@ pub(crate) async fn projection_matches(
         .map_err(|e| Refusal::Unavailable(e.to_string()))
 }
 
+/// tenant/owner/home Workspace 投影与 Core 事实一致（home 为空时不得有 home 关系）。
+async fn projection_matches_at(
+    gov: &crate::governance::Governance,
+    r: &Resource,
+    owner: Uuid,
+) -> Result<bool, Refusal> {
+    let home = r.home_workspace_id.map(|w| w.to_string());
+    gov.spicedb
+        .resource_projection_matches_in_workspace(
+            &r.id.to_string(),
+            &r.tenant_id.to_string(),
+            &owner.to_string(),
+            home.as_deref(),
+            gov.cfg.relationship_page,
+        )
+        .await
+        .map_err(|e| Refusal::Unavailable(e.to_string()))
+}
+
+/// 把一个 Asset 的原生 owner 关系从 `from` 换成 `to` 并回读；回读一致才为 `true`。
+async fn move_asset_owner(
+    gov: &crate::governance::Governance,
+    tenant: Uuid,
+    resource: Uuid,
+    asset: Uuid,
+    from: Uuid,
+    to: Uuid,
+) -> Result<bool, Refusal> {
+    let unavailable = |e: crate::spicedb::SpiceDbError| Refusal::Unavailable(e.to_string());
+    let (tenant, resource, asset) = (tenant.to_string(), resource.to_string(), asset.to_string());
+    let token = gov
+        .spicedb
+        .replace_asset_owner(&asset, &tenant, &resource, &from.to_string(), &to.to_string())
+        .await
+        .map_err(unavailable)?;
+    if token.is_empty() {
+        return Ok(false);
+    }
+    gov.spicedb
+        .asset_projection_matches(&asset, &tenant, &resource, &to.to_string(), gov.cfg.relationship_page)
+        .await
+        .map_err(unavailable)
+}
+
 pub(crate) async fn dispatch(
     gov: &crate::governance::Governance,
     ae_id: Uuid,
@@ -171,12 +250,17 @@ pub(crate) async fn dispatch(
         .and_then(|v| v.get("params"))
         .and_then(Params::from_json)
         .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
-    let r = resource(&mut tx, ae.tenant_id, ae.target_id, true)
-        .await?
-        .ok_or(Refusal::Precondition(ReasonCode::TargetNotFound))?;
+    let transfer = sem == Semantic::ResourceTransferOwner;
+    let r = if transfer {
+        resource_any(&mut tx, ae.tenant_id, ae.target_id, true).await?
+    } else {
+        resource(&mut tx, ae.tenant_id, ae.target_id, true).await?
+    }
+    .ok_or(Refusal::Precondition(ReasonCode::TargetNotFound))?;
     if r.projection_action_execution_id != Some(ae.id) {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
+    let home = r.home_workspace_id.map(|w| w.to_string());
     let owner = if sem == Semantic::ResourceTransferOwner {
         p.principal_id
             .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?
@@ -186,7 +270,7 @@ pub(crate) async fn dispatch(
     if !tenant_active || !active_owner(&mut tx, ae.tenant_id, owner).await? {
         return abort_projection(gov, tx, &ae, def, sem, &r, owner).await;
     }
-    let matched = match projection_matches(gov, r.id, r.tenant_id, owner).await {
+    let matched = match projection_matches_at(gov, &r, owner).await {
         Ok(matched) => matched,
         Err(_) => return unknown(tx, &ae, def).await,
     };
@@ -229,7 +313,7 @@ pub(crate) async fn dispatch(
                 &r.tenant_id.to_string(),
                 &r.owner_principal_id.to_string(),
                 &owner.to_string(),
-                None,
+                home.as_deref(),
             )
             .await
         {
@@ -240,8 +324,24 @@ pub(crate) async fn dispatch(
                 return unknown(tx, &ae, def).await;
             }
         }
+        if !matches!(projection_matches_at(gov, &r, owner).await, Ok(true)) {
+            return unknown(tx, &ae, def).await;
+        }
+    }
+    // DD-168(2)：Asset 默认继承 Resource owner。原 owner 名下的 Asset 与 Resource 同一动作移交：
+    // 每个都先写原生 owner 关系并回读，全部闭合后才在同一事务落定 Core 事实；
+    // 任一不明则整次 UNKNOWN，以同一冻结意图重写（写本身幂等）。
+    let assets = if transfer {
+        inherited_assets(&mut tx, r.tenant_id, r.id, r.owner_principal_id, true).await?
+    } else {
+        Vec::new()
+    };
+    if assets.iter().any(|(_, pending)| pending.is_some()) {
+        return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+    }
+    for (asset, _) in &assets {
         if !matches!(
-            projection_matches(gov, r.id, r.tenant_id, owner).await,
+            move_asset_owner(gov, r.tenant_id, r.id, *asset, r.owner_principal_id, owner).await,
             Ok(true)
         ) {
             return unknown(tx, &ae, def).await;
@@ -265,11 +365,18 @@ pub(crate) async fn dispatch(
     if !proof.allowed || proof.zed_token.is_empty() {
         return unknown(tx, &ae, def).await;
     }
-    let changed=sqlx::query("update catalog.resource set owner_principal_id=$3,state='ACTIVE',version=version+1,
+    // 移交保留原状态（保留只读的 Resource 仍是保留只读）；新建定义才由 PROVISIONING 转 ACTIVE。
+    let changed=sqlx::query("update catalog.resource set owner_principal_id=$3,
+            state=case when $5 then state else 'ACTIVE' end,version=version+1,
             projection_action_execution_id=null where id=$1 and tenant_id=$2 and projection_action_execution_id=$4")
-        .bind(r.id).bind(r.tenant_id).bind(owner).bind(ae.id).execute(&mut *tx).await?;
+        .bind(r.id).bind(r.tenant_id).bind(owner).bind(ae.id).bind(transfer).execute(&mut *tx).await?;
     if changed.rows_affected() != 1 {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+    }
+    for (asset, _) in &assets {
+        sqlx::query("update catalog.asset set owner_principal_id=$3,version=version+1
+            where id=$1 and tenant_id=$2 and owner_principal_id=$4")
+            .bind(asset).bind(r.tenant_id).bind(owner).bind(r.owner_principal_id).execute(&mut *tx).await?;
     }
     sqlx::query("update catalog.agent_definition set status='ACTIVE' where resource_id=$1")
         .bind(r.id)
@@ -326,19 +433,33 @@ async fn abort_projection(
                 &r.tenant_id.to_string(),
                 &attempted_owner.to_string(),
                 &r.owner_principal_id.to_string(),
-                None,
+                r.home_workspace_id.map(|w| w.to_string()).as_deref(),
             )
             .await
     };
     let resolved = match token {
         Ok(token) if !token.is_empty() && sem == Semantic::AgentDefinitionCreate => Some(token),
         Ok(token) if !token.is_empty() => {
-            match projection_matches(gov, r.id, r.tenant_id, r.owner_principal_id).await {
+            match projection_matches_at(gov, r, r.owner_principal_id).await {
                 Ok(true) => Some(token),
                 _ => None,
             }
         }
         _ => None,
+    };
+    // 先前不明的一轮可能已把 Asset 写给新 owner：确定拒绝时同样恢复原 owner 并回读。
+    let resolved = if resolved.is_some() && sem == Semantic::ResourceTransferOwner {
+        let assets = inherited_assets(&mut tx, r.tenant_id, r.id, r.owner_principal_id, true).await?;
+        let mut restored = true;
+        for (asset, _) in &assets {
+            restored &= matches!(
+                move_asset_owner(gov, r.tenant_id, r.id, *asset, attempted_owner, r.owner_principal_id).await,
+                Ok(true)
+            );
+        }
+        resolved.filter(|_| restored)
+    } else {
+        resolved
     };
     if let Some(token) = resolved {
         sqlx::query(
@@ -816,5 +937,64 @@ pub async fn get(
         Ok(c) if c.allowed => Json(row.view(shared)).into_response(),
         Ok(_) => StatusCode::FORBIDDEN.into_response(),
         Err(e) => Refusal::Unavailable(e.to_string()).respond(None),
+    }
+}
+
+#[cfg(test)]
+mod transfer_tests {
+    use super::*;
+
+    #[test]
+    fn transfer_accepts_active_and_retained_resources_only() {
+        assert!(transferable_state("ACTIVE"));
+        assert!(transferable_state("RETAINED_READ_ONLY"));
+        for state in ["PROVISIONING", "UNKNOWN", "FAILED", "DELETING", "DELETED", ""] {
+            assert!(!transferable_state(state), "{state}");
+        }
+    }
+
+    /// DD-168(2) against the real migrated schema: transfer targets are any HUMAN-owned
+    /// Resource (not only Agent definitions), and exactly the old owner's live Assets of
+    /// that Resource move with it — another author's Asset and terminal Assets stay.
+    #[tokio::test]
+    #[ignore = "requires isolated migrated TRANSFER_TEST_DATABASE_URL"]
+    async fn transfer_reads_any_resource_type_and_only_the_old_owners_live_assets() {
+        use sqlx::Connection;
+        let url = std::env::var("TRANSFER_TEST_DATABASE_URL").expect("isolated database URL");
+        let mut conn = PgConnection::connect(&url).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
+        let tenant = Uuid::new_v4();
+        let workspace = Uuid::new_v4();
+        let (a, b) = (Uuid::new_v4(), Uuid::new_v4());
+        let (definition, route) = (Uuid::new_v4(), Uuid::new_v4());
+        let (mine, theirs, gone) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        sqlx::raw_sql(&format!(
+            "INSERT INTO identity.tenant(id,slug,name,state) VALUES('{tenant}','transfer-{tenant}','Transfer fixture','ACTIVE');
+             INSERT INTO identity.workspace(id,tenant_id,slug,name,state) VALUES('{workspace}','{tenant}','transfer','Transfer','ACTIVE');
+             INSERT INTO identity.principal(id,tenant_id,kind,status) VALUES('{a}','{tenant}','HUMAN','ACTIVE'),('{b}','{tenant}','HUMAN','ACTIVE');
+             INSERT INTO catalog.resource(id,tenant_id,type_key,home_workspace_id,owner_principal_id,component_type_key,native_id,state,version) VALUES
+               ('{definition}','{tenant}','agent.definition',NULL,'{a}','core','{definition}','ACTIVE',1),
+               ('{route}','{tenant}','llm_route','{workspace}','{a}','core','{route}','RETAINED_READ_ONLY',1);
+             INSERT INTO catalog.agent_definition(resource_id,stable_slug,display_name,status)
+               VALUES('{definition}','transfer','Transfer fixture','ACTIVE');
+             INSERT INTO catalog.asset(id,tenant_id,resource_id,type_key,owner_principal_id,native_ref,state,version) VALUES
+               ('{mine}','{tenant}','{definition}','agent.version','{a}','{mine}','DRAFT',1),
+               ('{theirs}','{tenant}','{definition}','agent.version','{b}','{theirs}','DRAFT',1),
+               ('{gone}','{tenant}','{definition}','agent.version','{a}','{gone}','DELETED',1);"
+        ))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        // The old Agent-only reader never sees the route; the transfer reader does.
+        assert!(resource(&mut tx, tenant, route, false).await.unwrap().is_none());
+        let r = resource_any(&mut tx, tenant, route, true).await.unwrap().unwrap();
+        assert_eq!((r.home_workspace_id, r.owner_principal_id), (Some(workspace), a));
+        assert!(transferable_state(&r.state));
+        let moved = inherited_assets(&mut tx, tenant, definition, a, true).await.unwrap();
+        assert_eq!(moved.into_iter().map(|(id, _)| id).collect::<Vec<_>>(), vec![mine]);
+        // Cross-Tenant reads find nothing.
+        assert!(resource_any(&mut tx, Uuid::new_v4(), route, false).await.unwrap().is_none());
+        assert!(inherited_assets(&mut tx, Uuid::new_v4(), definition, a, false).await.unwrap().is_empty());
+        tx.rollback().await.unwrap();
     }
 }
