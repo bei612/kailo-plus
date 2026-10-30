@@ -8,12 +8,15 @@ export type KailoFontSize = "smaller" | "default" | "larger";
 export interface KailoPresentationState {
   theme: KailoTheme;
   locale: KailoLocale;
-  /** DD-167: Kailo's font size preference; scales text only (`--kailo-type-scale`). */
-  fontSize: KailoFontSize;
+  /**
+   * DD-167: Kailo's font size preference; scales text only (`--kailo-type-scale`). Always present
+   * from this runtime; optional so that a component's own fallback state (no runtime) stays valid.
+   */
+  fontSize?: KailoFontSize;
   /** DD-167: Kailo's ⌘± zoom, 0.75–1.5; scales the whole page (`--kailo-zoom`, `data-kailo-zoomed`). */
-  zoom: number;
+  zoom?: number;
   /** 13/14, 1 or 15/14 for fontSize: multiply native text sizes by it. */
-  typeScale: number;
+  typeScale?: number;
   /** The page runs inside a frame (Kailo's content area). */
   embedded: boolean;
   /** A validated presentation message from the Kailo host has arrived. */
@@ -28,8 +31,8 @@ export type KailoPreferenceValues = Record<string, boolean | string>;
 export interface KailoPresentationChange {
   theme: boolean;
   locale: boolean;
-  fontSize: boolean;
-  zoom: boolean;
+  fontSize?: boolean;
+  zoom?: boolean;
 }
 
 export interface KailoTypeState {
