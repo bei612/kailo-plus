@@ -5,33 +5,70 @@
   "description": "DD-163(4)：GET /api/v1/usage/components?from=&to=，Tenant 在区间内按组件（binding）拆分的 committed usage。调用方须持有 Tenant audit permission，每次 fresh Check。数值直接读 OpenMeter（group_by component_binding_id），不复制成账本；缺失事实以确定状态表达。",
   "type": "object",
   "additionalProperties": false,
-  "required": ["from", "to", "meters"],
+  "required": [
+    "from",
+    "to",
+    "meters"
+  ],
   "properties": {
-    "from": {"type": "string", "description": "RFC3339，含"},
-    "to": {"type": "string", "description": "RFC3339，不含"},
+    "from": {
+      "type": "string",
+      "description": "RFC3339，含"
+    },
+    "to": {
+      "type": "string",
+      "description": "RFC3339，不含"
+    },
     "meters": {
       "type": "array",
       "items": {
         "title": "ComponentMeterUsage",
         "type": "object",
         "additionalProperties": false,
-        "required": ["meterKey", "state", "bindings"],
+        "required": [
+          "meterKey",
+          "state",
+          "bindings"
+        ],
         "properties": {
-          "meterKey": {"type": "string", "description": "随 Core 固定的组件 meter 键"},
-          "aggregation": {"type": "string", "description": "原生 meter 的聚合方式原文"},
-          "state": {"$ref": "../enums/meter_usage_state.schema.json"},
+          "meterKey": {
+            "type": "string",
+            "description": "随 Core 固定的组件 meter 键"
+          },
+          "aggregation": {
+            "type": "string",
+            "description": "原生 meter 的聚合方式原文"
+          },
+          "state": {
+            "$ref": "../enums/meter_usage_state.schema.json"
+          },
           "bindings": {
             "type": "array",
             "items": {
               "title": "ComponentBindingUsage",
               "type": "object",
               "additionalProperties": false,
-              "required": ["bindingId", "quantity"],
+              "required": [
+                "bindingId",
+                "quantity"
+              ],
               "properties": {
-                "bindingId": {"type": "string", "format": "uuid"},
-                "nativePageCategory": {"$ref": "../enums/native_page_category.schema.json"},
-                "displayName": {"type": "string", "description": "binding 所 pin release 的显示名；不含 component_type_key"},
-                "quantity": {"type": "string", "description": "OpenMeter 返回的十进制原文"}
+                "bindingId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "nativePageCategory": {
+                  "$ref": "../enums/native_page_category.schema.json"
+                },
+                "workspaceId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "Workspace 级 binding 的 Workspace；Tenant 级 binding 不给出"
+                },
+                "quantity": {
+                  "type": "string",
+                  "description": "OpenMeter 返回的十进制原文"
+                }
               }
             }
           }
