@@ -5,7 +5,7 @@ status: in_progress
 # 源码批次：Core 平台 meter/额度项扩展与成员上限、组件上报与准入服务面、模型调用 ExtAuthz CHECK、
 # 两个 BFF 用量读取、迁移 20261102020000；client-kit 用量页；WeKnora 问答准入与上报、Wren 问数准入与
 # 上报、Cells 每小时存储快照。尚未构建进任何产物、未部署；合并后须重建 Core/Worker、Web/Desktop 与三组件镜像，
-# 执行迁移并重跑部署引导（bootstrap-tenant）登记新 meter/feature 与默认额度。
+# 发布入口在 Core 就绪后自动执行 platform-core align-metering 并在 verify 回读（DD-165(5)）。
 exposure: end_user
 
 design:
@@ -31,6 +31,8 @@ validation:
       ref: core/migrations/20261102020000_component_usage.down.sql
     - dimension: 呈现
       ref: client-kit/ts/platform/test/tenant-quotas.test.tsx
+    - dimension: 发布对齐
+      ref: tools/release/test_node.py
     - dimension: 验证记录
       ref: core/verify/component-usage.md
 
@@ -50,6 +52,12 @@ implementation:
     - contracts/enums/member_usage_state.schema.json
     - core/migrations/20261102020000_component_usage.up.sql
     - core/crates/platform-core/src/component_usage.rs
+    - core/crates/platform-core/src/metering_alignment.rs
+    - core/crates/platform-core/src/main.rs
+    - tools/release/release.yaml
+    - tools/release/model.py
+    - tools/release/node.py
+    - deploy/components/component-deploy.sh
     - core/crates/platform-core/src/tenant_quota.rs
     - core/crates/platform-core/src/openmeter.rs
     - core/crates/platform-core/src/gateway_usage.rs

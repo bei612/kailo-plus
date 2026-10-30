@@ -83,6 +83,10 @@ func kailoUsageSnapshot(ctx context.Context, reporter *auth.NativeOIDCUsageRepor
 	case result.Retry:
 		logger.Info("Kailo storage snapshot deferred", zap.String("binding", reporter.BindingID()), zap.Int("status", result.Status))
 		return kailoUsageRetryWithinHour(now)
+	case result.Status == 404:
+		logger.Warn("Kailo storage snapshot not accepted: Kailo Core has no component usage contract yet (deploy Core with DD-165 first)",
+			zap.String("binding", reporter.BindingID()))
+		return kailoUsageInterval
 	default:
 		logger.Warn("Kailo storage snapshot refused", zap.String("binding", reporter.BindingID()), zap.Int("status", result.Status))
 		return kailoUsageInterval

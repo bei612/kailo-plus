@@ -3859,6 +3859,10 @@ export const platformMessages = {
     "zh-CN": "组织额度已用完，请联系管理员",
   },
   "usage.mine.state.unavailable": { en: "Cannot be verified right now", "zh-CN": "暂不可查证" },
+  "usage.mine.state.notConfigured": {
+    en: "Not yet set up in Kailo — contact an admin",
+    "zh-CN": "尚未在 Kailo 中完成登记，请联系管理员",
+  },
   "usage.components.title": { en: "Usage by component", "zh-CN": "按组件用量" },
   "usage.components.explain": {
     en: "Committed usage of Files, Knowledge and Data Q&A in this period, split by component and read from OpenMeter.",

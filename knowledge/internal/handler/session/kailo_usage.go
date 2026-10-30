@@ -29,7 +29,7 @@ func (h *Handler) admitKailoAnswer(ctx context.Context, c *gin.Context) error {
 		return nil
 	}
 	text := service.KailoUsageRefusalText(decision, c.GetHeader("Accept-Language"))
-	if decision == service.KailoUsageDependencyUnavailable {
+	if decision == service.KailoUsageDependencyUnavailable || decision == service.KailoUsageQuotaNotConfigured {
 		return errors.NewServiceUnavailableError(text)
 	}
 	return errors.NewTooManyRequestsError(text)

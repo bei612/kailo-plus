@@ -77,6 +77,7 @@ mod mcp_oauth;
 mod membership_lifecycle;
 mod membership_projection;
 mod membership_state;
+mod metering_alignment;
 mod model_route;
 mod moderation;
 mod moderation_read;
@@ -181,6 +182,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let outcome = action_token::bootstrap_conformance_signing().await?;
         println!("{}", serde_json::to_string(&outcome)?);
         return Ok(());
+    }
+    // DD-165(5)：发布入口在 Core 就绪后执行的 meter/feature/默认额度幂等对齐，与 verify
+    // 阶段的只读回读。不监听端口、不取 OpenBao 投递；有任一缺口即以 5 退出并列出缺口。
+    if let Some(mode @ ("align-metering" | "verify-metering")) = argv.get(1).map(String::as_str) {
+        if argv.len() != 2 {
+            return Err(format!("{mode} takes no arguments").into());
+        }
+        let report = metering_alignment::run(mode == "align-metering").await?;
+        println!("{}", serde_json::to_string(&report)?);
+        std::process::exit(if report.problems.is_empty() { 0 } else { 5 });
     }
     // Tenant 引导（DD-82、ADR-11）不取 OpenBao 投递，做完即退出。
     if argv.get(1).map(String::as_str) == Some("bootstrap-tenant") {

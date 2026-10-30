@@ -53,6 +53,10 @@ func newUsageCore(t *testing.T) *usageCore {
 				w.WriteHeader(http.StatusServiceUnavailable)
 				return
 			}
+			if decision == "404" {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]string{"decision": decision})
 		case usageBase + "/reports":
 			c.posts = append(c.posts, body)
@@ -112,9 +116,11 @@ func TestKailoUsageAdmissionDecisions(t *testing.T) {
 	core := newUsageCore(t)
 	u := newTestUsage(t, core)
 	ctx := context.Background()
-	core.decisions = []string{KailoUsageMemberQuotaExhausted, KailoUsageTenantQuotaExhausted, "503", "SOMETHING_ELSE", KailoUsageAllowed}
+	core.decisions = []string{KailoUsageMemberQuotaExhausted, KailoUsageTenantQuotaExhausted, "503", "SOMETHING_ELSE",
+		KailoUsageQuotaNotConfigured, "404", KailoUsageAllowed}
 	for _, want := range []string{KailoUsageMemberQuotaExhausted, KailoUsageTenantQuotaExhausted,
-		KailoUsageDependencyUnavailable, KailoUsageDependencyUnavailable, KailoUsageAllowed} {
+		KailoUsageDependencyUnavailable, KailoUsageDependencyUnavailable, KailoUsageQuotaNotConfigured,
+		KailoUsageQuotaNotConfigured, KailoUsageAllowed} {
 		if got := u.AdmitKnowledgeAnswer(ctx, "ada"); got != want {
 			t.Fatalf("decision: want %s, got %s", want, got)
 		}
@@ -188,5 +194,8 @@ func TestKailoUsageRefusalTextFollowsLanguage(t *testing.T) {
 	}
 	if got := KailoUsageRefusalText(KailoUsageDependencyUnavailable, ""); got != "用量服务暂不可用，请稍后再试。" {
 		t.Fatalf("default unavailable: %s", got)
+	}
+	if got := KailoUsageRefusalText(KailoUsageQuotaNotConfigured, "zh"); got != "本组织的用量额度尚未在 Kailo 中完成登记，暂不能提问，请联系管理员。" {
+		t.Fatalf("not configured: %s", got)
 	}
 }

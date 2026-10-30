@@ -308,6 +308,7 @@ const myUsage = {
       periodResetAt: "2026-11-01T00:00:00Z" },
   ],
 };
+const unaligned = { items: [{ feature: "knowledge_answers", state: "NOT_CONFIGURED" }] };
 const componentUsage = {
   from: "2026-10-01T00:00:00Z",
   to: "2026-10-31T00:00:00Z",
@@ -353,6 +354,15 @@ describe("usage page views (DD-165(4))", () => {
     expect(text).toContain("我的用量");
     expect(text).toContain("组织额度已用完，请联系管理员");
     expect(text).toContain("你本月的额度已用完");
+  });
+
+  it("a quota item not yet set up in Kailo is said so, not shown as used up (DD-165(5))", async () => {
+    const page = await usagePage((r) => r.path === "/api/v1/usage/me" ? { status: 200, body: unaligned } : forbidden);
+    await settle();
+    const row = page.querySelector<HTMLElement>("[data-testid=my-usage-row]");
+    expect(row?.dataset.state).toBe("NOT_CONFIGURED");
+    expect(row?.textContent).toContain("Not yet set up in Kailo — contact an admin");
+    expect(row?.textContent).not.toContain("used up");
   });
 
   it("a failed member read is a retryable failure, not an empty list", async () => {

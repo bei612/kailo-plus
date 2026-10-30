@@ -37,12 +37,16 @@ export type KailoUsageDecision =
   | 'ALLOWED'
   | 'TENANT_QUOTA_EXHAUSTED'
   | 'MEMBER_QUOTA_EXHAUSTED'
+  // Core has not aligned this quota item yet (DD-165(5)), or an older Core
+  // has no component usage contract at all (404).
+  | 'QUOTA_NOT_CONFIGURED'
   | 'DEPENDENCY_UNAVAILABLE';
 
 const DECISIONS: readonly string[] = [
   'ALLOWED',
   'TENANT_QUOTA_EXHAUSTED',
   'MEMBER_QUOTA_EXHAUSTED',
+  'QUOTA_NOT_CONFIGURED',
 ];
 
 // contracts/api/component_usage_report.schema.json
@@ -101,6 +105,10 @@ export function usageRefusalText(
       return english
         ? 'Your data query quota for this month is used up.'
         : '你本月的问数额度已用完。';
+    case 'QUOTA_NOT_CONFIGURED':
+      return english
+        ? "Your organization's usage quota is not yet set up in Kailo, so questions cannot be asked yet. Contact an admin."
+        : '本组织的用量额度尚未在 Kailo 中完成登记，暂不能提问，请联系管理员。';
     default:
       return english
         ? 'The usage service is unavailable right now. Please try again later.'
@@ -163,6 +171,8 @@ export class KailoUsage {
       if (status === 200) {
         const parsed = JSON.parse(text);
         if (DECISIONS.includes(parsed?.decision)) decision = parsed.decision;
+      } else if (status === 404) {
+        decision = 'QUOTA_NOT_CONFIGURED';
       }
     } catch {
       decision = 'DEPENDENCY_UNAVAILABLE';
@@ -331,6 +341,12 @@ export class KailoUsage {
         return 'RETRY';
       }
       logger.warn(`usage report abandoned (${label})`);
+      return 'DONE';
+    }
+    if (status === 404) {
+      logger.warn(
+        `usage report not accepted (${label}): Kailo Core has no component usage contract yet (deploy Core with DD-165 first)`,
+      );
       return 'DONE';
     }
     logger.warn(`usage report refused (${label})`);

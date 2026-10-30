@@ -103,6 +103,8 @@ describe('KailoUsage admission', () => {
       'TENANT_QUOTA_EXHAUSTED',
       503,
       'SOMETHING',
+      'QUOTA_NOT_CONFIGURED',
+      404,
       'ALLOWED',
     ];
     const usage = new KailoUsage(config, { fetch: platform.fetch as any });
@@ -111,6 +113,8 @@ describe('KailoUsage admission', () => {
       'TENANT_QUOTA_EXHAUSTED',
       'DEPENDENCY_UNAVAILABLE',
       'DEPENDENCY_UNAVAILABLE',
+      'QUOTA_NOT_CONFIGURED',
+      'QUOTA_NOT_CONFIGURED',
       'ALLOWED',
     ])
       await expect(usage.admitDataQuery(member)).resolves.toBe(want);
@@ -120,7 +124,7 @@ describe('KailoUsage admission', () => {
     });
     // ALLOWED is cached for the member: no further admission call.
     await expect(usage.admitDataQuery(member)).resolves.toBe('ALLOWED');
-    expect(platform.admissions).toHaveLength(5);
+    expect(platform.admissions).toHaveLength(7);
     // Without a verified identity nobody is metered: refused.
     await expect(usage.admitDataQuery(null)).resolves.toBe(
       'DEPENDENCY_UNAVAILABLE',
@@ -142,6 +146,9 @@ describe('KailoUsage admission', () => {
     expect(platform.posts).toHaveLength(0);
     expect(usageRefusalText('MEMBER_QUOTA_EXHAUSTED', 'en-US')).toBe(
       'Your data query quota for this month is used up.',
+    );
+    expect(usageRefusalText('QUOTA_NOT_CONFIGURED', 'zh-CN')).toBe(
+      '本组织的用量额度尚未在 Kailo 中完成登记，暂不能提问，请联系管理员。',
     );
   });
 });

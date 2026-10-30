@@ -665,6 +665,7 @@ const memberStateKey: Record<MemberUsageState, PlatformMessageKey> = {
   [MemberUsageState.MemberLimitReached]: "usage.mine.state.memberLimitReached",
   [MemberUsageState.TenantExhausted]: "usage.mine.state.tenantExhausted",
   [MemberUsageState.Unavailable]: "usage.mine.state.unavailable",
+  [MemberUsageState.NotConfigured]: "usage.mine.state.notConfigured",
 };
 
 const memberStateTone: Record<MemberUsageState, "positive" | "negative" | "neutral"> = {
@@ -672,6 +673,7 @@ const memberStateTone: Record<MemberUsageState, "positive" | "negative" | "neutr
   [MemberUsageState.MemberLimitReached]: "negative",
   [MemberUsageState.TenantExhausted]: "negative",
   [MemberUsageState.Unavailable]: "neutral",
+  [MemberUsageState.NotConfigured]: "neutral",
 };
 
 /** 只接受契约内的页：额度项与状态在封闭集合内、数值非负；否则按读取失败处理。 */

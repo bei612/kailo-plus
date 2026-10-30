@@ -663,7 +663,10 @@ fn rfc3339(at: DateTime<Utc>) -> String {
 /// One quota item as OpenMeter states it now, for one member when given.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct QuotaFact {
-    /// No entitlement, or the entitlement has no access (DD-123: hard limit).
+    /// The Tenant has an entitlement for this quota item; without one the
+    /// release alignment has not run (DD-165(5)).
+    pub configured: bool,
+    /// The entitlement has no access (DD-123: hard limit).
     pub tenant_exhausted: bool,
     pub member_limit: Option<i64>,
     pub member_used: Option<f64>,
@@ -672,7 +675,9 @@ pub(crate) struct QuotaFact {
 
 impl QuotaFact {
     pub(crate) fn decision(&self) -> ComponentUsageDecision {
-        if self.tenant_exhausted {
+        if !self.configured {
+            ComponentUsageDecision::QuotaNotConfigured
+        } else if self.tenant_exhausted {
             ComponentUsageDecision::TenantQuotaExhausted
         } else if member_reached(self.member_limit, self.member_used) {
             ComponentUsageDecision::MemberQuotaExhausted
@@ -682,7 +687,9 @@ impl QuotaFact {
     }
 
     pub(crate) fn member_state(&self) -> MemberUsageState {
-        if self.tenant_exhausted {
+        if !self.configured {
+            MemberUsageState::NotConfigured
+        } else if self.tenant_exhausted {
             MemberUsageState::TenantExhausted
         } else if member_reached(self.member_limit, self.member_used) {
             MemberUsageState::MemberLimitReached
@@ -713,6 +720,7 @@ pub(crate) async fn quota_fact(
 ) -> Result<QuotaFact, openmeter::Error> {
     let Some(entitlement) = openmeter.entitlement(customer_id, feature.key).await? else {
         return Ok(QuotaFact {
+            configured: false,
             tenant_exhausted: true,
             member_limit: None,
             member_used: None,
@@ -737,6 +745,7 @@ pub(crate) async fn quota_fact(
         _ => None,
     };
     Ok(QuotaFact {
+        configured: true,
         tenant_exhausted: !value.has_access,
         member_limit: if member.is_some() { member_limit } else { None },
         member_used,
@@ -1167,6 +1176,7 @@ mod tests {
     #[test]
     fn decisions_follow_tenant_then_member() {
         let fact = |exhausted, limit, used| QuotaFact {
+            configured: true,
             tenant_exhausted: exhausted,
             member_limit: limit,
             member_used: used,
@@ -1195,6 +1205,16 @@ mod tests {
             fact(false, Some(1), Some(1.0)).member_state(),
             MemberUsageState::MemberLimitReached
         );
+        // DD-165(5): no entitlement yet is "not configured", never "used up".
+        let unaligned = QuotaFact {
+            configured: false,
+            tenant_exhausted: true,
+            member_limit: None,
+            member_used: None,
+            reset_at: None,
+        };
+        assert_eq!(unaligned.decision(), D::QuotaNotConfigured);
+        assert_eq!(unaligned.member_state(), MemberUsageState::NotConfigured);
     }
 
     #[test]

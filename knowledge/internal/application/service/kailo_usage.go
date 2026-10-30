@@ -49,6 +49,9 @@ const (
 	KailoUsageAllowed               = "ALLOWED"
 	KailoUsageTenantQuotaExhausted  = "TENANT_QUOTA_EXHAUSTED"
 	KailoUsageMemberQuotaExhausted  = "MEMBER_QUOTA_EXHAUSTED"
+	// KailoUsageQuotaNotConfigured: Core has not aligned this quota item yet
+	// (DD-165(5)), or an older Core has no usage contract at all (404).
+	KailoUsageQuotaNotConfigured = "QUOTA_NOT_CONFIGURED"
 	KailoUsageDependencyUnavailable = "DEPENDENCY_UNAVAILABLE"
 )
 
@@ -193,10 +196,14 @@ func (u *KailoUsage) admission(ctx context.Context, body []byte) string {
 				return KailoUsageDependencyUnavailable
 			}
 			switch answer.Decision {
-			case KailoUsageAllowed, KailoUsageTenantQuotaExhausted, KailoUsageMemberQuotaExhausted:
+			case KailoUsageAllowed, KailoUsageTenantQuotaExhausted, KailoUsageMemberQuotaExhausted,
+				KailoUsageQuotaNotConfigured:
 				return answer.Decision
 			}
 			return KailoUsageDependencyUnavailable
+		case status == http.StatusNotFound:
+			// The Core this instance talks to has no component usage contract yet.
+			return KailoUsageQuotaNotConfigured
 		case (status == http.StatusUnauthorized || status == http.StatusForbidden) && attempt == 0:
 			u.tokens.Invalidate()
 			continue
@@ -318,6 +325,9 @@ func (u *KailoUsage) deliver(ctx context.Context, report kailoUsageReport) {
 				return
 			case <-timer.C:
 			}
+		case status == http.StatusNotFound:
+			logger.Warnf(ctx, "[kailo] usage report not accepted: binding=%s meter=%s — Kailo Core has no component usage contract yet (deploy Core with DD-165 first)", u.bindingID, report.MeterKey)
+			return
 		default:
 			logger.Warnf(ctx, "[kailo] usage report refused: binding=%s meter=%s status=%d", u.bindingID, report.MeterKey, status)
 			return
@@ -364,6 +374,11 @@ func KailoUsageRefusalText(decision, acceptLanguage string) string {
 			return "Your knowledge answer quota for this month is used up."
 		}
 		return "你本月的知识库问答额度已用完。"
+	case KailoUsageQuotaNotConfigured:
+		if english {
+			return "Your organization's usage quota is not yet set up in Kailo, so questions cannot be asked yet. Contact an admin."
+		}
+		return "本组织的用量额度尚未在 Kailo 中完成登记，暂不能提问，请联系管理员。"
 	default:
 		if english {
 			return "The usage service is unavailable right now. Please try again later."
