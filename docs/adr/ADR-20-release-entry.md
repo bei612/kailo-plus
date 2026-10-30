@@ -49,8 +49,8 @@ kailo-release.sh status [--commit SHA]                   # 读日志（journal�
 | pin | 开发机 | 按结构替换 compose 镜像 pin 与追溯记录 `release.artifacts[].digest`；断言 `deploy/`、`tools/` 不再残留旧 digest；提交并快进 push | 远端 main 已含该 pin 提交 |
 | check | CI worker | `kailo-ci submit <pin> check`（原 full） | 该 commit 的 full 任务 SUCCEEDED |
 | backup | 节点（发布树内代码） | 对受影响服务直接依赖的 Postgres 做 `pg_dump -Fc`，`pg_restore --list` 校验，连同 `.env` 快照写 manifest | 该 pin commit 的 manifest 存在且文件摘要一致 |
-| deploy | 节点（发布树内代码） | 规范发布树权限 → 声明式 `.env` → 渲染运维域投递（§10）→ 迁移 → 配置一次性服务 → 创建缺失的运维域运行体（§10）→ 重建配置漂移的基础服务（§9）→ IdP 声明式配置（§8）→ 按序替换服务（含投递摘要变化时的 core-bff，§10）→ 重建依赖替换对象的漂移服务（§9）→ 回读 | 运行镜像 digest 已等于 pin 的服务跳过；配置一次性服务（`restart: "no"`、消费发布树内 compose configs，例如 SpiceDB schema 写入）按其配置文件内容 digest 判定，与上次成功应用的 digest 相同则跳过；IdP 声明按 §8 的配置摘要判定；长期运行服务的配置与现场一致则跳过（§9）；运维域运行体已运行则不创建，投递摘要等于已生效摘要则不重建 core-bff（§10） |
-| verify | 节点（发布树内代码） | 回读全部受管服务的镜像、健康、Web build-info 与无关容器；IdP 声明只读回读（§8）；长期运行服务无配置漂移且健康（§9）；运维域运行体与投递（§10） | 每次重算 |
+| deploy | 节点（发布树内代码） | 规范发布树权限 → 声明式 `.env` → 渲染运维域投递（§10）→ 迁移 → 配置一次性服务 → 创建缺失的运维域运行体（§10）→ 重建配置漂移的基础服务（§9）→ IdP 声明式配置（§8）→ 按序替换服务（含投递摘要变化时的 core-bff，§10）→ 重建依赖替换对象的漂移服务（§9）→ 组件实例（§12）→ 回读 | 运行镜像 digest 已等于 pin 的服务跳过；配置一次性服务（`restart: "no"`、消费发布树内 compose configs，例如 SpiceDB schema 写入）按其配置文件内容 digest 判定，与上次成功应用的 digest 相同则跳过；IdP 声明按 §8 的配置摘要判定；长期运行服务的配置与现场一致则跳过（§9）；运维域运行体已运行则不创建，投递摘要等于已生效摘要则不重建 core-bff（§10）；组件实例 env 声明键已等于 pin 且运行容器一致、健康则跳过（§12） |
+| verify | 节点（发布树内代码） | 回读全部受管服务的镜像、健康、Web build-info 与无关容器；IdP 声明只读回读（§8）；长期运行服务无配置漂移且健康（§9）；运维域运行体与投递（§10）；组件实例的 env 声明键、运行镜像与健康（§12） | 每次重算 |
 
 `run` 从第一个未完成的阶段继续；中断后再次执行同一命令即恢复。恢复依据两层：开发机日志
 `$XDG_STATE_HOME/kailo-release/<源commit>.json` 记录任务 ID、构建输出与 pin commit，避免重复提交 CI 任务；
@@ -345,6 +345,53 @@ CI worker 每次 fetch、检查、构建与发布都在 `<sources>/<commit>` 留
 - **只读核对**：`node.py retention --dry-run [--prune-docker]` 不删除、不建目录，列出将删除的树与暂存及大小；`--prune-docker` 时只回报
   `docker system df` 的可回收上界与受保护的检查镜像。
 
+### 12. 组件实例部署（2026-10-30 增补）
+
+**问题**：发布入口构建了组件参考实现的产物（例如 `file-storage-service`，并把 digest 写入 `file-storage/fork/upstream.yaml`），
+但 CI 节点上组件实例实际运行的镜像由实例 env（`/volumes/data/kailo/components/cells/deploy.env` 的 `CELLS_IMAGE` 等）决定。
+实例 env 不在发布树里，部署要靠人另外改 env 再执行 `component-deploy.sh`（或仓库外的 `~/kailo-deploy/component-deploy.sh`）。
+发布 5c77e736 记录的 Cells 为 `61df6fa8…`，生产 `kailo-cells-native-cells-1` 仍运行 `3272eb4b…`，就是这条手工步骤被漏掉。
+手工改 env 也违反 §2「推导，而不是清单」：改哪个键、改成什么值，本来都能从登记数据推出。
+
+**决策**：组件实例成为发布入口 deploy/verify 的一部分，仍以组件自己的正式入口部署，不另写第二份部署逻辑。
+
+- **声明**（`release.yaml` 的 `components`，登记推不出的事实只有这些）：每个实例的组件名（即 `component-deploy.sh` 的第一个参数：
+  `file-storage`、`document-editor`、`knowledge`、`data-query`）、实例 env 的绝对路径、实例 Compose 项目名（可写 `${KEY}` 从实例 env 读取），
+  以及 `pins`：实例 env 的键 → 来源记录中的镜像产物。值有两种写法：整条引用 `<REGISTRY>/<产物>@sha256:…`（Cells、DocumentServer、Wren），
+  或只写 64 位 digest、仓库在另一个键中（WeKnora 的 `KNOWLEDGE_*_DIGEST` + `KNOWLEDGE_*_REPOSITORY`，仓库键只核对、不改写）。
+  `REGISTRY` 取 CI 配置 `environment.REGISTRY`，与构建推送同一来源。目标 digest 是 pin commit 的 `*/fork/upstream.yaml`
+  `artifact_digest`，因此「上次 pin 了但实例没换」也会被补上，与 §2 中平台服务的部署对象同一规则。`model.component_instances` 在 plan 即校验声明：
+  组件名、路径、产物必须是来源记录中已有 digest 的镜像，同一实例中产物不重复。
+- **顺序**：deploy 先完成全部平台服务（迁移 → Core/Worker → Core 就绪后的计量对齐 `align-metering`（DD-165(5)）→ 其余 → Web →
+  「替换后」组漂移收敛），再按声明顺序处理组件实例，最后做附带损伤比较与发布树保留。组件依赖平台（IdP 声明的组件 client、成员目录 client
+  凭据、交付目录、模型入口、Core 的组件用量合同与额度项），反之不成立，因此组件在后。
+- **计量前置**（DD-165(5)、`.design/07` §4.8.9）：有受计量约束的组件（`file-storage`、`knowledge`、`data-query`，与 `component-deploy.sh`
+  的前置条件同一范围）需要部署时，先在 Core 内执行只读回读 `verify-metering`；不通过即拒绝部署这些组件（记为 FAILED，原因列出缺口），
+  `document-editor` 不受此约束。`component-deploy.sh` 自身仍核对同一条件，两处不互相替代。
+- **每个实例**：
+  1. 现场判定（`node.component_facts`/`component_action`）：实例 env 不存在为 `not_installed`，只报告，不创建实例；声明键缺失、重复、
+     是占位值或仓库与产物不符为 `refuse`（发布不创建键、不换仓库）；键已等于 pin 且实例项目中运行该产物的容器都是该 digest、
+     有重启策略的容器全部运行且健康为 `current`，跳过；其余为 `deploy`。
+  2. 备份：实例 env 原文复制到 `backups/<pin commit>/components/<组件>.env`（0600）；同一 commit 已有快照即保留，重跑时它仍是发布前的原文。
+     backup 阶段同样为每个已安装实例做这份快照并写入 manifest。实例自身的数据库由 `component-deploy.sh` 在启动前备份（原有行为）。
+  3. 原子改写：只改写声明且不等于 pin 的键，其余行逐字保留（原值的成对引号保留）；同目录临时文件、fsync、`rename`，权限与属主不变。
+     输出与 `releases/component-env-journal.jsonl` 只记键名、动作、组件、commit 与时间，不含任何值。
+  4. 部署：以 `COMPONENT_ENV_FILE=<实例 env>` 和 `KAILO_RUNTIME_DIR=<运行目录>` 调用固定发布树内的
+     `bash deploy/components/component-deploy.sh <组件> <pin commit>`（不加 `--adapter`；按 digest 拉取、`--no-build`、自带备份与嵌入头回读）。
+  5. 回读（`readback_component`，最多等 300 秒就绪）：声明键等于 pin；实例项目中运行该产物的容器都运行 pin；`judge_image` 同一判定
+     （本节点解析出的镜像即运行镜像、registry 以同一 digest 提供）；有重启策略的容器运行且健康。结果写入 `deploy.json` 的 `components`。
+- **失败与恢复**：一个实例失败（拒绝、入口非零退出、回读不符）不影响其余实例，也不回滚已经部署并回读的平台服务——组件是业务能力
+  的参考实现，它的缺口只阻断它自己（AGENTS 第 21 条）。全部实例处理完后照常做附带损伤比较；有实例失败时 deploy 以 `FAILED` 结束、
+  不执行发布树保留，错误列出失败实例。再次 `run`（`--retry-failed` 同样适用）从 deploy 继续：按现场重算，已等于 pin 的平台服务与组件实例跳过，
+  只重做失败的实例。
+- **附带损伤**：被判为 `deploy` 的实例，其 Compose 项目中部署前已有的容器属于本次替换范围（`component-deploy.sh` 会按 Compose 重建它们）；
+  其余长期运行容器（含 `refuse`、`current` 实例）照 §6A 比较，`deploy.disposable_projects` 的排除不变。
+- **plan 与 verify**：plan 经只读 `inspect` 回报每个实例的项目、声明键状态（`equal/differs/missing/duplicate/invalid/repository`，不回传值）
+  与运行 digest，列出动作；本次重建的产物在 pin 之后才有新 digest，其实例必然部署。verify 对每个已安装实例做第 5 步的回读（不等待），
+  不一致即失败；未安装的实例只列出。
+- **不做的事**：不创建实例 env、不改仓库与其他键、不替代组件安装与 adapter（`--adapter` 与一致性候选、release、binding 仍按 RB-11）；
+  发布树保持只读，`component-deploy.sh` 自身的 `node.py normalize` 也只调整权限。仓库外的 `~/kailo-deploy/component-deploy.sh` 不再使用。
+
 ## 后果
 
 正面：一条命令覆盖从规划到回读的全部步骤，所有输入由登记数据推出，改错位置或漏改会在 pin 阶段以残留 digest 断言当场失败；
@@ -364,4 +411,5 @@ CI worker 若登记通用 deploy 阶段，可直接调用发布树内的 `node.p
 
 本 ADR 不改变 `.design` 的任何权威划分与能力状态，不改变 `03-验证发布与验收门禁.md` §5 的门禁内容、§7 的发布顺序与 §8 的停止条件，
 不改变 [ADR-06](ADR-06-artifact-supply-chain.md) 的 digest、SBOM 与 provenance 要求，也不改变 [ADR-07](ADR-07-ci-and-branch-protection.md)
-中 full 门禁的定义。组件参考实现（`deploy/components/component-deploy.sh`）的部署单元不在本入口范围内，plan 只列出其过期产物。
+中 full 门禁的定义。组件参考实现的部署仍由组件正式入口 `deploy/components/component-deploy.sh` 执行，本入口只按 §12
+保证已安装实例的镜像 pin 等于来源记录并调用该入口；组件安装、adapter、一致性候选、release 与 binding 仍按 RB-11，不由发布入口代办。

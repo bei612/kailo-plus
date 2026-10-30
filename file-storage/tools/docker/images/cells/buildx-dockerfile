@@ -20,8 +20,16 @@ RUN apk add --no-cache bash git && corepack enable
 SHELL ["/bin/bash", "-e", "-o", "pipefail", "-c"]
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 npm_config_store_dir=/pnpm/store
 COPY file-storage/adapter/src/native-reference.mjs /src/adapter/src/native-reference.mjs
+# Kailo dependency cache (07 §2.1): the build entry passes NPM_REGISTRY only when
+# the CI node's npm cache is healthy; empty means the public registry. Corepack
+# fetches the pinned pnpm and pnpm installs through it; the lockfile integrity
+# and the packageManager hash still verify every byte. Build stage only.
+ARG NPM_REGISTRY=
 RUN --mount=type=cache,id=cells-ui-corepack,target=/root/.cache/node/corepack \
     --mount=type=cache,id=cells-ui-pnpm,target=/pnpm/store \
+    if [ -n "$NPM_REGISTRY" ]; then \
+      export COREPACK_NPM_REGISTRY="${NPM_REGISTRY%/}" npm_config_registry="$NPM_REGISTRY"; \
+    fi && \
     bash ./build.sh && \
     mkdir /out && \
     tar --exclude=node_modules -cf - . | tar -xf - -C /out
@@ -44,6 +52,9 @@ COPY file-storage/ .
 # original production clean rules. Dependency stores never enter the binary.
 RUN rm -rf /src/frontend/assets
 COPY --from=frontend /out/ ./frontend/assets/
+# Kailo dependency cache (07 §2.1): GOPROXY=<CI cache>|https://proxy.golang.org,direct
+# falls back to the origin on any cache error; go.sum still verifies modules.
+ARG GOPROXY=https://proxy.golang.org,direct
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \

@@ -51,7 +51,7 @@
 #
 # run.env (mode 0600, operator-delivered, no secret values inline; per stage):
 #   CONFORMANCE_SOURCE        fixed release tree (/volumes/kailo/ci/sources/<commit>/apps)
-#   CONFORMANCE_RUN_DIR       new empty 0700 directory on /volumes/data
+#   CONFORMANCE_RUN_DIR       new empty 0700 directory under /var/lib/kailo-ci (NVMe, default) or /volumes/data (07 §2.1)
 #   CONFORMANCE_NODE_IMAGE    <repo>@sha256:<digest> constrained Node SDK image
 #   CONFORMANCE_NETWORK       dedicated docker network (internal; not platform-local_*)
 #   CONFORMANCE_NATIVE_ENV    component start.sh env for the dedicated project
@@ -119,8 +119,9 @@ need() { local name; for name in "$@"; do [[ -n ${!name:-} ]] || { echo "run.env
 need CONFORMANCE_SOURCE CONFORMANCE_RUN_DIR CONFORMANCE_NODE_IMAGE
 [[ $CONFORMANCE_NODE_IMAGE =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]] || { echo 'Node SDK image must be digest-pinned' >&2; exit 2; }
 [[ -z ${CONFORMANCE_NETWORK:-} || $CONFORMANCE_NETWORK =~ ^kailo-conformance-[a-z0-9-]+$ ]] || { echo 'dedicated kailo-conformance-* network required' >&2; exit 2; }
-[[ $CONFORMANCE_RUN_DIR == /volumes/data/* && -d $CONFORMANCE_RUN_DIR && $(stat -c '%a' -- "$CONFORMANCE_RUN_DIR") == 700 ]] \
-  || { echo 'RUN_DIR must be an existing 0700 directory under /volumes/data' >&2; exit 2; }
+[[ ( $CONFORMANCE_RUN_DIR == /var/lib/kailo-ci/* || $CONFORMANCE_RUN_DIR == /volumes/data/* ) && -d $CONFORMANCE_RUN_DIR \
+   && $(stat -c '%a' -- "$CONFORMANCE_RUN_DIR") == 700 ]] \
+  || { echo 'RUN_DIR must be an existing 0700 directory under /var/lib/kailo-ci or /volumes/data' >&2; exit 2; }
 src=$CONFORMANCE_SOURCE
 run=$CONFORMANCE_RUN_DIR
 read -r -a docker <<<"${CONFORMANCE_DOCKER:-sudo -n docker}"

@@ -146,6 +146,45 @@ delivery:
     worker: data/conformance-worker
     restart: core-bff
 
+# 组件实例（ADR-20 §12）：CI 节点上已安装的组件参考实现。deploy 在全部平台服务（迁移 → Core/Worker → 其余 → Web →
+# 「替换后」漂移收敛）之后按声明顺序逐个处理：实例 env 中声明的镜像键不等于本 commit 来源记录（*/fork/upstream.yaml）
+# 的 artifact_digest，或实例项目中运行该产物的容器镜像/健康不符时，先把实例 env 备份到 backups/<commit>/components/，
+# 再原子改写这些键（其余键原样保留，只报告键与动作、不输出值），然后调用组件正式入口
+# deploy/components/component-deploy.sh <组件> <commit>（自带数据库备份、--no-build、按 digest 拉取），回读镜像与健康；
+# verify 同样回读。实例 env 不存在即「未安装」，只报告、不创建（组件安装、adapter 与 binding 仍按 RB-11）。
+#   env      实例 env（0600；与 component-deploy.sh 的缺省位置相同，经 COMPONENT_ENV_FILE 显式传入）
+#   project  实例的 Compose 项目名（${KEY} 取自实例 env）：回读与附带损伤比较的范围
+#   pins     env 键 → 产物：值为 <REGISTRY>/<产物>@sha256:<64>；{artifact, repository} 表示值是 64 位 digest、
+#            仓库在 repository 键中（只核对等于 <REGISTRY>/<产物>，不改写）。REGISTRY 取 CI 配置 environment。
+components:
+  file-storage:
+    env: /volumes/data/kailo/components/cells/deploy.env
+    project: ${CELLS_COMPOSE_PROJECT}
+    pins:
+      CELLS_IMAGE: file-storage-service
+  document-editor:
+    env: /volumes/data/kailo/components/document-editor/native.env
+    project: ${DOCUMENT_EDITOR_COMPOSE_PROJECT}
+    pins:
+      DOCUMENT_EDITOR_IMAGE: document-editor
+  knowledge:
+    env: /volumes/data/kailo/components/knowledge/native.env
+    project: kailo-knowledge
+    pins:
+      KNOWLEDGE_APP_DIGEST: {artifact: knowledge-service, repository: KNOWLEDGE_APP_REPOSITORY}
+      KNOWLEDGE_UI_DIGEST: {artifact: knowledge-native-ui, repository: KNOWLEDGE_UI_REPOSITORY}
+      KNOWLEDGE_DOCREADER_DIGEST: {artifact: knowledge-document-reader, repository: KNOWLEDGE_DOCREADER_REPOSITORY}
+  data-query:
+    env: /volumes/data/kailo/components/data-query/native.env
+    project: ${WREN_COMPOSE_PROJECT_NAME}
+    pins:
+      WREN_UI_IMAGE: data-query-ui
+      WREN_AI_IMAGE: data-query-ai-service
+      WREN_ENGINE_IMAGE: data-query-engine
+      WREN_IBIS_IMAGE: data-query-ibis
+      # Wren 原生 AI 出口网关即本仓库的 model-gateway 产物（deploy/components/data-query.env.template）
+      WREN_GATEWAY_IMAGE: model-gateway
+
 # CI 节点：SSH 名与 CI 执行配置位置。运行目录、发布树根、证明库、Compose 项目名与 Web
 # build-info 位置从该配置读取，不在仓库复制。
 node:

@@ -4,8 +4,9 @@
   node.py inspect <请求 JSON 的 base64>   只读探针：经 SSH 标准输入执行（python3 -I - inspect …），
                                          不写任何文件；规划阶段用它读取节点现场
   node.py backup --commit <pin commit>   从固定发布树执行：备份受影响 Postgres 与 .env 快照
-  node.py deploy --commit <pin commit>   从固定发布树执行：权限规范、声明式 .env、迁移、按序替换服务、回读
-  node.py verify --commit <pin commit>   从固定发布树执行：回读全部受管服务、运维域运行体与投递、配置漂移
+  node.py deploy --commit <pin commit>   从固定发布树执行：权限规范、声明式 .env、迁移、按序替换服务、回读，
+                                         然后部署声明的组件实例（ADR-20 §12）
+  node.py verify --commit <pin commit>   从固定发布树执行：回读全部受管服务、运维域运行体与投递、配置漂移、组件实例
   node.py runtime --commit <commit>      从固定发布树执行：输出 CI 配置的运行目录（组件入口据此导出
                                          KAILO_RUNTIME_DIR，ADR-20 §3）
   node.py drift --commit <commit>        从固定发布树执行，只读：列出长期运行服务的配置漂移（ADR-20 §9）
@@ -133,6 +134,7 @@ def containers(project):
         found.setdefault(labels.get(COMPOSE_SERVICE_LABEL, ""), []).append(dict(
             id=entry["Id"], name=entry["Name"].lstrip("/"), image_ref=entry["Config"]["Image"],
             image_id=entry["Image"], running=bool(state.get("Running")), exit_code=state.get("ExitCode"),
+            restart=((entry.get("HostConfig") or {}).get("RestartPolicy") or {}).get("Name") or "",
             health=(state.get("Health") or {}).get("Status"), config_hash=labels.get(COMPOSE_HASH_LABEL),
             working_dir=labels.get(COMPOSE_WORKDIR_LABEL),
             config_files=[f for f in (labels.get(COMPOSE_FILES_LABEL) or "").split(",") if f],
@@ -411,6 +413,161 @@ def active_ci_deploys(cfg):
         if status.get("stage") == "deploy" and status.get("state") in ("QUEUED", "RUNNING", "DEPLOYING"):
             jobs.append(job)
     return jobs
+
+
+# ---- 组件实例（ADR-20 §12）--------------------------------------------------------------
+# 纯函数供 inspect（经标准输入执行，不能导入 model）与 Release 共用。实例 env 的值只在内存里比较与改写，
+# 任何返回值、日志与 journal 都只含键名、状态与本 commit 来源记录中的 digest。
+
+COMPONENT_REFERENCE = re.compile(r"(?P<repo>[^\s@'\"]+)@sha256:(?P<hex>[0-9a-f]{64})")
+COMPONENT_HEX = re.compile(r"[0-9a-f]{64}")
+COMPONENT_PROJECT = re.compile(r"[a-z0-9][a-z0-9_-]*")
+COMPONENT_PROJECT_REF = re.compile(r"\$\{(?P<key>[A-Z][A-Z0-9_]*)\}")
+# 发布不创建键、不改仓库、不改占位值：这些状态的实例拒绝部署
+COMPONENT_REFUSED = ("missing", "duplicate", "invalid", "repository")
+COMPONENT_ENV_JOURNAL = "component-env-journal.jsonl"
+COMPONENT_SCRIPT = "deploy/components/component-deploy.sh"
+# 与 component-deploy.sh 的前置条件同一范围（DD-165(5)）：这些组件依赖 Core 的组件用量合同与已登记额度项
+COMPONENT_METERING_GATED = ("file-storage", "knowledge", "data-query")
+
+
+def component_registry(cfg):
+    """本仓库产物所在 registry 主机：CI 配置 environment.REGISTRY（与构建推送同一来源）。"""
+    value = str((cfg.get("environment") or {}).get("REGISTRY") or "")
+    if not re.fullmatch(r"[a-z0-9.-]+(:[0-9]+)?", value):
+        raise NodeError("CI 配置 environment.REGISTRY 缺失或不是 registry 主机")
+    return value
+
+
+def image_repository(ref):
+    """镜像引用去掉 digest 与 tag 后的仓库（registry 主机的端口不是 tag）。"""
+    name = str(ref or "").split("@", 1)[0]
+    head, _, last = name.rpartition("/")
+    return (head + "/" if head else "") + last.split(":", 1)[0]
+
+
+def component_want(pin, registry):
+    """声明键的期望值：整条引用 <REGISTRY>/<产物>@sha256:…，或 64 位十六进制 digest。"""
+    if pin["form"] == "reference":
+        return f"{registry}/{pin['artifact']}@{pin['digest']}"
+    return pin["digest"][len("sha256:"):]
+
+
+def component_pin_states(values, pins, registry):
+    """实例 env（read_env_file 的结果）中每个声明键相对本 commit pin 的状态，只返回状态、不返回值：
+    equal / differs 可改写；missing / duplicate / invalid / repository 拒绝部署。"""
+    states = {}
+    for pin in pins:
+        found = values.get(pin["key"]) or []
+        repo = f"{registry}/{pin['artifact']}"
+        if not found:
+            states[pin["key"]] = "missing"
+            continue
+        if len(found) > 1:
+            states[pin["key"]] = "duplicate"
+            continue
+        current = found[0]
+        if pin["form"] == "reference":
+            m = COMPONENT_REFERENCE.fullmatch(current)
+            if not m:
+                states[pin["key"]] = "invalid"
+                continue
+            if m["repo"] != repo:
+                states[pin["key"]] = "repository"
+                continue
+        else:
+            repos = values.get(pin["repository"]) or []
+            if len(repos) != 1 or repos[0] != repo:
+                states[pin["key"]] = "repository"
+                continue
+            if not COMPONENT_HEX.fullmatch(current):
+                states[pin["key"]] = "invalid"
+                continue
+        states[pin["key"]] = "equal" if current == component_want(pin, registry) else "differs"
+    return states
+
+
+def render_component_env(text, updates):
+    """只改写 updates 中的键（键 → 新值），其余行逐字保留；原值带成对引号的保留同一引号。
+    返回 (新文本, 改写的键)。每个键必须恰好一行（component_pin_states 已拒绝缺失与重复）。"""
+    lines = text.split("\n")
+    seen = {}
+    for i, line in enumerate(lines):
+        m = re.match(r"^([A-Z][A-Z0-9_]*)=(.*)$", line)
+        if not m or m.group(1) not in updates:
+            continue
+        key, value = m.group(1), m.group(2)
+        seen[key] = seen.get(key, 0) + 1
+        quote = value[0] if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"" else ""
+        lines[i] = f"{key}={quote}{updates[key]}{quote}"
+    wrong = sorted(k for k in updates if seen.get(k) != 1)
+    if wrong:
+        raise NodeError(f"实例 env 中这些键不是恰好一行：{wrong}")
+    return "\n".join(lines), sorted(updates)
+
+
+def component_project(values, spec):
+    """实例 Compose 项目名：字面值，或 ${KEY} 取自实例 env（必须恰好一行且是合法项目名）。"""
+    m = COMPONENT_PROJECT_REF.fullmatch(spec)
+    if not m:
+        return spec
+    found = values.get(m["key"]) or []
+    if len(found) != 1 or not COMPONENT_PROJECT.fullmatch(found[0]):
+        raise NodeError(f"实例 env 的 {m['key']} 缺失、重复或不是 Compose 项目名")
+    return found[0]
+
+
+def component_readback_problems(found, pins, registry):
+    """实例项目（containers() 的结果）相对 pin 的问题：每个产物至少一个运行中的容器且全部运行该 pin；
+    有重启策略的容器（长期运行）必须运行且健康（无健康检查视为健康）。一次性容器不参与。"""
+    problems = []
+    flat = [c for items in found.values() for c in items]
+    for pin in pins:
+        repo = f"{registry}/{pin['artifact']}"
+        using = [c for c in flat if image_repository(c["image_ref"]) == repo
+                 and (c["running"] or c.get("restart") not in ("", "no", None))]
+        if not any(c["running"] for c in using):
+            problems.append(f"{pin['artifact']}：实例中没有运行该产物的容器")
+        problems += [f"{c['name']}：运行镜像不是 {pin['artifact']} 的 pin" for c in using
+                     if ref_digest(c["image_ref"]) != pin["digest"]]
+    for c in flat:
+        if c.get("restart") in ("", "no", None):
+            continue
+        if not c["running"]:
+            problems.append(f"{c['name']} 未运行")
+        elif c["health"] not in (None, "healthy"):
+            problems.append(f"{c['name']} 健康状态 {c['health']}")
+    return problems
+
+
+def component_action(facts):
+    """not_installed（实例 env 不存在，只报告）/ refuse（声明键不可改写或项目无法确定）/
+    deploy（键与 pin 不同或运行容器不符）/ current（已等于 pin 且健康，跳过）。"""
+    if not facts.get("installed"):
+        return "not_installed"
+    if facts.get("error") or any(s in COMPONENT_REFUSED for s in facts["env"].values()):
+        return "refuse"
+    return "deploy" if any(s != "equal" for s in facts["env"].values()) or facts["problems"] else "current"
+
+
+def component_facts(inst, registry):
+    """一个组件实例的只读现场：是否安装、项目、各声明键状态、运行中该产物的 digest、回读问题。"""
+    if not os.path.isfile(inst["env"]):
+        return dict(installed=False)
+    try:
+        values = read_env_file(inst["env"])
+        project = component_project(values, inst["project"])
+        found = containers(project)
+    except (NodeError, OSError, ValueError) as error:
+        return dict(installed=True, error=str(error), env={}, problems=[str(error)])
+    running = {}
+    for pin in inst["pins"]:
+        repo = f"{registry}/{pin['artifact']}"
+        running[pin["artifact"]] = sorted({ref_digest(c["image_ref"]) or "?" for items in found.values() for c in items
+                                           if c["running"] and image_repository(c["image_ref"]) == repo})
+    return dict(installed=True, project=project, env=component_pin_states(values, inst["pins"], registry),
+                running=running, problems=component_readback_problems(found, inst["pins"], registry),
+                ids=sorted(c["id"] for items in found.values() for c in items))
 
 
 # ---- IdP 声明式配置（ADR-20 §1） ------------------------------------------------------
@@ -704,6 +861,16 @@ def inspect(request):
             except NodeError as error:  # 例如目标 commit 要求的 .env 键缺失：plan 照常输出，deploy 时重算
                 result["config_drift"] = dict(error=str(error))
     result["active_ci_deploys"] = active_ci_deploys(cfg)
+    # 组件实例（ADR-20 §12）：只读回实例 env 声明键的状态（不回传值）与实例项目中的运行 digest
+    instances = request.get("components") or []
+    if instances:
+        registry = component_registry(cfg)
+        result["components"] = {}
+        for inst in instances:
+            facts = component_facts(inst, registry)
+            facts.pop("ids", None)
+            facts["action"] = component_action(facts)
+            result["components"][inst["name"]] = facts
     keep_request = request.get("retention")
     if keep_request is not None:
         keep = [str(c) for c in (keep_request or {}).get("keep") or []]
@@ -1441,6 +1608,138 @@ class Release:
             bad.append(f"运维域投递尚未经 {self.delivery['restart']} 的启动入口生效")
         return bad
 
+    # -- 组件实例（ADR-20 §12）---------------------------------------------------------
+
+    def component_instances(self):
+        return self.model.component_instances(self.decl, self.units)
+
+    def components_state(self):
+        """每个声明的组件实例：声明 + 现场（component_facts）+ 动作。"""
+        instances = self.component_instances()
+        registry = component_registry(self.cfg) if instances else None
+        out = []
+        for inst in instances:
+            facts = component_facts(inst, registry)
+            out.append(dict(inst, **facts, action=component_action(facts)))
+        return out
+
+    def backup_component_env(self, inst):
+        """实例 env 的发布前快照：backups/<commit>/components/<组件>.env（0600）。同一 commit 已有快照即保留——
+        重跑时它仍是本次发布改写之前的原文件。"""
+        folder = os.path.join(self.backups, "components")
+        os.makedirs(folder, mode=0o700, exist_ok=True)
+        os.chmod(folder, 0o700)
+        target = os.path.join(folder, f"{inst['name']}.env")
+        if not os.path.isfile(target):
+            fd, tmp = tempfile.mkstemp(dir=folder, prefix=".")
+            try:
+                with os.fdopen(fd, "wb") as stream, open(inst["env"], "rb") as source:
+                    shutil.copyfileobj(source, stream)
+                    stream.flush()
+                    os.fchmod(stream.fileno(), 0o600)
+                    os.fsync(stream.fileno())
+                os.replace(tmp, target)
+            finally:
+                if os.path.exists(tmp):
+                    os.unlink(tmp)
+        return dict(kind="component-env", component=inst["name"], file=os.path.relpath(target, self.backups),
+                    bytes=os.path.getsize(target), sha256=sha256_file(target))
+
+    def apply_component_env(self, inst):
+        """把声明键原子改写为 pin（同目录临时文件 + fsync + 原子替换，权限与属主不变），其余键逐字保留；
+        只报告键与动作，journal（component-env-journal.jsonl）只记键、动作、commit 与时间。"""
+        path = inst["env"]
+        if os.path.islink(path) or not os.path.isfile(path):
+            raise NodeError(f"组件实例 {inst['name']} 的实例 env 不是普通文件")
+        registry = component_registry(self.cfg)
+        states = component_pin_states(read_env_file(path), inst["pins"], registry)
+        refused = sorted(k for k, s in states.items() if s in COMPONENT_REFUSED)
+        if refused:
+            raise NodeError(f"组件实例 {inst['name']} 的实例 env 键不可改写："
+                            + "，".join(f"{k} {states[k]}" for k in refused))
+        updates = {p["key"]: component_want(p, registry) for p in inst["pins"] if states[p["key"]] == "differs"}
+        actions = {k: ("changed" if k in updates else "unchanged") for k in states}
+        if updates:
+            with open(path, encoding="utf-8") as stream:
+                text, _ = render_component_env(stream.read(), updates)
+            info = os.stat(path)
+            folder = os.path.dirname(path)
+            fd, tmp = tempfile.mkstemp(dir=folder, prefix=".release-")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                    stream.write(text)
+                    stream.flush()
+                    os.fchmod(stream.fileno(), info.st_mode & 0o7777)
+                    if (os.fstat(stream.fileno()).st_uid, os.fstat(stream.fileno()).st_gid) != (info.st_uid, info.st_gid):
+                        os.fchown(stream.fileno(), info.st_uid, info.st_gid)
+                    os.fsync(stream.fileno())
+                os.replace(tmp, path)
+            finally:
+                if os.path.exists(tmp):
+                    os.unlink(tmp)
+            directory = os.open(folder, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+            journal = os.path.join(self.decl["node"]["journal"], COMPONENT_ENV_JOURNAL)
+            fd = os.open(journal, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            with os.fdopen(fd, "a", encoding="utf-8") as stream:
+                for key in sorted(updates):
+                    stream.write(json.dumps(dict(at=time.time(), commit=self.commit, component=inst["name"],
+                                                 key=key, action="changed")) + "\n")
+        for key, action in sorted(actions.items()):
+            say(f"   实例 env {key}: {action}")
+        return actions
+
+    def readback_component(self, inst, wait=0):
+        """回读：声明键等于 pin；实例项目中运行该产物的容器都运行 pin 且本节点解析出的就是运行镜像、registry
+        以同一 digest 提供；长期运行容器全部运行且健康。wait 秒内只等待容器就绪（健康检查 starting 等）。"""
+        registry = component_registry(self.cfg)
+        deadline = time.monotonic() + wait
+        while True:
+            values = read_env_file(inst["env"])
+            states = component_pin_states(values, inst["pins"], registry)
+            project = component_project(values, inst["project"])
+            found = containers(project)
+            problems = [f"实例 env {k} {s}" for k, s in sorted(states.items()) if s != "equal"]
+            problems += component_readback_problems(found, inst["pins"], registry)
+            if not problems or time.monotonic() >= deadline:
+                break
+            time.sleep(5)
+        images = {}
+        flat = [c for items in found.values() for c in items]
+        for pin in inst["pins"]:
+            repo = f"{registry}/{pin['artifact']}"
+            live = [c for c in flat if c["running"] and image_repository(c["image_ref"]) == repo]
+            if not live:
+                continue
+            ctr = live[0]
+            problems += [f"{pin['artifact']}：{p}" for p in judge_image(
+                pin["digest"], ctr["image_ref"], ctr["image_id"], resolve_local(ctr["image_ref"]), registry_has(ctr["image_ref"]))]
+            images[pin["artifact"]] = ref_digest(ctr["image_ref"])
+        if problems:
+            raise NodeError(f"组件实例 {inst['name']} 回读失败：" + "；".join(problems))
+        return dict(component=inst["name"], project=project, images=images,
+                    containers=[dict(name=c["name"], health=c["health"]) for c in sorted(flat, key=lambda c: c["name"])
+                                if c.get("restart") not in ("", "no", None)])
+
+    def deploy_component(self, inst):
+        """一个组件实例：备份实例 env → 原子改写声明键 → 组件正式入口 component-deploy.sh（固定发布树）→ 回读。"""
+        say(f"== 组件实例 {inst['name']}（项目 {inst.get('project')}）")
+        backup = self.backup_component_env(inst)
+        say(f"   实例 env 已备份：{backup['file']}")
+        env_actions = self.apply_component_env(inst)
+        script = os.path.join(self.tree, COMPONENT_SCRIPT)
+        code = subprocess.run(["bash", script, inst["name"], self.commit], cwd=self.tree,
+                              env=self.env({"COMPONENT_ENV_FILE": inst["env"]}),
+                              stdout=sys.stderr, stderr=sys.stderr).returncode
+        if code:
+            raise NodeError(f"组件实例 {inst['name']}：{COMPONENT_SCRIPT} 退出 {code}")
+        state = self.readback_component(inst, wait=300)
+        state.update(env=env_actions, backup=backup["file"])
+        return state
+
     def lock(self):
         os.makedirs(self.decl["node"]["journal"], mode=0o700, exist_ok=True)
         stream = open(os.path.join(self.decl["node"]["journal"], ".deploy.lock"), "a")
@@ -1523,6 +1822,10 @@ class Release:
         os.chmod(snapshot, 0o600)
         files.append(dict(kind="env", file="env.snapshot", bytes=os.path.getsize(snapshot),
                           sha256=sha256_file(snapshot)))
+        # 组件实例 env 的发布前快照（ADR-20 §12）；实例自身的数据库由 component-deploy.sh 在部署前备份
+        for inst in self.components_state():
+            if inst["installed"]:
+                files.append(self.backup_component_env(inst))
         manifest = dict(commit=self.commit, created_at=time.time(), targets=targets,
                         config_converge=converge, migrations=migrations, files=files, path=self.backups)
         fd, tmp = tempfile.mkstemp(dir=self.backups, prefix=".")
@@ -1861,21 +2164,27 @@ class Release:
         # 运维域运行体（ADR-20 §10）：这里只创建缺失的；已运行者的镜像或配置变化由 §9 的漂移收敛重建
         operated = self.operated_targets(found)
         migrations = [m for m in self.migration_plan(found) if m["pending"]]
+        # 组件实例（ADR-20 §12）在全部平台服务之后部署；其项目容器属于本次替换范围（不计为附带损伤）
+        components = self.components_state()
         journal = dict(commit=self.commit, started_at=time.time(), env=env_actions, targets=targets,
                        operated=operated, delivery=dict(written=delivered, pending=self.delivery_pending(),
                                                         digest=(self.delivery or {}).get("digest")),
                        config_drift=drift["drift"], config_converge=converge, config_recreated=[],
                        migrations=migrations, services=[], state="RUNNING",
+                       components=[dict(component=c["name"], action=c["action"], project=c.get("project"))
+                                   for c in components],
                        history=self.deploy_history())
         self.write_journal("deploy.json", journal)
         swapped = set(targets) | {p for t in targets for p in self.model.prerequisites(self.services, t)}
         touched = swapped | set(converge["before"]) | set(converge["after"]) | set(operated)
         replaced = {c["id"] for svc in touched for c in found.get(svc, [])}
+        replaced |= {cid for c in components if c["action"] == "deploy" for cid in c.get("ids") or []}
         disposable = tuple((self.decl.get("deploy") or {}).get("disposable_projects") or ())
         before = {cid: name for cid, name in long_running(running_containers(), disposable).items()
                   if cid not in replaced}
         say("== 目标：" + (", ".join(targets) or "无（运行镜像均已等于 pin，也无受管服务配置漂移）"))
         say("== 运维域运行体，创建：" + (", ".join(operated) or "无（均已运行）"))
+        say("== 组件实例：" + ("，".join(f"{c['name']} {c['action']}" for c in components) or "未声明"))
         if delivered:
             say("== 运维域投递改写：" + ", ".join(delivered))
         for key, label in (("before", "替换前"), ("after", "替换后")):
@@ -1952,21 +2261,56 @@ class Release:
             if metering and svc == metering.service:
                 align_metering()
         self.recreate_drifted(converge["after"], rendered, hashes, journal)
+        # 组件实例（ADR-20 §12）：平台服务全部就位之后逐个部署。一个实例失败不影响其余实例，也不回滚已部署的
+        # 平台服务（AGENTS 21：业务能力的缺口只阻断它自己）；失败在附带损伤比较之后统一报告，重跑 deploy 时按现场重算。
+        failed_components = []
+        # DD-165(5) 前置：组件部署在计量对齐之后（上面 Core 就绪时已 align-metering），并且 Core 的只读回读
+        # verify-metering 必须通过；不通过即拒绝部署受计量约束的组件（component-deploy.sh 自身也核对同一条件）。
+        metering_gate = None
+        if metering and any(c["action"] in ("deploy", "refuse") and c["name"] in COMPONENT_METERING_GATED
+                            for c in components):
+            say(f"== 组件部署前置：{metering.service} 内 platform-core {metering.spec['verify']}")
+            metering_gate = metering.verify()
+            journal["component_metering_gate"] = metering_gate
+            say("   " + ("通过" if not metering_gate["problems"] else "未通过：" + "；".join(metering_gate["problems"][:5])))
+        for entry, inst in zip(journal["components"], components):
+            if inst["action"] == "not_installed":
+                say(f"== 组件实例 {inst['name']}：实例 env 不存在（未安装），只报告")
+                continue
+            if inst["action"] == "current":
+                say(f"== 组件实例 {inst['name']}：实例 env 与运行镜像已等于 pin 且健康，跳过")
+                continue
+            try:
+                if metering_gate and metering_gate["problems"] and inst["name"] in COMPONENT_METERING_GATED:
+                    raise NodeError(f"组件实例 {inst['name']} 拒绝部署：平台 Core 的计量回读未通过（DD-165(5)）："
+                                    + "；".join(metering_gate["problems"][:5]))
+                if inst["action"] == "refuse":
+                    raise NodeError(f"组件实例 {inst['name']} 拒绝部署：" + (inst.get("error") or "，".join(
+                        f"{k} {s}" for k, s in sorted(inst["env"].items()) if s in COMPONENT_REFUSED)))
+                entry.update(self.deploy_component(inst), state="SUCCEEDED")
+            except (NodeError, OSError, ValueError, subprocess.SubprocessError) as error:
+                entry.update(state="FAILED", error=str(error))
+                failed_components.append(str(error))
+                say(f"   {error}")
+            self.write_journal("deploy.json", journal)
         # 部署前已运行、且不属于本次替换的容器必须仍在运行。同名但 ID 变化的（例如 start-core.sh
         # 按投递变化重建 Worker）如实记为重建，不当作停止；不再运行的才是失败。
         after = running_containers()
         names_after = set(after.values())
         stopped = sorted(name for cid, name in before.items() if cid not in after and name not in names_after)
         recreated = sorted(name for cid, name in before.items() if cid not in after and name in names_after)
-        journal.update(state="SUCCEEDED" if not stopped else "FAILED", finished_at=time.time(),
-                       unrelated_stopped=stopped, unrelated_recreated=recreated)
+        journal.update(state="SUCCEEDED" if not stopped and not failed_components else "FAILED",
+                       finished_at=time.time(), unrelated_stopped=stopped, unrelated_recreated=recreated)
         self.write_journal("deploy.json", journal)
-        if not stopped:
+        if not stopped and not failed_components:
             journal["retention"] = self.retention()
             self.write_journal("deploy.json", journal)
         lock.close()
         if stopped:
             raise NodeError(f"部署后不再运行的无关容器：{stopped}")
+        if failed_components:
+            raise NodeError("平台服务已部署并回读；组件实例失败（再次 run 从 deploy 继续，已等于 pin 的跳过）：\n"
+                            + "\n".join(failed_components))
         return journal
 
     def retention(self):
@@ -2020,12 +2364,21 @@ class Release:
             ctr = single_container(found, svc)
             if ctr and ctr["health"] not in (None, "healthy"):
                 bad.append(f"{svc} 健康状态 {ctr['health']}")
+        components = []
+        for inst in self.components_state():
+            if not inst["installed"]:
+                components.append(dict(component=inst["name"], installed=False))
+                continue
+            try:
+                components.append(self.readback_component(inst))
+            except (NodeError, OSError, ValueError) as error:
+                bad.append(str(error))
         journal_path = os.path.join(self.journal, "deploy.json")
         deploy = None
         if os.path.isfile(journal_path):
             with open(journal_path, encoding="utf-8") as stream:
                 deploy = json.load(stream)
-        value = dict(commit=self.commit, services=results, problems=bad, idp=idp, metering=metering,
+        value = dict(commit=self.commit, services=results, problems=bad, idp=idp, metering=metering, components=components,
                      config_drift_reported=[d for d in drift["drift"] if d["service"] in reported],
                      not_running=drift["absent"],
                      deploy_state=(deploy or {}).get("state"),

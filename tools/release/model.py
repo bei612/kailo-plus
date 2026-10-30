@@ -735,6 +735,72 @@ def render_peer_directory(existing, peers):
     return {"adapters": adapters, "protocolPeers": peers}
 
 
+# ---- 组件实例（ADR-20 §12）------------------------------------------------------------
+
+# deploy/components/component-deploy.sh 接受的组件名：发布入口只经该正式入口部署组件实例
+COMPONENT_NAMES = ("file-storage", "knowledge", "data-query", "document-editor")
+COMPONENT_PROJECT = re.compile(r"[a-z0-9][a-z0-9_-]*")
+COMPONENT_PROJECT_REF = re.compile(r"\$\{(?P<key>[A-Z][A-Z0-9_]*)\}")
+
+
+def component_instances(decl=None, all_units=None):
+    """release.yaml components → [dict(name, env, project, pins)]，按声明顺序（ADR-20 §12）。
+
+    每个组件实例是 CI 节点上一个已安装的组件参考实现（自己的 Compose 项目与 0600 实例 env），由组件部署入口
+    component-deploy.sh 启动；发布只保证实例 env 中声明的镜像键等于本 commit 来源记录中该产物的 artifact_digest。
+    pin 的两种写法：
+      KEY: <产物>                                   值为 <REGISTRY>/<产物>@sha256:<64>（整条引用）
+      KEY: {artifact: <产物>, repository: <键>}      值为 64 位十六进制 digest，仓库在另一个键中（只核对不改写）
+    project 为实例的 Compose 项目名，可写作 ${KEY} 从实例 env 读取。产物必须是来源记录中的镜像且已有 digest；
+    实例 env 路径、键名与项目名不是 secret，实例 env 的值一律不进入输出。"""
+    decl = decl or declarations()
+    spec = decl.get("components") or {}
+    if not isinstance(spec, dict):
+        raise ReleaseError(f"{DECLARATIONS}: components 必须是 组件名 → 实例 的映射")
+    all_units = all_units if all_units is not None else units(decl)
+    out, envs = [], set()
+    for name, item in spec.items():
+        where = f"{DECLARATIONS}: components.{name}"
+        if name not in COMPONENT_NAMES:
+            raise ReleaseError(f"{where}: 不是 component-deploy.sh 的组件（{', '.join(COMPONENT_NAMES)}）")
+        if not isinstance(item, dict) or set(item) != {"env", "project", "pins"}:
+            raise ReleaseError(f"{where}: 只声明 env、project、pins")
+        env = str(item["env"])
+        if not env.startswith("/") or os.path.normpath(env) != env or env in envs:
+            raise ReleaseError(f"{where}.env 必须是唯一的规范绝对路径")
+        envs.add(env)
+        project = str(item["project"])
+        if not COMPONENT_PROJECT_REF.fullmatch(project) and not COMPONENT_PROJECT.fullmatch(project):
+            raise ReleaseError(f"{where}.project 必须是 Compose 项目名或 ${{KEY}}")
+        pins_spec = item["pins"]
+        if not isinstance(pins_spec, dict) or not pins_spec:
+            raise ReleaseError(f"{where}.pins 必须是非空的 键 → 产物 映射")
+        pins, artifacts = [], set()
+        for key, target in pins_spec.items():
+            if not ENV_KEY.fullmatch(str(key)):
+                raise ReleaseError(f"{where}.pins: {key} 不是 env 键")
+            if isinstance(target, str):
+                artifact, form, repository = target, "reference", None
+            elif isinstance(target, dict) and set(target) == {"artifact", "repository"}:
+                artifact, form, repository = str(target["artifact"]), "digest", str(target["repository"])
+                if not ENV_KEY.fullmatch(repository) or repository in pins_spec:
+                    raise ReleaseError(f"{where}.pins.{key}.repository 必须是另一个不被改写的 env 键")
+            else:
+                raise ReleaseError(f"{where}.pins.{key} 只能是产物名或 {{artifact, repository}}")
+            unit = all_units.get(artifact)
+            if unit is None or not unit.upstream or unit.artifact.get("kind") != "image":
+                raise ReleaseError(f"{where}.pins.{key}: {artifact} 不是来源记录中的镜像产物")
+            digest = str(unit.artifact.get("artifact_digest") or "none")
+            if not DIGEST.fullmatch(digest):
+                raise ReleaseError(f"{where}.pins.{key}: {artifact} 尚无 artifact_digest，不能部署")
+            if artifact in artifacts:
+                raise ReleaseError(f"{where}.pins: {artifact} 重复")
+            artifacts.add(artifact)
+            pins.append(dict(key=str(key), artifact=artifact, form=form, repository=repository, digest=digest))
+        out.append(dict(name=str(name), env=env, project=project, pins=pins))
+    return out
+
+
 if __name__ == "__main__":
     args = sys.argv[1:]
     try:

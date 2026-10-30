@@ -1,0 +1,36 @@
+# Kailo CI 的 npm 拉取缓存（Verdaccio 代理模式）。只缓存 registry.npmjs.org 的公开包；不接受发布、不保存凭据。
+# 监听地址由 compose 的 VERDACCIO_ADDRESS/VERDACCIO_PORT 给出（127.0.0.1:55002）。
+storage: /verdaccio/storage/data
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+    timeout: 60s
+    max_fails: 5
+    fail_timeout: 2m
+    cache: true
+    agent_options:
+      keepAlive: true
+      maxSockets: 40
+packages:
+  '@*/*':
+    access: $all
+    publish: $nobody
+    unpublish: $nobody
+    proxy: npmjs
+  '**':
+    access: $all
+    publish: $nobody
+    unpublish: $nobody
+    proxy: npmjs
+auth:
+  htpasswd:
+    file: /verdaccio/storage/htpasswd
+    max_users: -1
+web:
+  enable: false
+server:
+  keepAliveTimeout: 60
+log:
+  type: stdout
+  format: json
+  level: warn

@@ -316,6 +316,8 @@ def compute_plan(root, node, decl, source):
     operated = model.operated_services(services, decl)
     delivery = model.peer_delivery(decl, services)
     by_name = {n: u for u in units.values() for n in pin_names(u)}
+    # 组件实例（ADR-20 §12）：声明在 plan 即校验；目标 digest 为本 commit 来源记录（重建者在 pin 后才知道）
+    components = model.component_instances(decl, units)
 
     pinned = {}
     for svc, image in all_managed.items():
@@ -335,7 +337,7 @@ def compute_plan(root, node, decl, source):
                               env_unset=env_unset, required_env=model.required_env(text), migrations=migrations,
                               idp=dict(files=idp_files, env=idp_env, journal=str(decl["node"]["journal"])),
                               config_drift=dict(commit=source, overlays=[str(x) for x in decl.get("overlays") or []]),
-                              retention=dict(keep=[source])))
+                              components=components, retention=dict(keep=[source])))
 
     plan = dict(source=source, head=model.head(), compose_project=model.project_name(text), units={},
                 sources=facts["sources"])
@@ -435,7 +437,50 @@ def compute_plan(root, node, decl, source):
     plan["receipt"] = facts.get("receipt")
     plan["active_ci_deploys"] = facts.get("active_ci_deploys", [])
     plan["retention"] = facts.get("retention")
+    plan["components"] = component_entries(components, facts.get("components") or {}, rebuilt)
     return plan
+
+
+def component_entries(instances, facts, rebuilt):
+    """组件实例的计划（ADR-20 §12）：节点回报的实例 env 键状态（不含值）与运行 digest，按声明顺序。
+    本次重建的产物 pin 后才有新 digest，其实例必然部署。"""
+    out = []
+    for inst in instances:
+        f = facts.get(inst["name"]) or {}
+        pins = [dict(key=p["key"], artifact=p["artifact"], digest=p["digest"], rebuilt=p["artifact"] in rebuilt,
+                     env=(f.get("env") or {}).get(p["key"]), running=(f.get("running") or {}).get(p["artifact"]) or [])
+                for p in inst["pins"]]
+        action = f.get("action") or "unknown"
+        if action == "current" and any(p["rebuilt"] for p in pins):
+            action = "deploy"
+        out.append(dict(name=inst["name"], env=inst["env"], project=f.get("project") or inst["project"],
+                        action=action, problems=f.get("problems") or [], error=f.get("error"), pins=pins))
+    return out
+
+
+COMPONENT_ACTIONS = {
+    "deploy": "将部署：（受计量约束的组件先通过 verify-metering）备份实例 env → 改写声明键 → component-deploy.sh → 回读",
+    "current": "实例 env 与运行镜像已等于 pin 且健康，跳过",
+    "not_installed": "实例 env 不存在（未安装），只报告",
+    "refuse": "声明键不可改写或项目无法确定，deploy 将拒绝该实例（不影响平台服务）",
+    "unknown": "节点未回报（节点代码早于 ADR-20 §12）",
+}
+
+
+def component_lines(entries):
+    """计划中的组件实例段：只列键名、状态与 digest，不含实例 env 的值。"""
+    if not entries:
+        return []
+    lines = ["组件实例（全部平台服务之后，经固定发布树 deploy/components/component-deploy.sh，按声明顺序）："]
+    for c in entries:
+        lines.append(f"  {c['name']}（项目 {c['project']}）：{COMPONENT_ACTIONS.get(c['action'], c['action'])}")
+        for p in c["pins"]:
+            want = "本次重建的新 digest" if p["rebuilt"] else p["digest"][:19]
+            running = ", ".join(d[:19] for d in p["running"]) or "无运行容器"
+            lines.append(f"    {p['key']} → {p['artifact']} {want}；实例 env {p['env'] or '未知'}；运行 {running}")
+        for problem in ([c["error"]] if c.get("error") else []) + [x for x in c["problems"] if x != c.get("error")]:
+            lines.append(f"    ！{problem}")
+    return lines
 
 
 def gib(value):
@@ -554,10 +599,13 @@ def render_plan(plan, note=None):
             + (f"尚未生效，经 {dl['restart']} 的启动入口生效" if dl["pending"] else "已生效"))
     if p["active_ci_deploys"]:
         say(f"  ！CI 队列有进行中的 deploy：{p['active_ci_deploys']}；节点 deploy 会拒绝并发")
+    for line in component_lines(p.get("components")):
+        say("  " + line)
     for line in retention_lines(p.get("retention")):
         say("  " + line)
     say("\n[6] verify（CI 节点）：受管服务镜像 digest/镜像 ID/健康、buzz-web build-info、无关容器、IdP 声明只读回读；"
-        "长期运行服务配置哈希与 configs 内容一致且健康（drift: report 的服务只报告）、运维域运行体与投递；业务验收不在此判定")
+        "长期运行服务配置哈希与 configs 内容一致且健康（drift: report 的服务只报告）、运维域运行体与投递、"
+        "组件实例的 env 键/运行镜像/健康；业务验收不在此判定")
 
 
 def rehearse(plan):
@@ -589,8 +637,10 @@ def rehearse(plan):
     steps = ([f"up {s}（运维域运行体）" for s in operated] + [f"up --force-recreate {s}" for s in c["before"]]
              + [f"IdP（{idp_action}--declare-native-user-pictures）"] + plan["deploy"]["order"]
              + [f"up --force-recreate {s}" for s in c["after"]])
+    components = [f"组件实例 {c['name']}" for c in plan.get("components") or [] if c["action"] in ("deploy", "refuse")]
     say(f"  deploy: ssh 节点 … deploy：权限规范 → 声明式 .env → 运维域投递 → 迁移 → 配置一次性服务 → {' → '.join(steps)}"
-        " → 回读 → 发布树保留（归档回执后删除未被引用的旧发布树与超时暂存）")
+        + "".join(f" → {c}（备份实例 env → 改写声明键 → component-deploy.sh → 回读）" for c in components)
+        + " → 回读 → 发布树保留（归档回执后删除未被引用的旧发布树与超时暂存）")
     say("  verify: ssh 节点 … verify（含 bootstrap.sh --verify-client-redirects / --verify-native-client-profiles 只读回读）")
 
 
@@ -851,6 +901,11 @@ class Release:
                 f"命令 {', '.join(c['command'] for c in idp.get('commands', []))}")
         if value.get("unrelated_recreated"):
             say(f"  同名重建（非本次目标，如 start-core.sh 按投递重建）：{value['unrelated_recreated']}")
+        for c in value.get("components", []):
+            if c.get("state"):
+                say(f"  组件实例 {c['component']}: {c['state']}"
+                    + (f" {', '.join(f'{a} {d[:19]}' for a, d in (c.get('images') or {}).items())}" if c.get("images") else "")
+                    + (f"；{c['error']}" if c.get("error") else ""))
         kept = value.get("retention") or {}
         if kept.get("error"):
             say(f"  发布树保留未执行：{kept['error']}")
@@ -861,7 +916,8 @@ class Release:
     def verify(self, plan):
         value = self.node_stage("verify")
         idp = value.get("idp") or {}
-        say(f"  回读 {len(value.get('services', []))} 个受管服务与 pin 一致；IdP 声明回读一致"
+        installed = [c for c in value.get("components", []) if c.get("installed", True)]
+        say(f"  回读 {len(value.get('services', []))} 个受管服务、{len(installed)} 个组件实例与 pin 一致；IdP 声明回读一致"
             f"（组件专属客户端 {idp.get('native_client_profiles') or '未知'}，成员目录 client "
             f"{idp.get('directory_clients') or '未知'}）；{value.get('business_acceptance')}")
 

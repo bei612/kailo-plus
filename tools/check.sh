@@ -38,6 +38,7 @@ run_in_check_container() (
   set -euo pipefail
   source tools/container-safety.sh
   container_safety_init
+  container_require_hot_tmpdir
   container_resource_preflight
   : "${CHECK_CPUS:?执行配置必须提供 CHECK_CPUS}"
   : "${CHECK_MEMORY:?执行配置必须提供 CHECK_MEMORY}"

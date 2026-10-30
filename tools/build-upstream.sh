@@ -17,7 +17,10 @@ cd "$(dirname "$0")/.." || exit 2
 
 project="${1:?用法: tools/build-upstream.sh <产物>}"
 . tools/container-safety.sh
+# shellcheck source=ci/dep-cache/build-args.sh
+. tools/ci/dep-cache/build-args.sh
 container_safety_init
+container_require_hot_tmpdir
 container_resource_preflight
 container_require_limited_builder
 plan=$(python3 tools/upstream_manifest.py plan "$project") || exit 2
@@ -85,6 +88,9 @@ echo "== 源码：$tree（基准 ${base:0:12}） =="
 python3 tools/upstream_manifest.py stage "$project" "$src"
 [ -d "$src/$ctx" ] || { echo "build_context $ctx 不存在于构建输入" >&2; exit 2; }
 dockerfile_args=(-f "$src/$dockerfile")
+# 依赖下载缓存（07 §2.1）：按 Dockerfile 声明的 ARG 推导，只作用于构建阶段的依赖下载，不改变来源记录与产物输入
+dependency_cache_args "$src/$dockerfile"
+arg_args+=("${DEPENDENCY_CACHE_ARGS[@]}")
 container_resource_preflight
 container_require_limited_builder
 build_log=$(mktemp "$TMPDIR/build-$artifact.XXXXXX.log")

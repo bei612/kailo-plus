@@ -11,6 +11,11 @@
 release 从一致性运行到 adapter 上线的全链路。生产上的改动只经发布入口（`tools/release/kailo-release.sh`）或组件部署入口
 （`component-deploy.sh`）完成；release、binding 与资源只经各自的 Governed Action（flow 脚本以测试账号走产品流程）。
 
+组件实例原生栈的镜像升级（Cells、DocumentServer、WeKnora、Wren 的产物 digest 变化）经发布入口执行（ADR-20 §12）：发布的 deploy 阶段
+在平台服务之后按 `tools/release/release.yaml` 的 `components` 备份实例 env、原子改写声明的镜像键、调用
+`component-deploy.sh <component> <pin commit>` 并回读，verify 阶段再次回读。本手册中的 `component-deploy.sh` 调用只用于
+`--conformance`、`--conformance-close`、`--adapter` 与 `--check`，不用于替换原生栈镜像。
+
 ## 触发信号
 
 - 某组件需要以 `searchSource=SUPPORTED` 的 `REMOTE_ADAPTER` release 接入「搜索全部」或能力契约（DD-138(5)）；
@@ -32,7 +37,8 @@ bash $S/deploy/components/platform-config-check.sh   # 第 3、4 节
 
 ## 可执行步骤
 
-0. 前置：含 DD-136(2) 的 commit 已合并 main 并经发布入口发布（Core/Worker 为该构建，`.env` 已收敛）；adapter 产物不过期
+0. 前置：含 DD-136(2) 的 commit 已合并 main 并经发布入口发布（Core/Worker 为该构建，`.env` 已收敛；该发布的 verify 已回读
+   组件实例运行来源记录中的 digest，`deploy.json` 的 `components` 无 FAILED）；adapter 产物不过期
    （问数 `data-query-ui` 须含 request_id 校验修复后重建）；Catalog 第二位管理员存在（`flow/catalog-approver.mjs`）。
 1. 能力契约：`node $S/tools/component-release/flow/capability-contract-activate.mjs --registration contracts/adapter/<category>.v<N>/registration.json`
    （`file_storage.v2`、`data_query.v2`、`knowledge.v3`；已 ACTIVE 且摘要一致只报告）。
@@ -65,6 +71,8 @@ bash $S/deploy/components/platform-config-check.sh   # 第 3、4 节
 ## 不可执行的动作
 
 - 手工改 `.env` 切换或替换一致性候选，手工写 `data/conformance/` 或交付目录，替换 `PROTOCOL_PEER` 候选；
+- 手工改实例 env（`/volumes/data/kailo/components/*/` 下的 `deploy.env`、`native.env`）中的镜像键，或在发布入口之外以
+  不带参数的 `component-deploy.sh` 替换原生栈镜像（镜像 pin 由发布入口按来源记录改写，ADR-20 §12）；
 - 人在隔离运行阶段之间生成原生凭据、做原生 onboarding，或续用失败的运行目录（重跑开新目录）；
 - 在日志、命令参数、环境变量列表或生产 OpenBao 中出现隔离运行或 binding 的凭据；把生产 provider 凭据、Gateway key 或平台
   key 投递给隔离环境；

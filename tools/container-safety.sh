@@ -25,11 +25,36 @@ container_require_data_path() {
   path=$(realpath -e -- "$1") || {
     container_safety_error "数据路径不存在：$1"; return 2;
   }
-  # 项目专属数据位置：/volumes/data（容量）或 NVMe 上的 /var/lib/kailo-ci（高频临时写入，07 §2.1）
+  # 项目专属数据根只有两个（07 §2.1）：NVMe 上的 /var/lib/kailo-ci（热数据）与 /volumes/data（冷数据；
+  # 其中 kailo/{ci,ci-private,ci-artifacts,check-cache,buildkit-core-state} 是 NVMe 的 bind mount）
   case "$path" in
-    /volumes/data/*|/var/lib/kailo-ci/*) printf '%s\n' "$path" ;;
-    *) container_safety_error "缓存、临时目录与日志必须位于 /volumes/data 或 /var/lib/kailo-ci：$path" ;;
+    /var/lib/kailo-ci/*|/volumes/data/*) printf '%s\n' "$path" ;;
+    *) container_safety_error "缓存、临时目录与日志必须位于 /var/lib/kailo-ci 或 /volumes/data：$path" ;;
   esac
+}
+
+# 路径实际所在块设备是否为机械盘：输出 1（机械）、0（非机械）或空（无法判定，例如容器内没有 /sys 块设备信息）。
+# 按 findmnt 的实际 mount 判定，bind mount 取其来源设备；分区取所属磁盘的 queue/rotational。
+container_path_rotational() {
+  local majmin node
+  majmin=$(findmnt -n -o MAJ:MIN --target "$1" 2>/dev/null | head -n 1 | tr -d '[:space:]') || return 0
+  [ -n "$majmin" ] || return 0
+  node=/sys/dev/block/$majmin
+  [ -e "$node/queue/rotational" ] || node=$node/..
+  [ -r "$node/queue/rotational" ] && cat "$node/queue/rotational"
+  return 0
+}
+
+# 高频临时写入（作业 TMPDIR、构建上下文暂存、解包）：数据根之内，且不在机械盘上。CI 节点的 /volumes/data 是
+# 2 TB SMR 机械盘，随机写下写回停滞会拖住生产组件（07 §2.1），因此按实际块设备拒绝，而不是只看路径前缀。
+container_require_hot_path() {
+  local path
+  path=$(container_require_data_path "$1") || return 2
+  if [ "$(container_path_rotational "$path")" = 1 ]; then
+    container_safety_error "高频临时写入必须位于 NVMe（/var/lib/kailo-ci），$path 在机械盘上"
+    return 2
+  fi
+  printf '%s\n' "$path"
 }
 
 container_safety_init() {
@@ -49,6 +74,14 @@ container_safety_init() {
   [ -d "$TMPDIR" ] && [ -w "$TMPDIR" ] || {
     container_safety_error "TMPDIR 不是可写目录：$TMPDIR"; return 2;
   }
+  export TMPDIR
+}
+
+# 构建与检查入口（tools/check.sh、tools/build-upstream.sh、tools/release.sh）在 container_safety_init 之后调用：
+# 作业 TMPDIR 承载构建上下文暂存与解包，必须在 NVMe。组件与平台的启动入口只渲染少量文件，沿用 container_safety_init
+# 的数据根核对，实例 env 中既有的 TMPDIR 不因此失效。
+container_require_hot_tmpdir() {
+  TMPDIR=$(container_require_hot_path "$TMPDIR") || return 2
   export TMPDIR
 }
 

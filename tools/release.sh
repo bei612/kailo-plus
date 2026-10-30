@@ -16,7 +16,10 @@ OUT=dist
 # 用 BuildKit 构建：Dockerfile 里的 cache mount 依赖它，且它是现代 Docker 的默认构建器
 export DOCKER_BUILDKIT=1
 . tools/container-safety.sh
+# shellcheck source=ci/dep-cache/build-args.sh
+. tools/ci/dep-cache/build-args.sh
 container_safety_init
+container_require_hot_tmpdir
 
 say()  { printf '%s\n' "$*"; }
 pass() { printf '  \033[32mOK\033[0m   %s\n' "$*"; }
@@ -81,6 +84,12 @@ PY
     runtime_image="${REGISTRY:?Core release 需要已使用的 REGISTRY}/agent-runtime@$runtime_digest"
     build_args+=(--build-arg "AGENT_RUNTIME_IMAGE=$runtime_image")
   fi
+  # 依赖下载缓存（07 §2.1）：Dockerfile 声明 ARG GOPROXY/NPM_REGISTRY 时才投递，只作用于构建阶段
+  dependency_cache_args "$BUILD_CONTEXT/$unit/Dockerfile"
+  build_args+=("${DEPENDENCY_CACHE_ARGS[@]}")
+  cache_args=$(printf '%s\n' "${DEPENDENCY_CACHE_ARGS[@]}" | python3 -I -c '
+import json, sys
+print(json.dumps(dict(l.rstrip("\n").split("=", 1) for l in sys.stdin if l.startswith(("NPM_REGISTRY=", "GOPROXY=")))))')
   # 校验与执行使用同一 Docker 身份；服务端限额约束真正的编译进程。
   "${CONTAINER_DOCKER[@]}" buildx build --builder "$BUILDX_BUILDER" --push --progress=plain \
     --metadata-file "$metadata" \
@@ -107,9 +116,9 @@ PY
   lock_digest=$( [ -n "$locks" ] && git hash-object $locks | sha256sum | cut -d' ' -f1 || echo none )
 
   prov="$OUT/$unit.${digest#sha256:}.provenance.json"
-  python3 - "$unit" "$digest" "$COMMIT" "$lock_digest" "$prov" "$runtime_image" <<'PY'
+  python3 - "$unit" "$digest" "$COMMIT" "$lock_digest" "$prov" "$runtime_image" "$cache_args" <<'PY'
 import json, os, subprocess, sys
-unit, digest, commit, lock_digest, out, runtime_image = sys.argv[1:7]
+unit, digest, commit, lock_digest, out, runtime_image, cache_args = sys.argv[1:8]
 remote = subprocess.run(["git","config","--get","remote.origin.url"],
                         capture_output=True, text=True).stdout.strip() or "none"
 json.dump({
@@ -121,7 +130,9 @@ json.dump({
             "buildType": "https://platform.local/docker-build/v1",
             "externalParameters": {"dockerfile": f"{unit}/Dockerfile", "context": ".",
                                    "buildArgs": {"PLATFORM_BUILD_ID": commit,
-                                                 **({"AGENT_RUNTIME_IMAGE": runtime_image} if runtime_image else {})}},
+                                                 **({"AGENT_RUNTIME_IMAGE": runtime_image} if runtime_image else {}),
+                                                 # 构建阶段的依赖下载来源（07 §2.1），不进入运行镜像
+                                                 **json.loads(cache_args or "{}")}},
             "resolvedDependencies": [
                 {"uri": remote, "digest": {"gitCommit": commit}},
                 {"name": "dependency-locks", "digest": {"sha256": lock_digest}},
