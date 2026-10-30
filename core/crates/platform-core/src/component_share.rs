@@ -73,6 +73,8 @@ pub(crate) fn native_type_for(category: &str) -> Option<&'static str> {
     match category {
         "file_storage" => Some("folder"),
         "knowledge" => Some("knowledge_base"),
+        // DD-168: the data modelling container is its data source.
+        "data_query" => Some("data_source"),
         _ => None,
     }
 }
@@ -81,7 +83,7 @@ pub(crate) fn native_type_for(category: &str) -> Option<&'static str> {
 pub(crate) fn allowed_subjects(native_type: &str) -> &'static [Kind] {
     match native_type {
         "folder" => &[Kind::Principal, Kind::Workspace, Kind::Tenant],
-        "knowledge_base" => &[Kind::Workspace, Kind::Tenant],
+        "knowledge_base" | "data_source" => &[Kind::Workspace, Kind::Tenant],
         _ => &[],
     }
 }
@@ -722,6 +724,7 @@ pub(super) async fn prewrite(
         }
         None => return Err(conflict()),
     }
+    remember_name(tx, ae.target_id, &intent.display_name).await?;
     Ok(())
 }
 
@@ -1220,6 +1223,19 @@ async fn store_intent(
     .bind(INTENT_MINUTES as i32)
     .fetch_one(&mut *tx)
     .await?;
+    // DD-168: the latest component name of an already registered object.
+    if let Some(existing) = shared(
+        &mut tx,
+        entry.tenant_id,
+        binding,
+        &native_type,
+        &request.native_id,
+        false,
+    )
+    .await?
+    {
+        remember_name(&mut tx, existing.id, &request.name).await?;
+    }
     tx.commit().await?;
     let created = json!({"intentId": id, "expiresAt": rfc3339(expires_at)});
     let typed: contracts::ComponentShareIntentCreated =
@@ -1586,6 +1602,46 @@ async fn receipt(
 
 const ADOPT_ACTION: &str = "component.share.adopt";
 
+/// DD-168: the component's display name of a shared object, refreshed by every
+/// later adoption or share intent for the same native key.
+pub(crate) async fn remember_name(
+    conn: &mut PgConnection,
+    resource: Uuid,
+    name: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "insert into catalog.component_shared_object_name(resource_id,display_name) values($1,$2)
+         on conflict (resource_id) do update set display_name=excluded.display_name,updated_at=now()
+         where catalog.component_shared_object_name.display_name is distinct from excluded.display_name",
+    )
+    .bind(resource)
+    .bind(name)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// The native creator is not an ACTIVE HUMAN in the directory scope: a
+/// definite refusal of this item, which the component reports (DD-168(1)).
+pub(crate) const OWNER_UNRESOLVED: &str = "OWNER_UNRESOLVED";
+
+enum AdoptError {
+    Refused(Refusal),
+    OwnerUnresolved,
+}
+
+impl From<Refusal> for AdoptError {
+    fn from(error: Refusal) -> Self {
+        Self::Refused(error)
+    }
+}
+
+impl From<sqlx::Error> for AdoptError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::Refused(error.into())
+    }
+}
+
 /// Validated adoption grants: shape, no duplicate subject, at most 100, sorted.
 pub(crate) fn adoption_grants(
     grants: &[contracts::ComponentShareGrant],
@@ -1639,7 +1695,16 @@ pub(crate) async fn adopt(
             tracing::info!(%binding, adopted = %answer["adopted"], "既有原生共享采纳已应答");
             (StatusCode::OK, [(CACHE_CONTROL, "no-store")], Json(answer)).into_response()
         }
-        Err(error) => {
+        Err(AdoptError::OwnerUnresolved) => {
+            tracing::info!(%binding, "既有原生共享的创建者不在目录范围内");
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                [(CACHE_CONTROL, "no-store")],
+                Json(json!({"reasonCode": OWNER_UNRESOLVED})),
+            )
+                .into_response()
+        }
+        Err(AdoptError::Refused(error)) => {
             tracing::info!(%binding, reason = ?error.reason(), "既有原生共享采纳被拒绝或不可用");
             respond_service(&error)
         }
@@ -1716,7 +1781,7 @@ async fn store_adoption(
     headers: &HeaderMap,
     binding: Uuid,
     body: &[u8],
-) -> Result<Value, Refusal> {
+) -> Result<Value, AdoptError> {
     let header = crate::component_directory::bearer(headers)?;
     let core_client = std::env::var("OIDC_SERVICE_CLIENT_ID").ok();
     let mut tx = state.pool.begin().await?;
@@ -1738,14 +1803,14 @@ async fn store_adoption(
         || request.owner.issuer.is_empty()
         || request.owner.subject.is_empty()
     {
-        return Err(invalid());
+        return Err(invalid().into());
     }
     let grants = adoption_grants(&request.grants)?;
     let now_binding = binding_now(&mut tx, entry.tenant_id, binding)
         .await?
         .ok_or_else(denied)?;
     if now_binding.category.as_deref().and_then(native_type_for) != Some(native_type.as_str()) {
-        return Err(invalid());
+        return Err(invalid().into());
     }
     let workspace = request
         .workspace_id
@@ -1755,7 +1820,7 @@ async fn store_adoption(
     let workspace = match (entry.workspace_id, workspace) {
         (Some(scope), None) => Some(scope),
         (Some(scope), Some(w)) if w == scope => Some(scope),
-        (Some(_), Some(_)) => return Err(denied()),
+        (Some(_), Some(_)) => return Err(denied().into()),
         (None, w) => w,
     };
     if let Some(workspace) = workspace {
@@ -1767,7 +1832,7 @@ async fn store_adoption(
         .fetch_one(&mut *tx)
         .await?;
         if !active {
-            return Err(denied());
+            return Err(denied().into());
         }
     }
     let owner: Option<Uuid> = sqlx::query_scalar(
@@ -1784,7 +1849,9 @@ async fn store_adoption(
     .bind(&request.owner.subject)
     .fetch_optional(&mut *tx)
     .await?;
-    let owner = owner.ok_or_else(denied)?;
+    let Some(owner) = owner else {
+        return Err(AdoptError::OwnerUnresolved);
+    };
     if let Some(scope) = entry.workspace_id {
         let checked = state
             .governance
@@ -1799,7 +1866,7 @@ async fn store_adoption(
             .await
             .map_err(|_| unavailable("authorization"))?;
         if !checked.allowed {
-            return Err(denied());
+            return Err(AdoptError::OwnerUnresolved);
         }
     }
     // Serialise adoptions of one native object; the unique (binding, type, id)
@@ -1827,8 +1894,11 @@ async fn store_adoption(
         .bind(existing.id)
         .fetch_optional(&mut *tx)
         .await?;
+        if matches!(existing.state.as_str(), "ACTIVE" | "PROVISIONING") {
+            remember_name(&mut tx, existing.id, &request.name).await?;
+        }
         tx.commit().await?;
-        return match (existing.state.as_str(), pending) {
+        let answer = match (existing.state.as_str(), pending) {
             // An adoption that has not finished: finish it with its frozen grants.
             ("PROVISIONING", Some(None)) => finish_adoption(state, existing.id).await,
             ("ACTIVE", _) => {
@@ -1845,6 +1915,7 @@ async fn store_adoption(
             }
             _ => Err(conflict()),
         };
+        return Ok(answer?);
     }
     subjects_admissible(
         &mut tx,
@@ -1886,6 +1957,7 @@ async fn store_adoption(
     .bind(&frozen)
     .execute(&mut *tx)
     .await?;
+    remember_name(&mut tx, resource, &request.name).await?;
     let service: Uuid = sqlx::query_scalar(
         "select service_principal_id from catalog.application_binding where id=$1",
     )
@@ -1910,7 +1982,7 @@ async fn store_adoption(
     )
     .await?;
     tx.commit().await?;
-    finish_adoption(state, resource).await
+    Ok(finish_adoption(state, resource).await?)
 }
 
 /// Write the adopted object's projection and frozen grants, read them back,
@@ -2176,7 +2248,12 @@ mod tests {
         assert!(!subjects_shape_ok("folder", Some(w), &[other]));
         assert_eq!(native_type_for("file_storage"), Some("folder"));
         assert_eq!(native_type_for("knowledge"), Some("knowledge_base"));
-        assert_eq!(native_type_for("data_query"), None);
+        assert_eq!(native_type_for("data_query"), Some("data_source"));
+        assert_eq!(
+            allowed_subjects("data_source"),
+            allowed_subjects("knowledge_base")
+        );
+        assert_eq!(native_type_for("other"), None);
     }
 
     #[test]

@@ -2,10 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "enums/component_shared_native_type.schema.json",
   "title": "ComponentSharedNativeType",
-  "description": "DD-164(4) shareable native object types, fixed per presentation category: file_storage -> folder, knowledge -> knowledge_base (phase 1).",
+  "description": "DD-164(4) shareable native object types, fixed per presentation category: file_storage -> folder, knowledge -> knowledge_base, data_query -> data_source (DD-168 top-level containers).",
   "type": "string",
   "enum": [
     "folder",
-    "knowledge_base"
+    "knowledge_base",
+    "data_source"
   ]
 }

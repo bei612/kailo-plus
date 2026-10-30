@@ -105,7 +105,7 @@ implementation:
     - contracts/enums/component_receipt_outcome.schema.json
     - contracts/enums/component_receipt_failure_kind.schema.json
     - contracts/enums/component_directory_receipt_state.schema.json
-  migrations: [core/migrations/20261102010000_component_share.up.sql, core/migrations/20261102040000_member_create_policy.up.sql]
+  migrations: [core/migrations/20261102010000_component_share.up.sql, core/migrations/20261102040000_member_create_policy.up.sql, core/migrations/20261102050000_shared_object_name.up.sql]
 
 runtime:
   routes: ["/api/v1/component-shares/intents/{id}", "/api/v1/application-bindings/{id}/directory-receipt"]
