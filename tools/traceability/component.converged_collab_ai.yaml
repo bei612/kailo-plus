@@ -38,8 +38,12 @@ validation:
       ref: file-storage/frontend/web/service/kailo-notify_test.go
     - dimension: 单元测试
       ref: data-query/wren-ai-service/tests/pytest/services/test_kailo_user_guide.py
+    - dimension: 单元测试
+      ref: file-storage/frontend/assets/gui.ajax/res/js/ui/Workspaces/views/kailoChat.test.js
     - dimension: 组件核验
       ref: knowledge/fork/verify/converge-native-collab-ai.md
+    - dimension: 组件核验
+      ref: file-storage/fork/verify/converge-native-collab.md
     - dimension: 组件核验
       ref: data-query/fork/verify/converge-native-collab-ai.md
 
