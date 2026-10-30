@@ -149,9 +149,33 @@ def build_message(completion: Any, choice: Any) -> ChatMessage:
             "index": choice.index,
             "finish_reason": choice.finish_reason,
             "usage": dict(completion.usage) if hasattr(completion, "usage") else {},
+            # Kailo: a hybrid-thinking route returns its hidden reasoning apart
+            # from the answer. When the output limit is spent there the answer
+            # is absent; callers must see that rather than an empty answer.
+            "reasoning_only": not (choice.message.content or "").strip()
+            and has_reasoning(choice.message),
         }
     )
     return chat_message
+
+
+def has_reasoning(message: Any) -> bool:
+    """Whether a completion message carries hidden reasoning text.
+
+    LiteLLM exposes it as ``reasoning_content``; an OpenAI-compatible server
+    passing it through unnormalized names it ``reasoning`` (vLLM) and LiteLLM
+    keeps such fields in ``provider_specific_fields``.
+    """
+    extra = getattr(message, "provider_specific_fields", None) or {}
+    return any(
+        isinstance(value, str) and value.strip()
+        for value in (
+            getattr(message, "reasoning_content", None),
+            getattr(message, "reasoning", None),
+            extra.get("reasoning_content") if isinstance(extra, dict) else None,
+            extra.get("reasoning") if isinstance(extra, dict) else None,
+        )
+    )
 
 
 def check_finish_reason(message: ChatMessage) -> None:
@@ -170,6 +194,12 @@ def check_finish_reason(message: ChatMessage) -> None:
             message.meta["index"],
             message.meta["finish_reason"],
         )
+        if message.meta.get("reasoning_only"):
+            logger.warning(
+                "The completion for index %s spent its whole output limit on hidden reasoning "
+                "and returned no answer; the model route must not think for this caller.",
+                message.meta["index"],
+            )
     if message.meta["finish_reason"] == "content_filter":
         logger.warning(
             "The completion for index %s has been truncated due to the content filter. "

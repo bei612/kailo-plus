@@ -22,7 +22,6 @@ import Prompt from '@/components/pages/home/prompt';
 import useAskPrompt, {
   getIsFinished,
   canFetchThreadResponse,
-  isRecommendedFinished,
 } from '@/hooks/useAskPrompt';
 import useAdjustAnswer from '@/hooks/useAdjustAnswer';
 import useModalAction from '@/hooks/useModalAction';
@@ -61,6 +60,7 @@ import { useCreateSqlPairMutation } from '@/apollo/client/graphql/sqlPairs.gener
 import { v4 as uuidv4 } from 'uuid';
 import { getUserConfig } from '@/utils/env';
 import { queryReceiptState } from '@/utils/queryReceipt';
+import { isRecommendationObservationDone } from '@/utils/recommendationObservation';
 import useGovernedSqlPreview from '@/hooks/useGovernedSqlPreview';
 import { getQueryPreviewText } from '@/utils/language';
 
@@ -352,8 +352,10 @@ export default function HomeThread() {
         });
         if (!(await recommendationConfiguration())) return;
         const task = result.data?.getThreadRecommendationQuestions;
-        if (!result.error && acceptRecommendation(task))
-          terminal = isRecommendedFinished(task.status);
+        if (!result.error) {
+          acceptRecommendation(task);
+          terminal = isRecommendationObservationDone(task, threadId);
+        }
       } catch {
         // Only re-observe this original thread. A failed/empty read never
         // dispatches a new recommendation or establishes native task absence.

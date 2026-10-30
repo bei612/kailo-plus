@@ -134,6 +134,7 @@ async def post_process(
 ) -> dict:
     return await post_processor.run(
         generate_sql.get("replies"),
+        meta=generate_sql.get("meta"),
         project_id=project_id,
         use_dry_plan=use_dry_plan,
         data_source=data_source,

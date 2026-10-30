@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from src.core.engine import (
     Engine,
+    SQLGenerationEmpty,
     clean_generation_result,
 )
 from src.web.v1.services.ask import AskHistory
@@ -35,15 +36,34 @@ class SQLGenPostProcessor:
         allow_dry_plan_fallback: bool = True,
         data_source: str = "",
         allow_data_preview: bool = False,
+        meta: List[Dict[str, Any]] | None = None,
     ) -> dict:
         try:
+            completion = (meta or [{}])[0] or {}
+            finish_reason = completion.get("finish_reason")
             cleaned_generation_result = clean_generation_result(replies[0])
 
             # test if cleaned_generation_result in string format is actually a dictionary with key 'sql'
             if cleaned_generation_result.startswith("{"):
-                cleaned_generation_result = orjson.loads(cleaned_generation_result)[
-                    "sql"
-                ]
+                try:
+                    cleaned_generation_result = orjson.loads(
+                        cleaned_generation_result
+                    )["sql"]
+                except orjson.JSONDecodeError:
+                    if finish_reason == "length":
+                        # The answer object was cut off before its SQL closed.
+                        raise SQLGenerationEmpty(finish_reason) from None
+                    raise
+
+            # Kailo: an empty statement is not a candidate for the engine or the
+            # correction loop; report the generation failure itself (see
+            # data-query/fork/verify/ask-empty-sql.md).
+            if not isinstance(cleaned_generation_result, str) or not (
+                cleaned_generation_result.strip()
+            ):
+                raise SQLGenerationEmpty(
+                    finish_reason, bool(completion.get("reasoning_only"))
+                )
 
             (
                 valid_generation_result,
@@ -61,7 +81,12 @@ class SQLGenPostProcessor:
                 "valid_generation_result": valid_generation_result,
                 "invalid_generation_result": invalid_generation_result,
             }
-        except (NativeIdentityUnavailable, NativeSQLResponseUnavailable, NativeQueryPending):
+        except (
+            NativeIdentityUnavailable,
+            NativeSQLResponseUnavailable,
+            NativeQueryPending,
+            SQLGenerationEmpty,
+        ):
             # Preserve the existing pipeline's dependency error path, rather
             # than manufacture invalid SQL for its automatic correction loop.
             raise

@@ -22,6 +22,7 @@ import {
   RecommendedQuestionsTask,
 } from '@/apollo/client/graphql/__types__';
 import useKailoText, { KailoTextKey } from '@/utils/kailoI18n';
+import { askErrorText } from '@/utils/askError';
 
 const StyledResult = styled.div`
   position: absolute;
@@ -106,7 +107,8 @@ const makeProcessingError =
   (props: Props) => {
     const { onClose, onSelectRecommendedQuestion, data, error } = props;
     const t = useKailoText();
-    const { message, shortMessage, stacktrace } = error || {};
+    const { stacktrace } = error || {};
+    const { message, shortMessage } = askErrorText(error, t);
     const hasStacktrace = !!stacktrace;
 
     const recommendedQuestionProps = getRecommendedQuestionProps(

@@ -6,6 +6,7 @@ import ErrorCollapse from '@/components/ErrorCollapse';
 import { FixSQLModal } from '@/components/modals/FixSQLModal';
 import { Error } from '@/apollo/client/graphql/__types__';
 import useKailoText from '@/utils/kailoI18n';
+import { askErrorText } from '@/utils/askError';
 
 export interface Props {
   children: React.ReactNode;
@@ -21,15 +22,16 @@ export default function ErrorBoundary({ children, error }: Props) {
   const t = useKailoText();
   if (!error) return <>{children}</>;
   const hasInvalidSql = !!error.invalidSql;
+  const text = askErrorText(error, t);
   return (
     <Timeline className="px-1 -mb-4">
       <Timeline.Item dot={<CloseCircleFilled className="kailo-text-danger" />}>
         <Typography.Text className="gray-8">
-          {hasInvalidSql ? t('home.sqlGenerationFailed') : error.shortMessage}
+          {hasInvalidSql ? t('home.sqlGenerationFailed') : text.shortMessage}
         </Typography.Text>
         <div className="gray-7 text-sm mt-1">
           <div>
-            {hasInvalidSql ? t('home.sqlGenerationFailedHint') : error.message}
+            {hasInvalidSql ? t('home.sqlGenerationFailedHint') : text.message}
           </div>
           {hasInvalidSql && (
             <>

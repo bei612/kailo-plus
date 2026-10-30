@@ -143,6 +143,7 @@ async def post_process(
 ) -> dict:
     return await post_processor.run(
         regenerate_sql.get("replies"),
+        meta=regenerate_sql.get("meta"),
         project_id=project_id,
     )
 

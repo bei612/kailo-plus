@@ -92,6 +92,9 @@ const zh = {
   'home.rerun': '重新运行',
   'home.stepCount': '{count} 个步骤',
   'home.sqlGenerationFailed': '未能生成 SQL 语句',
+  'home.noSqlGenerated': '模型没有生成 SQL',
+  'home.noSqlGeneratedHint':
+    '模型这次没有为该问题返回 SQL。请重新提问；如果反复出现，请联系管理员检查问数的模型路由。',
   'home.sqlGenerationFailedHint':
     '根据你的问题生成 SQL 时遇到问题，可以手动修正 SQL 后继续。',
   'home.fixSql': '修正 SQL',
@@ -281,6 +284,9 @@ const en: Record<keyof typeof zh, string> = {
   'home.rerun': 'Run again',
   'home.stepCount': '{count} steps',
   'home.sqlGenerationFailed': 'The SQL statement was not generated',
+  'home.noSqlGenerated': 'No SQL was generated',
+  'home.noSqlGeneratedHint':
+    'The model returned no SQL for this question. Please ask again; if it keeps happening, ask an administrator to check the model route of Data Q&A.',
   'home.sqlGenerationFailedHint':
     'Generating SQL for your question ran into a problem. Fix the SQL to continue.',
   'home.fixSql': 'Fix SQL',

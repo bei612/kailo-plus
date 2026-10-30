@@ -6,6 +6,9 @@ export enum GeneralErrorCodes {
   // AI service errors
   NO_RELEVANT_DATA = 'NO_RELEVANT_DATA',
   NO_RELEVANT_SQL = 'NO_RELEVANT_SQL',
+  // Kailo: the model answered without any SQL (e.g. its output limit was
+  // spent on hidden reasoning); the AI service fails the task at once.
+  NO_SQL_GENERATED = 'NO_SQL_GENERATED',
   RESOURCE_NOT_FOUND = 'RESOURCE_NOT_FOUND',
   MDL_PARSE_ERROR = 'MDL_PARSE_ERROR',
   NO_CHART = 'NO_CHART',
@@ -84,6 +87,8 @@ export const errorMessages = {
     "I can't find the exact data you're looking for, but feel free to ask about other available topics.",
   [GeneralErrorCodes.NO_RELEVANT_SQL]:
     "Could you please provide more details or specify the information you're seeking?",
+  [GeneralErrorCodes.NO_SQL_GENERATED]:
+    'The model returned no SQL for this question. Please ask again; if it keeps happening, ask an administrator to check the model route of Data Q&A.',
   [GeneralErrorCodes.NO_CHART]:
     "The chart couldn't be generated this time. Please try regenerating the chart or rephrasing your question for better results.",
 
@@ -158,6 +163,7 @@ export const shortMessages = {
   [GeneralErrorCodes.INTERNAL_SERVER_ERROR]: 'Internal server error',
   [GeneralErrorCodes.NO_RELEVANT_DATA]: 'Try a different query',
   [GeneralErrorCodes.NO_RELEVANT_SQL]: 'Clarification needed',
+  [GeneralErrorCodes.NO_SQL_GENERATED]: 'No SQL was generated',
   [GeneralErrorCodes.NO_CHART]: 'Chart not available',
   [GeneralErrorCodes.CONNECTION_ERROR]: 'Failed to connect',
   [GeneralErrorCodes.IBIS_SERVER_ERROR]: 'Data connection error',
