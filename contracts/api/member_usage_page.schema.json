@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/member_usage_page.schema.json",
+  "title": "MemberUsagePage",
+  "description": "DD-163(4)：GET /api/v1/usage/me，当前会话成员本人的用量（「我的用量」）。只列带成员维度的额度项；数值直接读 OpenMeter（按 Customer 与本人 member_principal_id 过滤），不含组织上限与组织已用。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["items"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "title": "MemberUsageView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["feature", "state"],
+        "properties": {
+          "feature": {
+            "title": "TenantQuotaFeature",
+            "type": "string",
+            "enum": [
+              "agent_tokens",
+              "automation_runs",
+              "agent_memory_writes",
+              "component_tokens",
+              "knowledge_answers",
+              "data_queries",
+              "file_storage"
+            ]
+          },
+          "state": {"$ref": "../enums/member_usage_state.schema.json"},
+          "used": {"type": "number", "description": "本人本期已用（OpenMeter committed）；state 为 UNAVAILABLE 时不给出。"},
+          "memberLimitPerPeriod": {"type": "integer", "description": "本人每期上限；未设置成员上限时不给出。"},
+          "periodResetAt": {"type": "string", "format": "date-time"}
+        }
+      }
+    }
+  }
+}

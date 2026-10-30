@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/component_usage_decision.schema.json",
+  "title": "ComponentUsageDecision",
+  "description": "DD-163(3)：组件额度准入结论（CHECK，不预留）。TENANT_QUOTA_EXHAUSTED：该 Tenant 的额度项无访问；MEMBER_QUOTA_EXHAUSTED：设置了成员上限且本人本期已用不小于它。两者组件都拒绝该动作且不产生原生副作用。",
+  "type": "string",
+  "enum": ["ALLOWED", "TENANT_QUOTA_EXHAUSTED", "MEMBER_QUOTA_EXHAUSTED"]
+}

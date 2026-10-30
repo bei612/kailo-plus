@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/member_usage_state.schema.json",
+  "title": "MemberUsageState",
+  "description": "DD-163(4)：成员本人在一个额度项上的当前状态。AVAILABLE：可用；MEMBER_LIMIT_REACHED：本人已达成员上限；TENANT_EXHAUSTED：组织额度已用完（不显示组织数字）；UNAVAILABLE：OpenMeter 不可读或映射不唯一，不显示数值。",
+  "type": "string",
+  "enum": ["AVAILABLE", "MEMBER_LIMIT_REACHED", "TENANT_EXHAUSTED", "UNAVAILABLE"]
+}

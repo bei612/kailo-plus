@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_usage_report.schema.json",
+  "title": "ComponentUsageReport",
+  "description": "DD-163、07 §4.8.8：组件以其成员目录 client 的 client-credentials 令牌向 Core 服务监听面 POST /service/v1/component-usage/bindings/{bindingId}/reports 上报的一条已发生用量。Core 写 COMPONENT_REPORT UsageEvent；不建立 ActionExecution、不授予权限；未知字段整体拒绝。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["idempotencyKey", "meterKey", "quantity", "occurredAt"],
+  "properties": {
+    "idempotencyKey": {"type": "string", "description": "1–128 个字母、数字、. _ : -，在该 binding 内唯一；同键同内容返回首次结果，同键异内容 409。"},
+    "meterKey": {"$ref": "../enums/component_usage_meter.schema.json"},
+    "quantity": {"type": "integer", "description": "非负整数；count meter 恰为 1，file_storage_bytes 为字节数且不超过 10^15。"},
+    "occurredAt": {"type": "string", "format": "date-time", "description": "RFC3339，不晚于 Core 当前时刻 5 分钟，不早于 7 天前。"},
+    "member": {"$ref": "../domain/component_person_ref.schema.json", "description": "count meter 必填、file_storage_bytes 不得出现；须在该 binding 当前目录范围内。"}
+  }
+}

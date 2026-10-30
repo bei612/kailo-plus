@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_usage_admission.schema.json",
+  "title": "ComponentUsageAdmission",
+  "description": "DD-163(3)：额度准入结论。OpenMeter 不可读时 Core 以 503 回应而不给出结论，组件不得放行。组件可把 ALLOWED 缓存至多 60 秒。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["decision"],
+  "properties": {
+    "decision": {"$ref": "../enums/component_usage_decision.schema.json"},
+    "periodResetAt": {"type": "string", "format": "date-time", "description": "该额度项当前周期的结束时刻（RFC3339）；没有 entitlement 时不给出。"}
+  }
+}
