@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/component_share_set.schema.json",
+  "title": "ComponentShareSet",
+  "description": "Only component.share.set (DD-164(4)③) and required for it: the share intent naming the native object, the expected Resource version when the object is already a component.shared_object Resource (absent on the first share), and the complete grant list that replaces the current one (owner is implicit and never listed). At most 100 grants, no duplicate subject.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "intentId",
+    "grants"
+  ],
+  "properties": {
+    "intentId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "resourceVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "grants": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "component_share_grant.schema.json"
+      }
+    }
+  }
+}

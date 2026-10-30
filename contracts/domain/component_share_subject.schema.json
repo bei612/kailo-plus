@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/component_share_subject.schema.json",
+  "title": "ComponentShareSubject",
+  "description": "DD-164(4): grantee of a component shared object. PRINCIPAL carries principalId (a same-Tenant ACTIVE HUMAN), WORKSPACE carries workspaceId (an ACTIVE Workspace of the Tenant), TENANT carries neither.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind"
+  ],
+  "properties": {
+    "kind": {
+      "$ref": "../enums/component_share_subject_kind.schema.json"
+    },
+    "principalId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+    }
+  }
+}

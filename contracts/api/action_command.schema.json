@@ -19,6 +19,7 @@
     "componentAction": {"$ref": "../domain/component_action_input.schema.json"},
     "protocolSessionOpen":{"$ref":"../domain/protocol_session_open_input.schema.json","description":"Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN identity; no Agent or caller-selected native credentials."},
     "resourceCreate": {"$ref": "../domain/resource_create.schema.json"},
+    "componentShareSet": {"$ref": "../domain/component_share_set.schema.json", "description": "仅 component.share.set（DD-164(4)）且必带；其他动作携带即拒绝。"},
     "moderationReport": {
       "title": "ModerationReportSubmit",
       "description": "仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或 conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签 kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。",

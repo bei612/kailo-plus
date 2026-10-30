@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_share_intent_request.schema.json",
+  "title": "ComponentShareIntentRequest",
+  "description": "POST /service/v1/component-directory/bindings/{bindingId}/share-intents (DD-164(4)②): the component service names the native object its user wants to share. Only sent when the initiator may share the object natively; grants nothing.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "nativeType",
+    "nativeId",
+    "name",
+    "initiator"
+  ],
+  "properties": {
+    "nativeType": {
+      "$ref": "../enums/component_shared_native_type.schema.json"
+    },
+    "nativeId": {
+      "type": "string",
+      "description": "1-255 visible characters: Cells node UUID or WeKnora knowledge base ID."
+    },
+    "name": {
+      "type": "string",
+      "description": "Display name, 1-200 characters."
+    },
+    "initiator": {
+      "title": "ComponentShareInitiator",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "issuer",
+        "subject"
+      ],
+      "properties": {
+        "issuer": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        }
+      }
+    },
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The Kailo Workspace whose root contains the object, absent for Tenant-level objects."
+    }
+  }
+}

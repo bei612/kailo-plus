@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/component_receipt_failure_kind.schema.json",
+  "title": "ComponentReceiptFailureKind",
+  "description": "DD-164(4)⑥: the directory part a convergence failure item refers to.",
+  "type": "string",
+  "enum": [
+    "TENANT",
+    "MEMBER",
+    "WORKSPACE",
+    "SHARE"
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/account_preferences.schema.json",
+  "title": "AccountPreferences",
+  "description": "GET /api/v1/account/preferences (DD-164(7)): the signed-in HumanIdentity's account preferences, shared by every Tenant and device. Absent fields have never been set; clients fall back to their defaults.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "componentPreferences",
+    "version"
+  ],
+  "properties": {
+    "theme": {
+      "type": "string",
+      "description": "Theme name, 1-64 of [a-z0-9-]."
+    },
+    "accent": {
+      "type": "string",
+      "description": "neutral, kailo-brand or #rrggbb."
+    },
+    "followSystem": {
+      "type": "boolean"
+    },
+    "locale": {
+      "type": "string",
+      "enum": [
+        "zh-CN",
+        "en"
+      ]
+    },
+    "componentPreferences": {
+      "type": "object",
+      "description": "DD-138 contributed preference values by key (07 §4.8.2 key format): boolean or an option value of 1-32 [A-Za-z0-9._-]. At most 64 keys.",
+      "additionalProperties": {
+        "type": [
+          "boolean",
+          "string"
+        ]
+      }
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "0 before the first write."
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

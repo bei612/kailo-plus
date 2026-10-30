@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_share_intent_view.schema.json",
+  "title": "ComponentShareIntentView",
+  "description": "GET /api/v1/component-shares/intents/{intentId} (DD-164(4)③): what the Kailo share dialog shows. Readable only by the intent's initiator in a current session; an expired, consumed or foreign intent is 404.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "intentId",
+    "bindingId",
+    "nativePageCategory",
+    "nativeType",
+    "name",
+    "allowedSubjects",
+    "grants",
+    "canShare",
+    "expiresAt"
+  ],
+  "properties": {
+    "intentId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "bindingId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "nativePageCategory": {
+      "type": "string",
+      "description": "file_storage or knowledge."
+    },
+    "nativeType": {
+      "$ref": "../enums/component_shared_native_type.schema.json"
+    },
+    "name": {
+      "type": "string"
+    },
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "resourceId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Present once the object is a component.shared_object Resource."
+    },
+    "resourceVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "ownerPrincipalId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "allowedSubjects": {
+      "type": "array",
+      "items": {
+        "$ref": "../enums/component_share_subject_kind.schema.json"
+      },
+      "description": "folder: PRINCIPAL, WORKSPACE, TENANT; knowledge_base: WORKSPACE, TENANT (phase 1)."
+    },
+    "grants": {
+      "type": "array",
+      "description": "Current grants without the owner.",
+      "items": {
+        "$ref": "../domain/component_share_grant.schema.json"
+      }
+    },
+    "canShare": {
+      "type": "boolean",
+      "description": "Fresh share on the existing Resource, or true for the initiator before the first share."
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_directory_receipt_view.schema.json",
+  "title": "ComponentDirectoryReceiptView",
+  "description": "GET /api/v1/application-bindings/{bindingId}/directory-receipt for binding managers (DD-164(4)⑥): the latest receipt compared with the current directory version.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "bindingId",
+    "state"
+  ],
+  "properties": {
+    "bindingId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "CONVERGED",
+        "PENDING",
+        "NOT_CONVERGED",
+        "FAILED",
+        "NO_RECEIPT"
+      ],
+      "description": "CONVERGED: receipt APPLIED for the current version; PENDING: different version for at most two read intervals; NOT_CONVERGED: different for longer; FAILED: latest receipt FAILED; NO_RECEIPT: never reported."
+    },
+    "schema": {
+      "type": "integer"
+    },
+    "receiptVersion": {
+      "type": "string"
+    },
+    "currentVersion": {
+      "type": "string"
+    },
+    "appliedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "receivedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "failures": {
+      "type": "array",
+      "items": {
+        "title": "ComponentReceiptFailureView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "ref",
+          "reasonCode"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "../enums/component_receipt_failure_kind.schema.json"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

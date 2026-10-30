@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/component_receipt_outcome.schema.json",
+  "title": "ComponentReceiptOutcome",
+  "description": "DD-164(4)⑥: whether the component fully applied the reported directory snapshot.",
+  "type": "string",
+  "enum": [
+    "APPLIED",
+    "FAILED"
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_directory_receipt_request.schema.json",
+  "title": "ComponentDirectoryReceiptRequest",
+  "description": "PUT /service/v1/component-directory/bindings/{bindingId}/receipt (DD-164(4)⑥): the component reports the last directory snapshot it fully applied or failed to apply. No personal data; grants nothing; never changes the directory.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "directoryVersion",
+    "appliedAt",
+    "outcome",
+    "failures"
+  ],
+  "properties": {
+    "schema": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2
+    },
+    "directoryVersion": {
+      "type": "string",
+      "description": "64 lowercase hex characters."
+    },
+    "appliedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "outcome": {
+      "$ref": "../enums/component_receipt_outcome.schema.json"
+    },
+    "failures": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "title": "ComponentReceiptFailure",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "ref",
+          "reasonCode"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "../enums/component_receipt_failure_kind.schema.json"
+          },
+          "ref": {
+            "type": "string",
+            "description": "Kailo id of the failed item (principalId, workspaceId, tenantId or resourceId), at most 64 characters."
+          },
+          "reasonCode": {
+            "type": "string",
+            "description": "Upper snake case, at most 64 characters, e.g. NATIVE_OBJECT_MISSING."
+          }
+        }
+      }
+    }
+  }
+}

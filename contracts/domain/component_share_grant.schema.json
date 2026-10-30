@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/component_share_grant.schema.json",
+  "title": "ComponentShareGrant",
+  "description": "DD-164(4): one grant on a component shared object. TENANT subjects only accept READ.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "subject",
+    "access"
+  ],
+  "properties": {
+    "subject": {
+      "$ref": "component_share_subject.schema.json"
+    },
+    "access": {
+      "$ref": "../enums/component_share_access.schema.json"
+    }
+  }
+}

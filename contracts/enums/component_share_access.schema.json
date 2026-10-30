@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/component_share_access.schema.json",
+  "title": "ComponentShareAccess",
+  "description": "DD-164(4): access granted on a component shared object. READ writes the SpiceDB reader relationship, WRITE writes editor.",
+  "type": "string",
+  "enum": [
+    "READ",
+    "WRITE"
+  ]
+}

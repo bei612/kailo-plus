@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_share_intent_created.schema.json",
+  "title": "ComponentShareIntentCreated",
+  "description": "Answer to a share intent: the opaque intent the component passes to the Kailo host in wire v1 {type: share}.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "intentId",
+    "expiresAt"
+  ],
+  "properties": {
+    "intentId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

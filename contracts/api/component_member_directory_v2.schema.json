@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_member_directory_v2.schema.json",
+  "title": "ComponentMemberDirectoryV2",
+  "description": "Member directory snapshot schema 2 (.design/07 §4.7.4, DD-164(2)(4)): schema 1 plus Kailo create permissions and the Resource-level share projection. Served only for ?schema=2; directoryVersion is the SHA-256 (hex) of the canonical JSON of every other field of this response.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "bindingId",
+    "directoryVersion",
+    "tenant",
+    "workspaces",
+    "members",
+    "shares"
+  ],
+  "properties": {
+    "schema": {
+      "type": "integer",
+      "const": 2
+    },
+    "bindingId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "directoryVersion": {
+      "type": "string",
+      "description": "Lowercase hex SHA-256 of the canonical JSON of this snapshot without directoryVersion; unchanged content keeps the same version."
+    },
+    "tenant": {
+      "title": "ComponentDirectoryV2Tenant",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tenantId",
+        "name"
+      ],
+      "properties": {
+        "tenantId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "workspaces": {
+      "type": "array",
+      "description": "Every ACTIVE Workspace in the binding scope (only the binding's own Workspace when it has one).",
+      "items": {
+        "title": "ComponentDirectoryV2Workspace",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "workspaceId",
+          "name"
+        ],
+        "properties": {
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "members": {
+      "type": "array",
+      "items": {
+        "title": "ComponentDirectoryV2Member",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "principalId",
+          "displayName",
+          "tenantRole",
+          "tenantCreate",
+          "identities",
+          "workspaces"
+        ],
+        "properties": {
+          "principalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string",
+            "description": "Kailo display name: the member's SERVER HUMAN kind:0 display_name (else name), else the HumanIdentity display name."
+          },
+          "tenantRole": {
+            "$ref": "../enums/component_directory_role.schema.json"
+          },
+          "tenantCreate": {
+            "type": "boolean",
+            "description": "SpiceDB Tenant create for this principal (fully consistent)."
+          },
+          "identities": {
+            "type": "array",
+            "description": "One entry per ACTIVE external identity; the component keys its account on issuer + subject.",
+            "items": {
+              "title": "ComponentDirectoryV2Identity",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "issuer",
+                "subject",
+                "picture"
+              ],
+              "properties": {
+                "issuer": {
+                  "type": "string"
+                },
+                "subject": {
+                  "type": "string"
+                },
+                "picture": {
+                  "type": "string",
+                  "description": "<PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>, the same value as the IdP picture claim."
+                }
+              }
+            }
+          },
+          "workspaces": {
+            "type": "array",
+            "items": {
+              "title": "ComponentDirectoryV2Membership",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "workspaceId",
+                "role",
+                "create"
+              ],
+              "properties": {
+                "workspaceId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "role": {
+                  "$ref": "../enums/component_directory_role.schema.json"
+                },
+                "create": {
+                  "type": "boolean",
+                  "description": "SpiceDB Workspace create for this principal (fully consistent)."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "shares": {
+      "type": "array",
+      "description": "Every ACTIVE component.shared_object Resource of this binding, ordered by resourceId.",
+      "items": {
+        "title": "ComponentDirectoryShare",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "resourceId",
+          "nativeType",
+          "nativeId",
+          "ownerPrincipalId",
+          "grants"
+        ],
+        "properties": {
+          "resourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "nativeType": {
+            "$ref": "../enums/component_shared_native_type.schema.json"
+          },
+          "nativeId": {
+            "type": "string"
+          },
+          "ownerPrincipalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "grants": {
+            "type": "array",
+            "description": "Owner first as WRITE, then the reader/editor relationships whose subject is still in this snapshot, ordered by subject kind, id and access.",
+            "items": {
+              "$ref": "../domain/component_share_grant.schema.json"
+            }
+          }
+        }
+      }
+    }
+  }
+}
