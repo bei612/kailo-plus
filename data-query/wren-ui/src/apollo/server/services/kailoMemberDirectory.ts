@@ -444,7 +444,11 @@ export interface KailoDirectoryReceipt {
   directoryVersion: string;
   appliedAt: string;
   outcome: 'APPLIED' | 'FAILED';
-  failures: { kind: 'TENANT' | 'MEMBER' | 'WORKSPACE' | 'SHARE'; ref: string; reasonCode: string }[];
+  failures: {
+    kind: 'TENANT' | 'MEMBER' | 'WORKSPACE' | 'SHARE';
+    ref: string;
+    reasonCode: string;
+  }[];
 }
 
 // Reports the last snapshot this instance applied (or failed to apply) with
