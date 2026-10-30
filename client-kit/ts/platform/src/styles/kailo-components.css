@@ -285,10 +285,13 @@ kbd {
 }
 
 /* ── Mentions and Agent address chips (§10 message list) ──────────────── */
+/* .design/20 §2.4 mention role: the same visible chip in sent messages and in the
+   composer (whose editor root also carries .message-markdown). brand-soft was too
+   faint to read as a mention (user 2026-10-30). */
 .message-markdown .mention-chip,
 [data-testid="message-agent-address-prefix"] .mention-chip {
-  background: var(--k-brand-soft);
-  color: var(--k-brand-soft-text);
+  background: var(--k-mention);
+  color: var(--k-mention-text);
   font-weight: 500;
 }
 
@@ -301,7 +304,7 @@ kbd {
 }
 
 .mention-chip.mention-chip-hover:hover {
-  background: var(--k-brand-soft-hover);
+  background: var(--k-mention-hover);
 }
 
 /* ── DD-157 (20 §13.6): component page first-paint skeleton ─────────────── */

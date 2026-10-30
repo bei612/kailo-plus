@@ -42,12 +42,23 @@ describe("DD-141 Kailo design tokens", () => {
           ["muted/surface", r.textMuted, r.surface], ["muted/sidebar", r.textMuted, r.sidebar],
           ["muted/overlay", r.textMuted, r.overlay], ["on-brand/brand", r.onBrand, r.brand],
           ["brand-text/surface", r.brandText, r.surface], ["selected", r.brandSoftText, r.brandSoft],
+          ["mention", r.mentionText, r.mention], ["mention hover", r.mentionText, r.mentionHover],
           ["success", r.successText, r.surface], ["warning", r.warningText, r.surface],
           ["danger", r.dangerText, r.surface], ["info", r.infoText, r.surface],
         ];
         for (const [name, fg, bg] of pairs) {
           expect(contrast(fg, bg), `${direction} ${mode} ${name}`).toBeGreaterThanOrEqual(4.5);
         }
+      });
+
+      it(`keeps ${direction} ${mode} mention chips visible against the message surfaces`, () => {
+        // .design/20 §3: a mention chip must stand off the row it sits on (surface, hover-row sunken),
+        // which brand-soft (brand 50/950, ~1.03 against surface) did not; and its text must not read as body text.
+        const r = kailoRoles(mode, direction);
+        for (const [name, bg] of [["surface", r.surface], ["sunken", r.sunken]] as const) {
+          expect(contrast(r.mention, bg), `${direction} ${mode} mention/${name}`).toBeGreaterThanOrEqual(1.25);
+        }
+        expect(r.mentionText).not.toBe(r.text);
       });
     }
   }
