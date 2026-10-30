@@ -1,7 +1,7 @@
 //! DD-87/94: a reference to an independent application's own page, not a proxy
 //! for its body or credentials. Native sessions and internal ACLs stay there.
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::HeaderMap,
     response::{IntoResponse, Response},
     Json,
@@ -183,16 +183,54 @@ pub(crate) async fn validate_binding(
     Ok(observed)
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct DescriptorQuery {
+    /// DD-138(6): a declared admin surface key; the descriptor is then issued
+    /// under fresh `manage` and points at the declared path (07 §4.8.5).
+    admin_surface: Option<String>,
+}
+
+/// DD-138(6) (`07` §4.8.5): the declared admin surface of a pinned
+/// `KAILO_EMBED` native page release, if the release declares that key.
+pub(crate) fn declared_admin_surface<'a>(manifest: &'a Value, key: &str) -> Option<&'a Value> {
+    let presentation = &manifest["frontendPresentationContract"];
+    if presentation["integrationMode"] != "KAILO_EMBED"
+        || manifest["frontendDelivery"]["mode"] != "NATIVE_PAGE"
+    {
+        return None;
+    }
+    presentation["adminSurfaces"]
+        .as_array()?
+        .iter()
+        .find(|item| item["key"] == key)
+}
+
+/// The object whose fresh `manage` lists and opens an admin surface:
+/// `TENANT_MANAGE` is the Tenant; `BINDING_MANAGE` is the binding's own scope.
+pub(crate) fn admin_surface_object(
+    surface: &Value,
+    tenant: Uuid,
+    workspace: Option<Uuid>,
+) -> Result<(&'static str, Uuid), Refusal> {
+    match (surface["requiredPermission"].as_str(), workspace) {
+        (Some("TENANT_MANAGE"), _) | (Some("BINDING_MANAGE"), None) => Ok(("tenant", tenant)),
+        (Some("BINDING_MANAGE"), Some(workspace)) => Ok(("workspace", workspace)),
+        _ => Err(unavailable()),
+    }
+}
+
 pub(crate) async fn get(
     State(state): State<BffState>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
+    Query(query): Query<DescriptorQuery>,
 ) -> Response {
     let actor = match crate::bff::resolve_execution_context(&state, &headers).await {
         Ok(actor) => actor,
         Err(error) => return error,
     };
-    match descriptor(&state, &actor, id).await {
+    match descriptor(&state, &actor, id, query.admin_surface.as_deref()).await {
         Ok(page) => (
             [(axum::http::header::CACHE_CONTROL, "no-store")],
             Json(page),
@@ -206,6 +244,7 @@ async fn descriptor(
     state: &BffState,
     actor: &ExecutionContext,
     id: Uuid,
+    admin_surface: Option<&str>,
 ) -> Result<contracts::ApplicationNativePage, Refusal> {
     // Read only references; no HTTP request to the page, cookie forwarding or
     // native management token ever passes through this BFF endpoint.
@@ -240,18 +279,33 @@ async fn descriptor(
             return Err(Refusal::Denied(ReasonCode::PermissionDenied));
         }
     }
-    let object = workspace.unwrap_or(actor.tenant_id).to_string();
+    // DD-138(6): an admin surface is opened under fresh `manage` on the object
+    // its declaration names; an undeclared key is refused like a missing grant.
+    let surface = match admin_surface {
+        Some(key) => Some(
+            declared_admin_surface(&manifest, key)
+                .cloned()
+                .ok_or(Refusal::Denied(ReasonCode::PermissionDenied))?,
+        ),
+        None => None,
+    };
+    let (kind, object, permission) = match &surface {
+        Some(surface) => {
+            let (kind, object) = admin_surface_object(surface, actor.tenant_id, workspace)?;
+            (kind, object, "manage")
+        }
+        None => match workspace {
+            Some(workspace) => ("workspace", workspace, "discover"),
+            None => ("tenant", actor.tenant_id, "discover"),
+        },
+    };
     let checked = state
         .governance
         .spicedb
         .check(
-            if workspace.is_some() {
-                "workspace"
-            } else {
-                "tenant"
-            },
-            &object,
-            "discover",
+            kind,
+            &object.to_string(),
+            permission,
             &actor.tenant_principal_id.to_string(),
             crate::spicedb::Consistency::FullyConsistent,
         )
@@ -265,10 +319,24 @@ async fn descriptor(
     {
         return Err(unavailable());
     }
-    let (page, effective) = admitted_entry(&manifest, &config)?;
+    let (mut page, effective) = admitted_entry(&manifest, &config)?;
     let page_origin = page.origin().ascii_serialization();
+    if let Some(surface) = &surface {
+        // The declared fixed path inside the same admitted origin, never the
+        // binding entry's path, query or fragment (07 §4.8.5).
+        let path = surface["path"]
+            .as_str()
+            .filter(|path| crate::component_release::admin_surface_path(path))
+            .ok_or_else(unavailable)?;
+        page.set_path(path);
+        page.set_query(None);
+        page.set_fragment(None);
+    }
     let mut value = serde_json::json!({"bindingId":id,"projectionGeneration":generation,
         "url":page.as_str(),"origin":page_origin,"allowedOrigins":effective});
+    if let Some(surface) = surface {
+        value["adminSurface"] = surface;
+    }
     // DD-138: the page's declared Kailo settings items, so the host sends their
     // values to this page only (07 §4.8.2). Validated at registration.
     let presentation = &manifest["frontendPresentationContract"];

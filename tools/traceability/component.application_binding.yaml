@@ -156,7 +156,7 @@ implementation:
     - core/migrations/20261023010000_protocol_peer_outcome_event.down.sql
 
 runtime:
-  routes: ["/api/v1/application-bindings", "/api/v1/application-bindings/{id}/native-page", "/api/v1/application-bindings/{id}/read-resources"]
+  routes: ["/api/v1/application-bindings", "/api/v1/application-bindings/{id}/native-page", "/api/v1/application-bindings/{id}/read-resources", "/api/v1/admin-surfaces"]
   actions: [application_binding.create, application_binding.disable, resource.create]
   tools: []
   workflow_kinds: [COMPONENT_BINDING, COMPONENT_DISABLE, RESOURCE_PROVISION, COMPONENT_ACTION]

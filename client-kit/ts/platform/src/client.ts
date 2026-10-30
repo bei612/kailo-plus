@@ -25,6 +25,7 @@ import type {
   ApplicationBindingPage,
   ApplicationReadResourcePage,
   ApplicationReadResourceDirection,
+  AdminSurfacePage,
   ApplicationNativePage,
   AgentDefinitionPage,
   AgentDefinitionView,
@@ -313,7 +314,15 @@ export function createBffClient(transport: BffTransport) {
     conversationParticipants: (cursor?: string) => get<ConversationParticipantPage>(`/api/v1/conversation-participants${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`),
 
     /** Integration metadata only; credentials and native administration stay server-side. */
-    applicationNativePage: (bindingId: string) => get<ApplicationNativePage>(`/api/v1/application-bindings/${encodeURIComponent(bindingId)}/native-page`),
+    /**
+     * DD-138(6): with `adminSurface` the descriptor is issued under fresh `manage` for that
+     * declared admin surface and points at its fixed path (07 §4.8.5).
+     */
+    applicationNativePage: (bindingId: string, adminSurface?: string) =>
+      get<ApplicationNativePage>(`/api/v1/application-bindings/${encodeURIComponent(bindingId)}/native-page${adminSurface === undefined ? "" : `?${new URLSearchParams({ adminSurface })}`}`),
+    /** DD-138(6): admin surfaces the member freshly manages at Tenant scope and, if given, that Workspace. */
+    adminSurfaces: (workspaceId?: string) =>
+      get<AdminSurfacePage>(`/api/v1/admin-surfaces${workspaceId === undefined ? "" : `?${new URLSearchParams({ workspaceId })}`}`),
     /** Original actor's fresh-authorized metadata; never recovers a launch credential. */
     protocolSession: (sessionId: string) => get<ProtocolSessionView>(`/api/v1/protocol-sessions/${encodeURIComponent(sessionId)}`),
     applicationBindings: (workspaceId?: string, offset = 0) => {

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/admin_surface_page.schema.json",
+  "title": "AdminSurfacePage",
+  "description": "DD-138(6)：当前 HUMAN 可管理的组件管理面（07 §4.8.5）。只含当前 Tenant 级与所给 Workspace 级 ACTIVE binding 的 pin APPROVED release 所声明、且逐项 fresh manage 通过的项；不含 URL、component_type_key、配置或凭据。",
+  "type": "object", "additionalProperties": false,
+  "required": ["items"],
+  "properties": {
+    "items": {"type": "array", "items": {
+      "title": "AdminSurfaceEntry",
+      "type": "object", "additionalProperties": false,
+      "required": ["bindingId", "surface"],
+      "properties": {
+        "bindingId": {"type": "string", "format": "uuid"},
+        "workspaceId": {"type": "string", "format": "uuid"},
+        "nativePageCategory": {"$ref": "../enums/native_page_category.schema.json", "description": "DD-127(4) presentation category used as the source label (云盘、知识库、问数); grants nothing."},
+        "surface": {"$ref": "../domain/component_admin_surface_declaration.schema.json"}
+      }
+    }}
+  }
+}

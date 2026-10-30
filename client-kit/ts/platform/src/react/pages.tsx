@@ -42,6 +42,8 @@ import { ApplicationBindingsPanel } from "./application-bindings";
 import { TenantInvitations } from "./invitations";
 import { MembersPane, type MemberIdentityRenderer } from "./members";
 import { SidebarGroup, SidebarGroupLabel, SidebarGroupContent, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "./sidebar/primitives";
+import { AdminSurfaceContent, AdminSurfaceNavigation, useAdminSurfaces } from "./admin-surfaces";
+import { adminSurfaceId } from "../admin-surfaces";
 export { MembersPane, type MemberIdentityRenderer } from "./members";
 
 export { AgentDefinitionsPage, WorkspaceAgentDialogs } from "./agents";
@@ -129,8 +131,13 @@ export function WorkspaceManagementPanels({children}:{children?:ReactNode}) {
     bindings: {label:"bindings.title",content:<ApplicationBindingsPanel/>},
   } satisfies Record<string,{label:PlatformMessageKey;content:ReactNode}>;
   type Section = keyof typeof sections;
-  const [selected,setSelected]=useState<Section>("members");
+  const [selected,setSelected]=useState<Section|`surface:${string}`>("members");
   const [visited,setVisited]=useState<Section[]>(["members"]);
+  // DD-138(6), 07 §4.8.5: component admin surfaces join the admin area by Kailo admin category.
+  const [surfaces]=useAdminSurfaces();
+  const surfaceEntries=surfaces.status==="ok"?surfaces.data.entries:[];
+  const [openedSurfaces,setOpenedSurfaces]=useState<string[]>([]);
+  const selectedSurface=selected.startsWith("surface:")?selected.slice("surface:".length):null;
   return <div className="flex min-h-0 w-full flex-1 flex-col bg-sidebar sm:flex-row" data-testid="member-management-context">
     <nav aria-label={t("platform.tab.members")} className="shrink-0 text-sidebar-foreground sm:w-(--sidebar-width)">
       <SidebarGroup><SidebarGroupLabel>{t("platform.tab.members")}</SidebarGroupLabel><SidebarGroupContent><SidebarMenu>
@@ -139,12 +146,21 @@ export function WorkspaceManagementPanels({children}:{children?:ReactNode}) {
           <span className="truncate">{t(sections[section].label)}</span>
         </SidebarMenuButton></SidebarMenuItem>)}
       </SidebarMenu></SidebarGroupContent></SidebarGroup>
+      <AdminSurfaceNavigation state={surfaces} selected={selectedSurface} onSelect={(entry)=>{
+        const id=adminSurfaceId(entry);
+        setSelected(`surface:${id}`);setOpenedSurfaces(old=>old.includes(id)?old:[...old,id]);}}/>
     </nav>
     <div className="relative z-10 mb-2 ml-px mr-2 mt-px flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl bg-background shadow-content-edge">
       {/* Once opened, management intents stay mounted across navigation. UNKNOWN is not discarded. */}
       {visited.map(section=><section key={section} hidden={section!==selected} className="min-h-0 flex-1 overflow-y-auto px-5 pb-12 pt-6 sm:px-6" data-management-section={section}>
         <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col gap-4">{sections[section].content}</div>
       </section>)}
+      {/* An opened admin surface stays mounted (unsaved native work survives switching); a surface no longer listed is removed. */}
+      {openedSurfaces.map(id=>{
+        const entry=surfaceEntries.find(item=>adminSurfaceId(item)===id);
+        return entry?<section key={id} hidden={id!==selectedSurface} className="flex min-h-0 flex-1 flex-col" data-management-section="admin-surface">
+          <AdminSurfaceContent entry={entry}/></section>:null;
+      })}
     </div>
   </div>;
 }

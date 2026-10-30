@@ -351,6 +351,7 @@ capabilities:
   - /api/v1/application-bindings
   - /api/v1/application-bindings/{id}/native-page
   - /api/v1/application-bindings/{id}/read-resources
+  - /api/v1/admin-surfaces
   actions:
   - application_binding.create
   - application_binding.disable

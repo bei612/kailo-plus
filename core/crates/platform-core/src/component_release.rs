@@ -119,9 +119,10 @@ fn validate_presentation(manifest: &Value) -> Result<(), Refusal> {
             "themeChangePolicy",
             "localeResolutionPolicy",
         ],
-        &["preferences"],
+        &["preferences", "adminSurfaces"],
     )?;
     validate_preferences(presentation)?;
+    validate_admin_surfaces(manifest)?;
     let valid = match presentation["integrationMode"].as_str() {
         Some("NONE") => {
             presentation["themeChangePolicy"] == "NONE"
@@ -212,6 +213,102 @@ fn validate_preferences(presentation: &Value) -> Result<(), Refusal> {
         }
     }
     Ok(())
+}
+
+/// First key segments that would declare Kailo's own membership administration.
+/// Members, roles, invitations, spaces and organisations live only in Kailo
+/// (DD-133(4)); a component never contributes them as an admin surface.
+const RESERVED_ADMIN_SEGMENTS: [&str; 9] = [
+    "members",
+    "roles",
+    "invitations",
+    "users",
+    "groups",
+    "spaces",
+    "organizations",
+    "tenants",
+    "workspaces",
+];
+
+/// DD-138(6) (`07` §4.8.5): the admin surfaces a `KAILO_EMBED` native page
+/// contributes to the Kailo admin area. Each names a Kailo admin category, a
+/// fixed path inside the component origin, the Kailo permission that lists and
+/// opens it, whether it is editable, and bilingual titles; at most 12. Core
+/// keeps the declaration with the release and stores no admin state.
+fn validate_admin_surfaces(manifest: &Value) -> Result<(), Refusal> {
+    let presentation = &manifest["frontendPresentationContract"];
+    let Some(items) = presentation.get("adminSurfaces") else {
+        return Ok(());
+    };
+    let items = items.as_array().ok_or_else(bad)?;
+    if presentation["integrationMode"] != "KAILO_EMBED"
+        || manifest["frontendDelivery"]["mode"] != "NATIVE_PAGE"
+        || items.len() > 12
+    {
+        return Err(bad());
+    }
+    let mut keys = BTreeSet::new();
+    for item in items {
+        exact_fields(
+            item,
+            &[
+                "key",
+                "adminCategory",
+                "path",
+                "requiredPermission",
+                "access",
+                "title",
+            ],
+            &["description"],
+        )?;
+        let key = item["key"]
+            .as_str()
+            .filter(|key| preference_key(key))
+            .ok_or_else(bad)?;
+        let first = key.split('.').next().unwrap_or_default();
+        if RESERVED_ADMIN_SEGMENTS.contains(&first)
+            || !keys.insert(key)
+            || !matches!(
+                item["adminCategory"].as_str(),
+                Some(
+                    "MODELS" | "DATA_SOURCES" | "STORAGE" | "INDEXING" | "INTEGRATIONS" | "SYSTEM"
+                )
+            )
+            || !matches!(
+                item["requiredPermission"].as_str(),
+                Some("BINDING_MANAGE" | "TENANT_MANAGE")
+            )
+            || !matches!(item["access"].as_str(), Some("EDITABLE" | "READ_ONLY"))
+            || !item["path"].as_str().is_some_and(admin_surface_path)
+        {
+            return Err(bad());
+        }
+        bilingual(&item["title"], 60)?;
+        if let Some(description) = item.get("description") {
+            bilingual(description, 200)?;
+        }
+    }
+    Ok(())
+}
+
+/// A fixed path inside the component origin: one leading `/`, unreserved
+/// segment characters only, no empty, `.` or `..` segment, query, fragment,
+/// percent-encoding or backslash. `/` alone is the origin root.
+pub(crate) fn admin_surface_path(path: &str) -> bool {
+    if !(1..=256).contains(&path.len()) || !path.starts_with('/') {
+        return false;
+    }
+    if path == "/" {
+        return true;
+    }
+    path[1..].split('/').all(|segment| {
+        !segment.is_empty()
+            && segment != "."
+            && segment != ".."
+            && segment
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'.' | b'_' | b'~' | b'-'))
+    })
 }
 
 /// Two to four lower-camel segments joined by `.`, e.g. `documents.spellcheck`.
@@ -3907,6 +4004,93 @@ mod report_tests {
         let none = json!({"integrationMode":"NONE","themeMapping":{},"localeMapping":{},
             "themeChangePolicy":"NONE","localeResolutionPolicy":"NONE","preferences":[spell]});
         assert!(validate_presentation(&manifest(none)).is_err());
+    }
+
+    #[test]
+    fn kailo_embed_admin_surfaces_are_kailo_admin_items() {
+        // DD-138(6) (07 §4.8.5, V-SCN-269): a KAILO_EMBED native page contributes
+        // admin surfaces by Kailo admin category, fixed path and Kailo permission.
+        let text = |zh: &str, en: &str| json!({"ZH_CN":zh,"EN":en});
+        let models = json!({"key":"models.catalog","adminCategory":"MODELS",
+            "path":"/platform/admin/models","requiredPermission":"BINDING_MANAGE",
+            "access":"READ_ONLY","title":text("模型","Models"),
+            "description":text("由 Kailo 模型路由提供","Provided by Kailo model routing")});
+        let modeling = json!({"key":"semantic.modeling","adminCategory":"DATA_SOURCES",
+            "path":"/kailo-admin/modeling","requiredPermission":"TENANT_MANAGE",
+            "access":"EDITABLE","title":text("语义建模","Semantic modeling")});
+        let embed = json!({"integrationMode":"KAILO_EMBED",
+            "themeMapping":{"LIGHT":"light","DARK":"dark"},
+            "localeMapping":{"ZH_CN":"zh-CN","EN":"en-US"},
+            "themeChangePolicy":"LIVE","localeResolutionPolicy":"BROWSER_RESOLVED",
+            "adminSurfaces":[models.clone(), modeling.clone()]});
+        let manifest = |contract: Value| {
+            json!({"frontendDelivery":{"mode":"NATIVE_PAGE"},
+            "frontendPresentationContract":contract})
+        };
+        assert!(validate_presentation(&manifest(embed.clone())).is_ok());
+        let with = |items: Value| {
+            let mut contract = embed.clone();
+            contract["adminSurfaces"] = items;
+            manifest(contract)
+        };
+        assert!(validate_presentation(&with(json!([]))).is_ok());
+        let mut root = models.clone();
+        root["path"] = json!("/");
+        assert!(validate_presentation(&with(json!([root]))).is_ok());
+        let item = |key: &str, value: Value| {
+            let mut item = models.clone();
+            item[key] = value;
+            item
+        };
+        let too_many: Vec<Value> = (0..13)
+            .map(|i| item("key", json!(format!("models.item{i}"))))
+            .collect();
+        for refused in [
+            with(json!([models.clone(), models.clone()])),
+            with(json!([item("key", json!("models"))])),
+            with(json!([item("key", json!("Models.catalog"))])),
+            with(json!([item("key", json!("members.directory"))])),
+            with(json!([item("key", json!("roles.matrix"))])),
+            with(json!([item("key", json!("workspaces.list"))])),
+            with(json!([item("adminCategory", json!("CELLS"))])),
+            with(json!([item("adminCategory", json!("MEMBERS"))])),
+            with(json!([item("requiredPermission", json!("DISCOVER"))])),
+            with(json!([item("access", json!("WRITE"))])),
+            with(json!([item("path", json!("platform/admin"))])),
+            with(json!([item("path", json!("//evil.example/admin"))])),
+            with(json!([item("path", json!("/admin?tab=models"))])),
+            with(json!([item("path", json!("/admin#models"))])),
+            with(json!([item("path", json!("/admin/../settings"))])),
+            with(json!([item("path", json!("/admin/./models"))])),
+            with(json!([item("path", json!("/admin/%2e%2e"))])),
+            with(json!([item("path", json!("/admin\\models"))])),
+            with(json!([item("path", json!("/admin//models"))])),
+            with(json!([item(
+                "path",
+                json!(format!("/{}", "a".repeat(256)))
+            )])),
+            with(json!([item("title", json!({"ZH_CN":"模型"}))])),
+            with(json!([item(
+                "title",
+                text("长".repeat(61).as_str(), "Models")
+            )])),
+            with(json!([item("description", text("说明", ""))])),
+            with(json!([item("extra", json!(true))])),
+            with(json!(too_many)),
+            with(json!({"models.catalog":true})),
+        ] {
+            assert!(validate_presentation(&refused).is_err());
+        }
+        // Admin surfaces ride only with KAILO_EMBED on a NATIVE_PAGE.
+        let none = json!({"integrationMode":"NONE","themeMapping":{},"localeMapping":{},
+            "themeChangePolicy":"NONE","localeResolutionPolicy":"NONE",
+            "adminSurfaces":[models.clone()]});
+        assert!(validate_presentation(&manifest(none)).is_err());
+        let mut editor = json!({"frontendDelivery":{"mode":"SOURCE_BOUND_PROTOCOL"},
+            "frontendPresentationContract":embed});
+        assert!(validate_admin_surfaces(&editor).is_err());
+        editor["frontendDelivery"]["mode"] = json!("NATIVE_PAGE");
+        assert!(validate_admin_surfaces(&editor).is_ok());
     }
 
     #[test]
