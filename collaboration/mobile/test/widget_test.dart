@@ -1,6 +1,7 @@
 import 'package:buzz/app.dart';
 import 'package:buzz/features/platform/platform_sign_in_page.dart';
 import 'package:buzz/shared/auth/auth.dart';
+import 'package:buzz/shared/emoji/emoji_burst.dart';
 import 'package:buzz/shared/platform/platform_api.dart';
 import 'package:buzz/shared/theme/theme_provider.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
@@ -37,6 +38,8 @@ void main() {
     await tester.pump();
 
     expect(find.byType(PlatformSignInPage), findsOneWidget);
+    // Original: one emoji burst layer above the navigator for every route.
+    expect(find.byType(EmojiBurstOverlay), findsOneWidget);
     // 地址由部署方给出：表单不预填任何地址
     for (final key in [
       'platform-config-native-url',

@@ -19,6 +19,7 @@ import 'features/profile/user_status_cache_provider.dart';
 import 'features/settings/settings_page.dart';
 import 'shared/auth/auth.dart';
 import 'shared/deeplink/pending_deep_link_provider.dart';
+import 'shared/emoji/emoji_burst.dart';
 import 'shared/platform/platform_display_name.dart';
 import 'shared/platform/platform_link.dart';
 import 'shared/platform/platform_locale.dart';
@@ -129,8 +130,11 @@ class App extends HookConsumerWidget {
         topSectionGradient: buzzDarkGradient,
       ),
       themeMode: effectiveMode,
-      builder: (context, child) =>
-          AppMarkdownTheme(child: child ?? const SizedBox.shrink()),
+      // Original: the emoji burst layer sits above the navigator so a burst
+      // keeps playing over pushed routes and sheets (shared/emoji/emoji_burst).
+      builder: (context, child) => AppMarkdownTheme(
+        child: EmojiBurstOverlay(child: child ?? const SizedBox.shrink()),
+      ),
       home: authState.when(
         loading: () => const _SplashScreen(),
         error: (_, _) => const PlatformSignInPage(),
