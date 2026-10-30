@@ -3603,6 +3603,7 @@ enum PlatformMessageKey {
   usageMineStateMemberLimitReached,
   usageMineStateTenantExhausted,
   usageMineStateUnavailable,
+  usageMineStateNotConfigured,
   usageComponentsTitle,
   usageComponentsExplain,
   usageComponentsComponent,
@@ -14037,6 +14038,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.usageMineStateUnavailable: (
     'Cannot be verified right now',
     '暂不可查证',
+  ),
+  PlatformMessageKey.usageMineStateNotConfigured: (
+    'Not yet set up in Kailo — contact an admin',
+    '尚未在 Kailo 中完成登记，请联系管理员',
   ),
   PlatformMessageKey.usageComponentsTitle: ('Usage by component', '按组件用量'),
   PlatformMessageKey.usageComponentsExplain: (

@@ -4124,11 +4124,13 @@ export interface ComponentUsageAdmission {
 
 /**
  * DD-165(3)：组件额度准入结论（CHECK，不预留）。TENANT_QUOTA_EXHAUSTED：该 Tenant
- * 的额度项无访问；MEMBER_QUOTA_EXHAUSTED：设置了成员上限且本人本期已用不小于它。两者组件都拒绝该动作且不产生原生副作用。
+ * 的额度项无访问；MEMBER_QUOTA_EXHAUSTED：设置了成员上限且本人本期已用不小于它。两者组件都拒绝该动作且不产生原生副作用。QUOTA_NOT_CONFIGURED：该
+ * Tenant 的额度项还没有 entitlement（发布对齐未完成，DD-165(5)），组件同样拒绝并提示额度尚未在 Kailo 中完成登记。
  */
 export enum ComponentUsageDecision {
     Allowed = "ALLOWED",
     MemberQuotaExhausted = "MEMBER_QUOTA_EXHAUSTED",
+    QuotaNotConfigured = "QUOTA_NOT_CONFIGURED",
     TenantQuotaExhausted = "TENANT_QUOTA_EXHAUSTED",
 }
 
@@ -5712,11 +5714,12 @@ export enum TenantQuotaFeature {
 /**
  *
  * DD-165(4)：成员本人在一个额度项上的当前状态。AVAILABLE：可用；MEMBER_LIMIT_REACHED：本人已达成员上限；TENANT_EXHAUSTED：组织额度已用完（不显示组织数字）；UNAVAILABLE：OpenMeter
- * 不可读或映射不唯一，不显示数值。
+ * 不可读或映射不唯一，不显示数值。NOT_CONFIGURED：该额度项尚未在 Kailo 中完成登记（DD-165(5)），不显示数值。
  */
 export enum MemberUsageState {
     Available = "AVAILABLE",
     MemberLimitReached = "MEMBER_LIMIT_REACHED",
+    NotConfigured = "NOT_CONFIGURED",
     TenantExhausted = "TENANT_EXHAUSTED",
     Unavailable = "UNAVAILABLE",
 }

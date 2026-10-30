@@ -12680,12 +12680,14 @@ const (
 )
 
 // DD-165(3)：组件额度准入结论（CHECK，不预留）。TENANT_QUOTA_EXHAUSTED：该 Tenant
-// 的额度项无访问；MEMBER_QUOTA_EXHAUSTED：设置了成员上限且本人本期已用不小于它。两者组件都拒绝该动作且不产生原生副作用。
+// 的额度项无访问；MEMBER_QUOTA_EXHAUSTED：设置了成员上限且本人本期已用不小于它。两者组件都拒绝该动作且不产生原生副作用。QUOTA_NOT_CONFIGURED：该
+// Tenant 的额度项还没有 entitlement（发布对齐未完成，DD-165(5)），组件同样拒绝并提示额度尚未在 Kailo 中完成登记。
 type ComponentUsageDecision string
 
 const (
 	ComponentUsageDecisionALLOWED ComponentUsageDecision = "ALLOWED"
 	MemberQuotaExhausted          ComponentUsageDecision = "MEMBER_QUOTA_EXHAUSTED"
+	QuotaNotConfigured            ComponentUsageDecision = "QUOTA_NOT_CONFIGURED"
 	TenantQuotaExhausted          ComponentUsageDecision = "TENANT_QUOTA_EXHAUSTED"
 )
 
@@ -13015,14 +13017,15 @@ const (
 )
 
 // DD-165(4)：成员本人在一个额度项上的当前状态。AVAILABLE：可用；MEMBER_LIMIT_REACHED：本人已达成员上限；TENANT_EXHAUSTED：组织额度已用完（不显示组织数字）；UNAVAILABLE：OpenMeter
-// 不可读或映射不唯一，不显示数值。
+// 不可读或映射不唯一，不显示数值。NOT_CONFIGURED：该额度项尚未在 Kailo 中完成登记（DD-165(5)），不显示数值。
 type MemberUsageState string
 
 const (
-	MemberLimitReached          MemberUsageState = "MEMBER_LIMIT_REACHED"
-	MemberUsageStateAVAILABLE   MemberUsageState = "AVAILABLE"
-	MemberUsageStateUNAVAILABLE MemberUsageState = "UNAVAILABLE"
-	TenantExhausted             MemberUsageState = "TENANT_EXHAUSTED"
+	MemberLimitReached            MemberUsageState = "MEMBER_LIMIT_REACHED"
+	MemberUsageStateAVAILABLE     MemberUsageState = "AVAILABLE"
+	MemberUsageStateNOTCONFIGURED MemberUsageState = "NOT_CONFIGURED"
+	MemberUsageStateUNAVAILABLE   MemberUsageState = "UNAVAILABLE"
+	TenantExhausted               MemberUsageState = "TENANT_EXHAUSTED"
 )
 
 // 原 Buzz NIP-56 举报类型（buzz-relay handlers/report.rs::REPORT_TYPES，SF-BUZ-52）。线格式即 kind 1984
@@ -13347,8 +13350,8 @@ const (
 type PushAvailability string
 
 const (
-	Configured    PushAvailability = "CONFIGURED"
-	NotConfigured PushAvailability = "NOT_CONFIGURED"
+	Configured                    PushAvailability = "CONFIGURED"
+	PushAvailabilityNOTCONFIGURED PushAvailability = "NOT_CONFIGURED"
 )
 
 // DD-151(1)：设备推送登记的提供方。APNS 为 iOS，FCM 为 Android。

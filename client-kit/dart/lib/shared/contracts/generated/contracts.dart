@@ -12825,16 +12825,19 @@ class ComponentUsageAdmission {
 }
 
 ///DD-165(3)：组件额度准入结论（CHECK，不预留）。TENANT_QUOTA_EXHAUSTED：该 Tenant
-///的额度项无访问；MEMBER_QUOTA_EXHAUSTED：设置了成员上限且本人本期已用不小于它。两者组件都拒绝该动作且不产生原生副作用。
+///的额度项无访问；MEMBER_QUOTA_EXHAUSTED：设置了成员上限且本人本期已用不小于它。两者组件都拒绝该动作且不产生原生副作用。QUOTA_NOT_CONFIGURED：该
+///Tenant 的额度项还没有 entitlement（发布对齐未完成，DD-165(5)），组件同样拒绝并提示额度尚未在 Kailo 中完成登记。
 enum ComponentUsageDecision {
   ALLOWED,
   MEMBER_QUOTA_EXHAUSTED,
+  QUOTA_NOT_CONFIGURED,
   TENANT_QUOTA_EXHAUSTED,
 }
 
 final componentUsageDecisionValues = EnumValues({
   "ALLOWED": ComponentUsageDecision.ALLOWED,
   "MEMBER_QUOTA_EXHAUSTED": ComponentUsageDecision.MEMBER_QUOTA_EXHAUSTED,
+  "QUOTA_NOT_CONFIGURED": ComponentUsageDecision.QUOTA_NOT_CONFIGURED,
   "TENANT_QUOTA_EXHAUSTED": ComponentUsageDecision.TENANT_QUOTA_EXHAUSTED,
 });
 
@@ -16865,10 +16868,11 @@ final tenantQuotaFeatureValues = EnumValues({
 
 ///
 ///DD-165(4)：成员本人在一个额度项上的当前状态。AVAILABLE：可用；MEMBER_LIMIT_REACHED：本人已达成员上限；TENANT_EXHAUSTED：组织额度已用完（不显示组织数字）；UNAVAILABLE：OpenMeter
-///不可读或映射不唯一，不显示数值。
+///不可读或映射不唯一，不显示数值。NOT_CONFIGURED：该额度项尚未在 Kailo 中完成登记（DD-165(5)），不显示数值。
 enum MemberUsageState {
   AVAILABLE,
   MEMBER_LIMIT_REACHED,
+  NOT_CONFIGURED,
   TENANT_EXHAUSTED,
   UNAVAILABLE,
 }
@@ -16876,6 +16880,7 @@ enum MemberUsageState {
 final memberUsageStateValues = EnumValues({
   "AVAILABLE": MemberUsageState.AVAILABLE,
   "MEMBER_LIMIT_REACHED": MemberUsageState.MEMBER_LIMIT_REACHED,
+  "NOT_CONFIGURED": MemberUsageState.NOT_CONFIGURED,
   "TENANT_EXHAUSTED": MemberUsageState.TENANT_EXHAUSTED,
   "UNAVAILABLE": MemberUsageState.UNAVAILABLE,
 });
