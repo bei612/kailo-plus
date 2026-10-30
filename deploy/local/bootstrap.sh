@@ -517,6 +517,28 @@ if [ "${1:-}" = '--verify-directory-clients' ] && [ "$#" -eq 1 ]; then
   idp_declarations directory-clients --verify
   exit $?
 fi
+# DD-164(6)、07 §4.7.5「撤权」：Worker 结束被撤 Tenant 成员全部 IdP 会话所用的专用 client
+# （IDP_SESSION_TERMINATION_CLIENT_ID）。只有 service account，唯一授予并纳入 scope 的角色是 realm-management
+# 的 manage-users；同名而不一致拒绝、不覆写；凭据以 IdP 为准，只写入运行目录
+# secrets/idp-session-termination/worker.env（0600 env 文件），由 Worker 的 env_file 读取。不输出值。
+if [ "${1:-}" = '--declare-session-termination-client' ] && [ "$#" -eq 1 ]; then
+  idp_declarations session-termination
+  exit $?
+fi
+if [ "${1:-}" = '--verify-session-termination-client' ] && [ "$#" -eq 1 ]; then
+  idp_declarations session-termination --verify
+  exit $?
+fi
+# DD-164(8)：realm 的 Kailo 登录主题（loginTheme=kailo，主题文件由 compose 只读投递）、显示名
+# （PLATFORM_DISPLAY_NAME）与中英语言。持久化 realm 不重新导入模板，只经此收敛六个展示字段并回读。
+if [ "${1:-}" = '--declare-realm-presentation' ] && [ "$#" -eq 1 ]; then
+  idp_declarations realm-presentation
+  exit $?
+fi
+if [ "${1:-}" = '--verify-realm-presentation' ] && [ "$#" -eq 1 ]; then
+  idp_declarations realm-presentation --verify
+  exit $?
+fi
 # 持久化 realm 同样不会因导入文件新增平台管理员。只按用户名补齐这一个用户：
 # 恰好 0 个则按 realm 模板中的同一条定义创建，恰好 1 个不改动，多于 1 个拒绝；
 # 其他用户、client、角色与 mapper 不读不写。口令只从文件读入进程内存并放进请求体。
@@ -1062,6 +1084,7 @@ OIDC_WORKER_CLIENT_ID="$OIDC_WORKER_CLIENT_ID" OIDC_BROWSER_CLIENT_ID="$OIDC_BRO
 OIDC_REDIRECT_URI="$OIDC_REDIRECT_URI" OIDC_POST_LOGOUT_REDIRECT_URI="$OIDC_POST_LOGOUT_REDIRECT_URI" \
 OIDC_NATIVE_CLIENT_ID="$OIDC_NATIVE_CLIENT_ID" \
 OIDC_NATIVE_AUDIENCE="$OIDC_NATIVE_AUDIENCE" AGENTGATEWAY_ADMIN_AUDIENCE="$AGENTGATEWAY_ADMIN_AUDIENCE" \
+PLATFORM_DISPLAY_NAME="${PLATFORM_DISPLAY_NAME:?bootstrap 需要 .env 中的 PLATFORM_DISPLAY_NAME}" \
 CORE_MCP_AUDIENCE="$CORE_MCP_AUDIENCE" \
 OIDC_NATIVE_MOBILE_REDIRECT_URI="$OIDC_NATIVE_MOBILE_REDIRECT_URI" python3 - <<'RENDER'
 import json
@@ -1079,7 +1102,7 @@ from_env = ["TEMPORAL_NAMESPACE", "VERIFY_USER", "BOOTSTRAP_USER", "PLATFORM_ADM
             "OIDC_SERVICE_CLIENT_ID", "OIDC_WORKER_CLIENT_ID", "OIDC_BROWSER_CLIENT_ID", "OIDC_REDIRECT_URI",
             "OIDC_POST_LOGOUT_REDIRECT_URI",
             "OIDC_NATIVE_CLIENT_ID", "OIDC_NATIVE_AUDIENCE", "OIDC_NATIVE_MOBILE_REDIRECT_URI",
-            "AGENTGATEWAY_ADMIN_AUDIENCE", "CORE_MCP_AUDIENCE"]
+            "AGENTGATEWAY_ADMIN_AUDIENCE", "CORE_MCP_AUDIENCE", "PLATFORM_DISPLAY_NAME"]
 with open("identity-provider/realm.json", encoding="utf-8") as fh:
     document = json.load(fh)
 substitutions = {}

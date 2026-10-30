@@ -73,6 +73,10 @@ idp:
     - [./bootstrap.sh, --declare-service-scopes]
     - [./bootstrap.sh, --declare-native-client-profiles]
     - [./bootstrap.sh, --declare-directory-clients]
+    # DD-164(6)：Worker 的会话终止 client 与其凭据文件必须先于 Worker 替换存在（order 中 Worker 在 IdP 之后）
+    - [./bootstrap.sh, --declare-session-termination-client]
+    # DD-164(8)：Kailo 登录主题、显示名与中英语言
+    - [./bootstrap.sh, --declare-realm-presentation]
   always:
     - [./bootstrap.sh, --declare-native-user-pictures]
   verify:
@@ -80,6 +84,8 @@ idp:
     - [./bootstrap.sh, --verify-service-scopes]
     - [./bootstrap.sh, --verify-native-client-profiles]
     - [./bootstrap.sh, --verify-directory-clients]
+    - [./bootstrap.sh, --verify-session-termination-client]
+    - [./bootstrap.sh, --verify-realm-presentation]
 
 # 运行目录中由 start-core.sh 持久派生的 Compose 叠加文件；存在即参与每一次 Compose 调用，
 # 否则重建 agentgateway 会丢掉其派生配置。
@@ -99,6 +105,9 @@ env:
     # DD-133(4)、07 §4.7.4：三个组件部署单元的成员目录 client（由上方 idp 段声明、凭据写入运行目录
     # secrets/component-directory/<组件>/client_secret）；binding 以 component-bind.mjs --directory-client-id 登记同一值
     COMPONENT_DIRECTORY_CLIENTS: file-storage=kailo-cells-directory,knowledge=kailo-knowledge-directory,data-query=kailo-wren-directory
+    # DD-164(6)、07 §4.7.5「撤权」：Worker 结束被撤 Tenant 成员 IdP 会话的专用 client（由上方 idp 段声明，
+    # 凭据写入运行目录 secrets/idp-session-termination/worker.env，Worker 以 env_file 读取）
+    IDP_SESSION_TERMINATION_CLIENT_ID: kailo-session-termination
     # ADR-20 §10：运维域投递的唯一位置，由下方 delivery.protocol_peers 渲染；start-core.sh 以所在目录只读挂载给 Core
     APPLICATION_ADAPTER_DIRECTORY_FILE: ${KAILO_RUNTIME_DIR}/data/protocol-peers/adapter-directory.json
     # DD-136(2)：一致性投递候选集合（每个 artifactDigest 一个子目录，PROTOCOL_PEER 由本入口写入，REMOTE_ADAPTER 由

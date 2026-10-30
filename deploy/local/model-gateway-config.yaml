@@ -114,8 +114,9 @@ binds:
         scopes:
         - profile
         - email
+        # DD-164(8)：只投影本机 Kailo 语言（buzz-locale）；没有或不合法时不传 ui_locales，由 IdP 依次取
+        # 其语言 cookie、浏览器 Accept-Language 与 realm 默认 zh-CN。不配置 default（英文浏览器不被强制中文）。
         uiLocales:
-          default: zh-CN
           supported: [zh-CN, en]
           cookie: buzz-locale
         # 本地 logout 是可选的：省略它，POST /logout 会被当作普通请求转给

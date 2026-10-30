@@ -103,12 +103,15 @@ pub(super) fn start_login(
 			.filter(|cookie| cookie.name() == locales.cookie)
 			.map(|cookie| cookie.value().to_owned())
 			.collect::<Vec<_>>();
-		// Ambiguous, unsupported or missing projections cannot change the default.
+		// Ambiguous, unsupported or missing projections cannot change the default; without a
+		// configured default the provider decides (DD-164(8)).
 		let locale = match preferred.as_slice() {
-			[value] if locales.supported.contains(value) => value,
-			_ => &locales.default,
+			[value] if locales.supported.contains(value) => Some(value),
+			_ => locales.default.as_ref(),
 		};
-		params.push(("ui_locales", locale.clone()));
+		if let Some(locale) = locale {
+			params.push(("ui_locales", locale.clone()));
+		}
 	}
 	let location = with_query(&policy.provider.authorization_endpoint, &params);
 	let response = build_redirect_response(&location, &[cookie])?;

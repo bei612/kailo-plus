@@ -43,7 +43,7 @@ func TestRegisteredActivitiesMatchWorkflowReferences(t *testing.T) {
 		}
 	}
 	r := &recordingRegistrar{}
-	registerActivities(r, &activities.SpiceDB{}, &activities.CoreAPI{})
+	registerActivities(r, &activities.SpiceDB{}, &activities.CoreAPI{}, &activities.IdentityProvider{})
 	got := map[string]bool{}
 	for _, name := range r.names {
 		if got[name] {

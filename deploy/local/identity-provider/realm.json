@@ -4,6 +4,8 @@
   "internationalizationEnabled": true,
   "supportedLocales": ["zh-CN", "en"],
   "defaultLocale": "zh-CN",
+  "loginTheme": "kailo",
+  "displayName": "__PLATFORM_DISPLAY_NAME__",
   "sslRequired": "none",
   "registrationAllowed": false,
   "accessTokenLifespan": 900,

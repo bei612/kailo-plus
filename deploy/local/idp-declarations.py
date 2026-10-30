@@ -20,6 +20,15 @@
                             机密 client 与唯一的 Core service audience mapper；凭据以 IdP 为准，只写入运行目录
                             secrets/component-directory/<组件>/client_secret（0600，原子替换），回读文件与 IdP 一致。
   directory-clients --verify  同一期望值的只读回读（含 secret 文件与 IdP 一致，不输出值）。
+  session-termination       DD-164(6)：Worker 结束被撤成员 IdP 会话所用的专用 client（07 §4.7.5「撤权」）——只有 service
+                            account 的机密 client，无 mapper，唯一授予并纳入 scope 的角色是 realm-management 的
+                            manage-users；凭据以 IdP 为准，只写入运行目录 secrets/idp-session-termination/worker.env
+                            （0600 env 文件，原子替换），由 Worker 的 env_file 读取。IDP_SESSION_TERMINATION_CLIENT_ID 必须声明。
+  session-termination --verify  同一期望值的只读回读（含 secret 文件与 IdP 一致，不输出值）。
+  realm-presentation        DD-164(8)：realm 的 Kailo 登录主题与语言——loginTheme、internationalizationEnabled、
+                            supportedLocales、defaultLocale 取自 realm 模板，displayName 与转义后的 displayNameHtml
+                            取自 PLATFORM_DISPLAY_NAME；只 PUT 这六项并回读。
+  realm-presentation --verify  同一期望值的只读回读。
 
 COMPONENT_DIRECTORY_CLIENTS 为空时目录 client 未声明，同样输出 UNDECLARED 并以 0 退出。
 NATIVE_OIDC_CLIENTS 为空时组件专属客户端未声明：声明与回读都如实输出 UNDECLARED 并以 0 退出，不写入任何东西；
@@ -45,7 +54,7 @@ INPUT_ENV = (
     "OIDC_SERVICE_CLIENT_ID", "OIDC_WORKER_CLIENT_ID", "OIDC_BROWSER_CLIENT_ID", "OIDC_NATIVE_CLIENT_ID",
     "OIDC_NATIVE_AUDIENCE", "OIDC_NATIVE_MOBILE_REDIRECT_URI", "AGENTGATEWAY_ADMIN_AUDIENCE", "CORE_MCP_AUDIENCE",
     "TEMPORAL_NAMESPACE", "VERIFY_USER", "BOOTSTRAP_USER", "PLATFORM_ADMIN_USER",
-    "COMPONENT_DIRECTORY_CLIENTS",
+    "COMPONENT_DIRECTORY_CLIENTS", "IDP_SESSION_TERMINATION_CLIENT_ID", "PLATFORM_DISPLAY_NAME",
 )
 # 摘要另覆盖的仓库文件（相对 deploy/local）。
 INPUT_FILES = ("idp-declarations.py", "identity-provider/realm.json")
@@ -329,9 +338,9 @@ def read_secret_file(path):
         return stream.read().strip()
 
 
-def write_secret_file(path, value):
-    """在同一目录写临时文件（0600）、fsync、原子替换；目录 0700，不跟随软链接。"""
-    for directory in (path.parent.parent, path.parent):
+def write_secret_file(path, value, own_dirs=2):
+    """在同一目录写临时文件（0600）、fsync、原子替换；本步骤拥有的末 own_dirs 级目录 0700，不跟随软链接。"""
+    for directory in (path.parent.parent, path.parent)[2 - own_dirs:]:
         if directory.is_symlink():
             raise Refused("目录 client secret 目录不得是软链接")
         directory.mkdir(mode=0o700, exist_ok=True)
@@ -436,6 +445,186 @@ def directory_clients(api, values, runtime, verify):
         changed += count
     return dict(directoryClients="DECLARED" if not problems else "DRIFTED", clients=len(declared),
                 changed=changed, problems=problems)
+
+
+# ---- DD-164(6)：撤权时结束 IdP 会话的专用 client（07 §4.7.5「撤权」） ----------------------------
+
+# Worker 的投递沿用其既有凭据形式（env_file，0600）：容器以非 root 运行，读不到属主为部署用户的 0600 挂载文件，
+# 而 env_file 由 Compose 在宿主读取。文件只含这一行，变量名固定。
+SESSION_TERMINATION_SECRET = ("secrets", "idp-session-termination", "worker.env")
+SESSION_TERMINATION_ENV = "IDP_SESSION_TERMINATION_CLIENT_SECRET"
+
+
+def read_session_secret(path):
+    raw = read_secret_file(path)
+    if raw is None:
+        return None
+    name, sep, value = raw.partition("=")
+    if not sep or name != SESSION_TERMINATION_ENV or "\n" in value:
+        raise Refused("会话终止 client 的凭据文件格式不符")
+    return value
+
+
+def write_session_secret(path, value):
+    if not re.fullmatch(r"[A-Za-z0-9._~-]+", value):
+        raise Refused("会话终止 client secret 含 env 文件不能安全承载的字符")
+    write_secret_file(path, f"{SESSION_TERMINATION_ENV}={value}", own_dirs=1)
+# realm 管理 client 的唯一授予角色：用户退出接口（POST /users/{id}/logout）要求对目标用户的 manage。
+SESSION_TERMINATION_ROLE = ("realm-management", "manage-users")
+
+
+def session_termination_client_id(values):
+    client_id = (values.get("IDP_SESSION_TERMINATION_CLIENT_ID") or "").strip()
+    taken = {values.get(k) for k in ("OIDC_SERVICE_CLIENT_ID", "OIDC_WORKER_CLIENT_ID", "OIDC_BROWSER_CLIENT_ID",
+                                     "OIDC_NATIVE_CLIENT_ID", "OIDC_NATIVE_AUDIENCE", "AGENTGATEWAY_ADMIN_AUDIENCE",
+                                     "CORE_MCP_AUDIENCE")} - {None}
+    taken |= {item.partition("=")[0] for item in (values.get("NATIVE_OIDC_CLIENTS") or "").split(",") if item}
+    taken |= {client for _, client in declared_directory_clients(values)}
+    if not CLIENT_ID_SEGMENT.fullmatch(client_id) or client_id in taken:
+        raise Refused("IDP_SESSION_TERMINATION_CLIENT_ID 必须声明为唯一的 clientId，且不是平台、组件或目录 client")
+    return client_id
+
+
+def session_termination_client(client_id, secret):
+    return dict(DIRECTORY_CLIENT_SHAPE, clientId=client_id, name="Kailo session termination (DD-164)",
+                secret=secret, redirectUris=[], webOrigins=[], fullScopeAllowed=False,
+                attributes=dict(DIRECTORY_DISABLED_GRANTS), protocolMappers=[])
+
+
+def session_termination(api, values, runtime, verify):
+    """返回 {sessionTermination, changed, problems}（不含值）。client 不存在即创建（凭据先写文件）；形态、mapper
+    或多出的角色与声明不一致即拒绝而不覆写；缺少的唯一角色与 scope 映射在声明模式补齐并回读。"""
+    client_id = session_termination_client_id(values)
+    realm = values["OIDC_REALM"]
+    path = pathlib.Path(runtime, *SESSION_TERMINATION_SECRET)
+    label = "会话终止 client"
+
+    def find(client):
+        found = [c for c in api("/clients?" + urllib.parse.urlencode({"clientId": client})) or []
+                 if c.get("clientId") == client]
+        if len(found) > 1:
+            raise Refused(f"{label}不唯一")
+        return found[0] if found else None
+
+    changed, problems = 0, []
+    current = find(client_id)
+    if current is None:
+        if verify:
+            return dict(sessionTermination="DRIFTED", changed=0, problems=[f"{label}不存在"])
+        secret = read_session_secret(path)
+        if not secret:
+            secret = new_secret()
+            write_session_secret(path, secret)
+        try:
+            api("/clients", session_termination_client(client_id, secret))
+        except (urllib.error.URLError, OSError):
+            pass  # 创建回应丢失只由回读判定，不重复 POST
+        current = find(client_id)
+        if current is None:
+            raise Refused(f"{label}回读不存在")
+        changed += 1
+    problem = directory_shape_problem(current)
+    if problem:
+        raise Refused(f"{label}已存在而{problem}与声明不一致（不覆写）")
+    if current.get("fullScopeAllowed") is not False:
+        raise Refused(f"{label}已存在而 full scope 与声明不一致（不覆写）")
+    client_path = "/clients/" + urllib.parse.quote(current["id"], safe="")
+    if api(client_path + "/protocol-mappers/models"):
+        raise Refused(f"{label}含 mapper（不覆写）")
+    management = find(SESSION_TERMINATION_ROLE[0])
+    if management is None:
+        raise Refused("realm 缺少 realm-management client")
+    management_path = urllib.parse.quote(management["id"], safe="")
+    role = api("/clients/" + management_path + "/roles/" + SESSION_TERMINATION_ROLE[1])
+    if not role or not role.get("id"):
+        raise Refused("realm-management 缺少 manage-users 角色")
+    wanted = [{"id": role["id"], "name": role["name"]}]
+    account = api(client_path + "/service-account-user") or {}
+    if not account.get("id"):
+        raise Refused(f"{label}没有 service account")
+    account_path = "/users/" + urllib.parse.quote(account["id"], safe="")
+
+    def granted():
+        mapped = api(account_path + "/role-mappings") or {}
+        realm_roles = {r.get("name") for r in mapped.get("realmMappings") or []}
+        clients = {name: {r.get("name") for r in (entry or {}).get("mappings") or []}
+                   for name, entry in (mapped.get("clientMappings") or {}).items()}
+        return realm_roles, clients
+
+    def scoped():
+        mapped = api(client_path + "/scope-mappings") or {}
+        return ({r.get("name") for r in mapped.get("realmMappings") or []},
+                {name: {r.get("name") for r in (entry or {}).get("mappings") or []}
+                 for name, entry in (mapped.get("clientMappings") or {}).items()})
+
+    for read, write, what in (
+            (granted, account_path + "/role-mappings/clients/" + management_path, "service account 角色"),
+            (scoped, client_path + "/scope-mappings/clients/" + management_path, "scope 映射")):
+        realm_roles, clients = read()
+        extra_realm = realm_roles - {"default-roles-" + realm.lower()}
+        extra_clients = {n: r for n, r in clients.items() if n != SESSION_TERMINATION_ROLE[0] and r}
+        extra_management = clients.get(SESSION_TERMINATION_ROLE[0], set()) - {SESSION_TERMINATION_ROLE[1]}
+        if extra_realm or extra_clients or extra_management:
+            raise Refused(f"{label}的{what}含 manage-users 以外的授予（不覆写）")
+        if SESSION_TERMINATION_ROLE[1] in clients.get(SESSION_TERMINATION_ROLE[0], set()):
+            continue
+        if verify:
+            problems.append(f"{label}的{what}缺少 manage-users")
+            continue
+        api(write, wanted)
+        if SESSION_TERMINATION_ROLE[1] not in read()[1].get(SESSION_TERMINATION_ROLE[0], set()):
+            raise Refused(f"{label}的{what}回读不一致")
+        changed += 1
+    idp_secret = (api(client_path + "/client-secret") or {}).get("value")
+    if not idp_secret:
+        raise Refused(f"{label}在 IdP 中没有 client secret")
+    if read_session_secret(path) != idp_secret:
+        if verify:
+            problems.append(f"{label}的 secret 文件缺失或与 IdP 不一致")
+        else:
+            write_session_secret(path, idp_secret)
+            if read_session_secret(path) != idp_secret:
+                raise Refused(f"{label}的 secret 文件回读不一致")
+            changed += 1
+    return dict(sessionTermination="DECLARED" if not problems else "DRIFTED", changed=changed, problems=problems)
+
+
+# ---- DD-164(8)：realm 的 Kailo 登录主题、显示名与语言 ----------------------------------------------
+
+PRESENTATION_TEMPLATE_KEYS = ("loginTheme", "internationalizationEnabled", "supportedLocales", "defaultLocale")
+
+
+def desired_presentation(template, values):
+    import html
+    wanted = {k: template.get(k) for k in PRESENTATION_TEMPLATE_KEYS}
+    if (wanted["loginTheme"] != "kailo" or wanted["internationalizationEnabled"] is not True
+            or wanted["defaultLocale"] != "zh-CN" or sorted(wanted["supportedLocales"] or []) != ["en", "zh-CN"]):
+        raise Refused("realm 模板必须选择 kailo 登录主题并启用中文默认与中英选择")
+    name = " ".join((values.get("PLATFORM_DISPLAY_NAME") or "").split())
+    if not name or len(name) > 64:
+        raise Refused("PLATFORM_DISPLAY_NAME 必须为 1–64 字符")
+    wanted.update(displayName=name, displayNameHtml=html.escape(name, quote=True))
+    return wanted
+
+
+def same_presentation(current, wanted):
+    return all(sorted(current.get(k) or []) == sorted(v) if isinstance(v, list) else current.get(k) == v
+               for k, v in wanted.items())
+
+
+def realm_presentation(api, template, values, verify):
+    wanted = desired_presentation(template, values)
+    current = api("")
+    if current.get("realm") != values["OIDC_REALM"]:
+        raise Refused("realm 读取对象不匹配")
+    if same_presentation(current, wanted):
+        return dict(realmPresentation="DECLARED", changed=0, problems=[])
+    if verify:
+        return dict(realmPresentation="DRIFTED", changed=0, problems=["realm 登录主题、显示名或语言与声明不一致"])
+    api("", wanted, "PUT")  # Keycloak 只更新请求体中出现的 realm 字段
+    if not same_presentation(api(""), wanted):
+        raise Refused("realm 登录主题、显示名或语言回读不一致")
+    return dict(realmPresentation="DECLARED", changed=1, problems=[])
 
 
 # ---- Keycloak 管理 API ---------------------------------------------------------------
@@ -704,12 +893,14 @@ def service_scopes(api, values, scope_def, mapper, verify):
 
 
 def main(argv):
-    modes = ("sync-redirects", "native-profiles", "service-scopes", "directory-clients")
+    modes = ("sync-redirects", "native-profiles", "service-scopes", "directory-clients", "session-termination",
+             "realm-presentation")
     if len(argv) < 1 or argv[0] not in modes:
         raise Refused("用法：idp-declarations.py " + "|".join(modes) + " [--verify|--users-only]")
     flags = set(argv[1:])
     allowed = {"sync-redirects": {"--verify"}, "native-profiles": {"--verify", "--users-only"},
-               "service-scopes": {"--verify"}, "directory-clients": {"--verify"}}[argv[0]]
+               "service-scopes": {"--verify"}, "directory-clients": {"--verify"},
+               "session-termination": {"--verify"}, "realm-presentation": {"--verify"}}[argv[0]]
     if not flags <= allowed or len(flags) > 1:
         raise Refused("参数无效")
     runtime = os.environ.get("KAILO_RUNTIME_DIR")
@@ -725,11 +916,15 @@ def main(argv):
         return dict(nativeClientProfiles="UNDECLARED", clients=0, problems=[])
     if argv[0] == "directory-clients" and not declared_directory_clients(values):
         return dict(directoryClients="UNDECLARED", clients=0, changed=0, problems=[])
+    if argv[0] == "session-termination":
+        session_termination_client_id(values)  # 缺失或冲突的声明先于任何网络动作拒绝
     here = pathlib.Path(__file__).resolve().parent
     with open(here / "identity-provider" / "realm.json", encoding="utf-8") as stream:
         template = json.load(stream)
     if argv[0] == "service-scopes":
         scope_def, mapper = core_mcp_scope(template, values)
+    if argv[0] == "realm-presentation":
+        desired_presentation(template, values)
     api = Admin(values, runtime)
     if verify:
         api = ReadOnly(api)
@@ -739,6 +934,10 @@ def main(argv):
         return service_scopes(api, values, scope_def, mapper, verify)
     if argv[0] == "directory-clients":
         return directory_clients(api, values, runtime, verify)
+    if argv[0] == "session-termination":
+        return session_termination(api, values, runtime, verify)
+    if argv[0] == "realm-presentation":
+        return realm_presentation(api, template, values, verify)
     return native_profiles(api, values, "verify" if verify else "users-only" if "--users-only" in flags
                            else "declare")
 

@@ -51,7 +51,11 @@ struct PreparedOidcPolicy {
 /// Presentation-only locale projection. Never used as an authentication claim.
 #[apply(schema!)]
 pub struct OidcUiLocales {
-	pub default: String,
+	/// Locale sent when the projection cookie is missing, ambiguous or unsupported. Omit it to send
+	/// no `ui_locales` then, so the provider keeps its own choice (its language cookie, the browser
+	/// `Accept-Language`, then its default) — DD-164(8).
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub default: Option<String>,
 	pub supported: Vec<String>,
 	pub cookie: String,
 }
@@ -214,7 +218,10 @@ impl LocalOidcConfig {
 			backchannel_logout,
 		} = self;
 		if let Some(locales) = &ui_locales {
-			if !locales.supported.contains(&locales.default)
+			if locales
+				.default
+				.as_ref()
+				.is_some_and(|default| !locales.supported.contains(default))
 				|| locales.supported.iter().any(|locale| {
 					locale.is_empty()
 						|| !locale

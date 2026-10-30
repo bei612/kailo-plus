@@ -58,6 +58,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("构造 Core service 客户端失败: %v", err)
 	}
+	// DD-164(6)：Tenant 撤权必须能结束 IdP 会话；会话终止 client 未投递即拒绝启动。
+	idp, err := activities.NewIdentityProviderFromEnv()
+	if err != nil {
+		log.Fatalf("构造 IdP 会话终止客户端失败: %v", err)
+	}
 
 	// Activity 的超时与重试间隔是部署事实，缺任一项即拒绝启动：Workflow
 	// 里没有默认值可以回退，零值会让每次 Activity 调度当场失败。
@@ -76,7 +81,7 @@ func main() {
 		workflow.RegisterOptions{Name: workflows.ApprovalKind})
 	w.RegisterWorkflowWithOptions(workflows.AgentTask,
 		workflow.RegisterOptions{Name: workflows.AgentTaskKind})
-	registerActivities(w, spicedb, core)
+	registerActivities(w, spicedb, core, idp)
 
 	if err := w.Run(worker.InterruptCh()); err != nil {
 		log.Fatalf("worker 退出: %v", err)

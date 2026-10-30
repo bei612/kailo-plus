@@ -4429,7 +4429,7 @@
 |`binds[].listeners[].routes[].policies.oidc.redirectURI`|string|Absolute callback URI handled by the gateway.<br>Unauthenticated document navigations are redirected back through this login flow.|
 |`binds[].listeners[].routes[].policies.oidc.scopes`|[]string|Additional OAuth2 scopes to request. `openid` is always included.|
 |`binds[].listeners[].routes[].policies.oidc.uiLocales`|object|Pass the supported browser preference, or the configured default, to the IdP.|
-|`binds[].listeners[].routes[].policies.oidc.uiLocales.default`|string||
+|`binds[].listeners[].routes[].policies.oidc.uiLocales.default`|string|Locale sent when the projection cookie is missing, ambiguous or unsupported. Omit it to send<br>no `ui_locales` then, so the provider keeps its own choice (its language cookie, the browser<br>`Accept-Language`, then its default) — DD-164(8).|
 |`binds[].listeners[].routes[].policies.oidc.uiLocales.supported`|[]string||
 |`binds[].listeners[].routes[].policies.oidc.uiLocales.cookie`|string||
 |`binds[].listeners[].routes[].policies.oidc.login`|object|Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.|
@@ -19061,7 +19061,7 @@
 |`binds[].listeners[].policies.oidc.redirectURI`|string|Absolute callback URI handled by the gateway.<br>Unauthenticated document navigations are redirected back through this login flow.|
 |`binds[].listeners[].policies.oidc.scopes`|[]string|Additional OAuth2 scopes to request. `openid` is always included.|
 |`binds[].listeners[].policies.oidc.uiLocales`|object|Pass the supported browser preference, or the configured default, to the IdP.|
-|`binds[].listeners[].policies.oidc.uiLocales.default`|string||
+|`binds[].listeners[].policies.oidc.uiLocales.default`|string|Locale sent when the projection cookie is missing, ambiguous or unsupported. Omit it to send<br>no `ui_locales` then, so the provider keeps its own choice (its language cookie, the browser<br>`Accept-Language`, then its default) — DD-164(8).|
 |`binds[].listeners[].policies.oidc.uiLocales.supported`|[]string||
 |`binds[].listeners[].policies.oidc.uiLocales.cookie`|string||
 |`binds[].listeners[].policies.oidc.login`|object|Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.|
@@ -26167,7 +26167,7 @@
 |`policies[].policy.oidc.redirectURI`|string|Absolute callback URI handled by the gateway.<br>Unauthenticated document navigations are redirected back through this login flow.|
 |`policies[].policy.oidc.scopes`|[]string|Additional OAuth2 scopes to request. `openid` is always included.|
 |`policies[].policy.oidc.uiLocales`|object|Pass the supported browser preference, or the configured default, to the IdP.|
-|`policies[].policy.oidc.uiLocales.default`|string||
+|`policies[].policy.oidc.uiLocales.default`|string|Locale sent when the projection cookie is missing, ambiguous or unsupported. Omit it to send<br>no `ui_locales` then, so the provider keeps its own choice (its language cookie, the browser<br>`Accept-Language`, then its default) — DD-164(8).|
 |`policies[].policy.oidc.uiLocales.supported`|[]string||
 |`policies[].policy.oidc.uiLocales.cookie`|string||
 |`policies[].policy.oidc.login`|object|Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.|
@@ -44758,7 +44758,7 @@
 |`routeGroups[].routes[].policies.oidc.redirectURI`|string|Absolute callback URI handled by the gateway.<br>Unauthenticated document navigations are redirected back through this login flow.|
 |`routeGroups[].routes[].policies.oidc.scopes`|[]string|Additional OAuth2 scopes to request. `openid` is always included.|
 |`routeGroups[].routes[].policies.oidc.uiLocales`|object|Pass the supported browser preference, or the configured default, to the IdP.|
-|`routeGroups[].routes[].policies.oidc.uiLocales.default`|string||
+|`routeGroups[].routes[].policies.oidc.uiLocales.default`|string|Locale sent when the projection cookie is missing, ambiguous or unsupported. Omit it to send<br>no `ui_locales` then, so the provider keeps its own choice (its language cookie, the browser<br>`Accept-Language`, then its default) — DD-164(8).|
 |`routeGroups[].routes[].policies.oidc.uiLocales.supported`|[]string||
 |`routeGroups[].routes[].policies.oidc.uiLocales.cookie`|string||
 |`routeGroups[].routes[].policies.oidc.login`|object|Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.|
@@ -59097,7 +59097,7 @@
 |`gateways.*.listeners[].oidc.redirectURI`|string|Absolute callback URI handled by the gateway.<br>Unauthenticated document navigations are redirected back through this login flow.|
 |`gateways.*.listeners[].oidc.scopes`|[]string|Additional OAuth2 scopes to request. `openid` is always included.|
 |`gateways.*.listeners[].oidc.uiLocales`|object|Pass the supported browser preference, or the configured default, to the IdP.|
-|`gateways.*.listeners[].oidc.uiLocales.default`|string||
+|`gateways.*.listeners[].oidc.uiLocales.default`|string|Locale sent when the projection cookie is missing, ambiguous or unsupported. Omit it to send<br>no `ui_locales` then, so the provider keeps its own choice (its language cookie, the browser<br>`Accept-Language`, then its default) — DD-164(8).|
 |`gateways.*.listeners[].oidc.uiLocales.supported`|[]string||
 |`gateways.*.listeners[].oidc.uiLocales.cookie`|string||
 |`gateways.*.listeners[].oidc.login`|object|Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.|
@@ -60433,7 +60433,7 @@
 |`gateways.*.oidc.redirectURI`|string|Absolute callback URI handled by the gateway.<br>Unauthenticated document navigations are redirected back through this login flow.|
 |`gateways.*.oidc.scopes`|[]string|Additional OAuth2 scopes to request. `openid` is always included.|
 |`gateways.*.oidc.uiLocales`|object|Pass the supported browser preference, or the configured default, to the IdP.|
-|`gateways.*.oidc.uiLocales.default`|string||
+|`gateways.*.oidc.uiLocales.default`|string|Locale sent when the projection cookie is missing, ambiguous or unsupported. Omit it to send<br>no `ui_locales` then, so the provider keeps its own choice (its language cookie, the browser<br>`Accept-Language`, then its default) — DD-164(8).|
 |`gateways.*.oidc.uiLocales.supported`|[]string||
 |`gateways.*.oidc.uiLocales.cookie`|string||
 |`gateways.*.oidc.login`|object|Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.|
@@ -66030,7 +66030,7 @@
 |`routes[].policies.oidc.redirectURI`|string|Absolute callback URI handled by the gateway.<br>Unauthenticated document navigations are redirected back through this login flow.|
 |`routes[].policies.oidc.scopes`|[]string|Additional OAuth2 scopes to request. `openid` is always included.|
 |`routes[].policies.oidc.uiLocales`|object|Pass the supported browser preference, or the configured default, to the IdP.|
-|`routes[].policies.oidc.uiLocales.default`|string||
+|`routes[].policies.oidc.uiLocales.default`|string|Locale sent when the projection cookie is missing, ambiguous or unsupported. Omit it to send<br>no `ui_locales` then, so the provider keeps its own choice (its language cookie, the browser<br>`Accept-Language`, then its default) — DD-164(8).|
 |`routes[].policies.oidc.uiLocales.supported`|[]string||
 |`routes[].policies.oidc.uiLocales.cookie`|string||
 |`routes[].policies.oidc.login`|object|Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.|
@@ -84727,7 +84727,7 @@
 |`llm.policies.oidc.redirectURI`|string|Absolute callback URI handled by the gateway.<br>Unauthenticated document navigations are redirected back through this login flow.|
 |`llm.policies.oidc.scopes`|[]string|Additional OAuth2 scopes to request. `openid` is always included.|
 |`llm.policies.oidc.uiLocales`|object|Pass the supported browser preference, or the configured default, to the IdP.|
-|`llm.policies.oidc.uiLocales.default`|string||
+|`llm.policies.oidc.uiLocales.default`|string|Locale sent when the projection cookie is missing, ambiguous or unsupported. Omit it to send<br>no `ui_locales` then, so the provider keeps its own choice (its language cookie, the browser<br>`Accept-Language`, then its default) — DD-164(8).|
 |`llm.policies.oidc.uiLocales.supported`|[]string||
 |`llm.policies.oidc.uiLocales.cookie`|string||
 |`llm.policies.oidc.login`|object|Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.|
@@ -93488,7 +93488,7 @@
 |`mcp.policies.oidc.redirectURI`|string|Absolute callback URI handled by the gateway.<br>Unauthenticated document navigations are redirected back through this login flow.|
 |`mcp.policies.oidc.scopes`|[]string|Additional OAuth2 scopes to request. `openid` is always included.|
 |`mcp.policies.oidc.uiLocales`|object|Pass the supported browser preference, or the configured default, to the IdP.|
-|`mcp.policies.oidc.uiLocales.default`|string||
+|`mcp.policies.oidc.uiLocales.default`|string|Locale sent when the projection cookie is missing, ambiguous or unsupported. Omit it to send<br>no `ui_locales` then, so the provider keeps its own choice (its language cookie, the browser<br>`Accept-Language`, then its default) — DD-164(8).|
 |`mcp.policies.oidc.uiLocales.supported`|[]string||
 |`mcp.policies.oidc.uiLocales.cookie`|string||
 |`mcp.policies.oidc.login`|object|Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.|
@@ -95654,7 +95654,7 @@
 |`ui.policies.oidc.redirectURI`|string|Absolute callback URI handled by the gateway.<br>Unauthenticated document navigations are redirected back through this login flow.|
 |`ui.policies.oidc.scopes`|[]string|Additional OAuth2 scopes to request. `openid` is always included.|
 |`ui.policies.oidc.uiLocales`|object|Pass the supported browser preference, or the configured default, to the IdP.|
-|`ui.policies.oidc.uiLocales.default`|string||
+|`ui.policies.oidc.uiLocales.default`|string|Locale sent when the projection cookie is missing, ambiguous or unsupported. Omit it to send<br>no `ui_locales` then, so the provider keeps its own choice (its language cookie, the browser<br>`Accept-Language`, then its default) — DD-164(8).|
 |`ui.policies.oidc.uiLocales.supported`|[]string||
 |`ui.policies.oidc.uiLocales.cookie`|string||
 |`ui.policies.oidc.login`|object|Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.|

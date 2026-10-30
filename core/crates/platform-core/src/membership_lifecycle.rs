@@ -119,6 +119,19 @@ pub struct MembershipTarget {
     /// 为空时不写出，其余 input 的形状与已录制 history 逐字相同。
     #[serde(skip_serializing_if = "Vec::is_empty")]
     workspace_memberships: Vec<WorkspaceMembershipRef>,
+    /// 只有 Tenant 撤权才有：此人启动时 ACTIVE 的 ExternalIdentity（issuer+subject），
+    /// Worker 据此经专用 IdP client 结束其全部 IdP 会话（DD-164(6)、`.design/07`
+    /// §4.7.5「撤权」）。只是 IdP 用户定位，不是凭据；为空时不写出。
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    identity_provider_subjects: Vec<IdentityProviderSubject>,
+}
+
+/// Tenant 撤权时要结束其 IdP 会话的一个外部身份。
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IdentityProviderSubject {
+    issuer: String,
+    subject: String,
 }
 
 /// Tenant 撤权连带收敛的一个 WorkspaceMembership。版本是启动时读到的那个：
@@ -215,6 +228,16 @@ pub(crate) async fn launch_membership(
         } else {
             Vec::new()
         };
+    // 同一冻结时点读取此人的 ACTIVE 外部身份；重跑重新读取。
+    let identity_provider_subjects =
+        if kind == "MEMBERSHIP_REVOCATION" && req.scope == MembershipScope::Tenant {
+            match active_identity_provider_subjects(pool, tenant_id, principal_id).await {
+                Ok(v) => v,
+                Err(e) => return Err(unavailable(e)),
+            }
+        } else {
+            Vec::new()
+        };
 
     let workflow_id =
         component_task::workflow_id(kind, tenant_id, &req.membership_id.to_string(), version);
@@ -231,6 +254,7 @@ pub(crate) async fn launch_membership(
                 subject_principal_id: principal_id.to_string(),
                 relation_object_id: object_id.to_string(),
                 workspace_memberships,
+                identity_provider_subjects,
             },
         },
     };
@@ -280,6 +304,29 @@ async fn revoking_workspace_memberships(
             membership_version: version,
             workspace_id: ws.to_string(),
         })
+        .collect())
+}
+
+/// 该 Tenant 成员（Principal）所属 HumanIdentity 的全部 ACTIVE ExternalIdentity。
+async fn active_identity_provider_subjects(
+    pool: &PgPool,
+    tenant_id: Uuid,
+    principal_id: Uuid,
+) -> Result<Vec<IdentityProviderSubject>, sqlx::Error> {
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "select ei.issuer, ei.subject
+         from identity.tenant_membership tm
+         join identity.external_identity ei on ei.human_identity_id = tm.human_identity_id
+         where tm.tenant_id = $1 and tm.tenant_principal_id = $2 and ei.status = 'ACTIVE'
+         order by ei.issuer, ei.subject",
+    )
+    .bind(tenant_id)
+    .bind(principal_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(issuer, subject)| IdentityProviderSubject { issuer, subject })
         .collect())
 }
 
@@ -506,6 +553,7 @@ pub(crate) async fn launch_scope(
                     subject_principal_id: principal.to_string(),
                     relation_object_id: req.id.to_string(),
                     workspace_memberships: Vec::new(),
+                    identity_provider_subjects: Vec::new(),
                 })
             }
             Some((_, _, _, state)) if state != "ACTIVE" => {
