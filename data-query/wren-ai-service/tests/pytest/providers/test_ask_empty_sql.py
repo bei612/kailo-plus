@@ -18,6 +18,7 @@ from src.core.engine import SQLGenerationEmpty
 from src.pipelines.generation.utils.sql import SQLGenPostProcessor
 from src.providers.llm import build_message, check_finish_reason
 from src.providers.llm.litellm import LitellmLLMProvider
+from src.utils import extract_braces_content
 from src.web.v1.services.ask import AskRequest, AskResultRequest, AskService
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -65,7 +66,8 @@ class EmptySQLPostProcess(unittest.IsolatedAsyncioTestCase):
         cases = (
             ([""], [{"finish_reason": "length", "reasoning_only": True}], "hidden reasoning"),
             (['{"sql": ""}'], [{"finish_reason": "stop"}], "empty answer"),
-            (["```json\n{\"sql\": \"   \"}\n```"], None, "empty answer"),
+            # A fenced answer as the provider hands it over (fence removed).
+            ([extract_braces_content('```json\n{"sql": "   "}\n```')], None, "empty answer"),
             (['{"sql": "SELECT month, COUNT(*) FROM orders GROUP'], [{"finish_reason": "length"}], "cut off"),
         )
         for replies, meta, reason in cases:
