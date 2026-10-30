@@ -9,7 +9,7 @@ import { THEME_STORAGE_KEY } from "../src/theme/use-appearance";
 import { BffError, TransportError } from "../src/transport";
 
 type Prefs = AccountPreferences;
-const prefs = (value: Partial<Prefs> & { version: number }): Prefs => ({ componentPreferences: {}, ...value } as Prefs);
+const prefs = (value: Partial<Prefs> & { version: number }): Prefs => ({ componentPreferences: [], ...value } as Prefs);
 
 function fakeCore(initial: Prefs) {
   let state = initial;
@@ -22,9 +22,10 @@ function fakeCore(initial: Prefs) {
       if (failNext) { const error = failNext; failNext = null; throw error; }
       if (body.expectedVersion !== state.version) throw new BffError(409, "conflict");
       const { expectedVersion: _, componentPreferences, ...rest } = body as AccountPreferencesUpdate & Record<string, unknown>;
-      const merged = { ...state.componentPreferences } as Record<string, unknown>;
-      for (const [key, value] of Object.entries(componentPreferences ?? {})) { if (value === null) delete merged[key]; else merged[key] = value; }
-      state = { ...state, ...rest, componentPreferences: merged, version: state.version + 1 } as Prefs;
+      const merged = new Map(state.componentPreferences.map((item) => [item.key, item.value]));
+      for (const change of componentPreferences ?? []) { if (change.value === undefined) merged.delete(change.key); else merged.set(change.key, change.value); }
+      state = { ...state, ...rest, componentPreferences: [...merged].sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => ({ key, value })),
+        version: state.version + 1 } as Prefs;
       return structuredClone(state);
     }),
   };
@@ -38,8 +39,10 @@ describe("account preference values", () => {
   it("merges edits key by key and sends only well-formed values", () => {
     expect(mergeAccountEdits({ theme: "buzz", componentPreferences: { "a.b": true } }, { locale: "en", componentPreferences: { "c.d": "x" } }))
       .toEqual({ theme: "buzz", locale: "en", componentPreferences: { "a.b": true, "c.d": "x" } });
-    expect(accountUpdate(3, { theme: "Bad Theme", accent: "#12ab34", followSystem: false, componentPreferences: { "bad": true, "a.b": null, "c.d": "no spaces" } }))
-      .toEqual({ expectedVersion: 3, accent: "#12ab34", followSystem: false, componentPreferences: { "a.b": null } });
+    expect(accountUpdate(3, { theme: "Bad Theme", accent: "#12ab34", followSystem: false,
+      componentPreferences: { "bad": true, "x.y": false, "a.b": null, "c.d": "no spaces", "e.f": "pt" } }))
+      .toEqual({ expectedVersion: 3, accent: "#12ab34", followSystem: false,
+        componentPreferences: [{ key: "a.b" }, { key: "e.f", value: "pt" }, { key: "x.y", value: "false" }] });
   });
 
   it("applies Core values to every local store without reporting them as edits", () => {
@@ -50,10 +53,10 @@ describe("account preference values", () => {
     window.addEventListener(ACCOUNT_APPEARANCE_APPLY_EVENT, (event) => adopted.push(event));
     window.addEventListener(COMPONENT_PREFERENCES_EVENT, (event) => components.push(event));
     applyAccountPreferences(prefs({ version: 4, theme: "buzz-dark", followSystem: false, locale: "en" as Prefs["locale"],
-      componentPreferences: { "documents.spellcheck": false, "bad": true } }));
+      componentPreferences: [{ key: "documents.spellcheck", value: "false" }, { key: "bad", value: "true" }, { key: "documents.unit", value: "pt" }] }));
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("buzz-dark");
     expect(getLocale()).toBe("en");
-    expect(JSON.parse(window.localStorage.getItem(COMPONENT_PREFERENCES_STORAGE_KEY)!)).toEqual({ "documents.spellcheck": false });
+    expect(JSON.parse(window.localStorage.getItem(COMPONENT_PREFERENCES_STORAGE_KEY)!)).toEqual({ "documents.spellcheck": false, "documents.unit": "pt" });
     expect(adopted).toHaveLength(1);
     expect(components).toHaveLength(1);
     expect(edits).toHaveLength(0);
@@ -122,7 +125,7 @@ describe("AccountPreferenceSync", () => {
     expect(core.state.version).toBe(2);
     window.dispatchEvent(new Event("focus"));
     await sync.idle();
-    expect(core.state.componentPreferences).toEqual({ "documents.spellcheck": false });
+    expect(core.state.componentPreferences).toEqual([{ key: "documents.spellcheck", value: "false" }]);
     expect(core.state.version).toBe(3);
     stop();
   });

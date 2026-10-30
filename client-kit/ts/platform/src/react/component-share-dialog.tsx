@@ -123,6 +123,8 @@ function ShareEditor({ intent, people, peopleFailed, onClose }: { intent: Compon
       const submission = await client.submitAction({
         actionKey: "component.share.set",
         idempotencyKey: attempt.current.key,
+        // SYNC, EXPLICIT: the user confirmed this complete grant list in the dialog.
+        explicitConfirmation: true,
         componentShareSet: { intentId: intent.intentId, grants: body, ...(intent.resourceVersion !== undefined ? { resourceVersion: intent.resourceVersion } : {}) },
       });
       if (submission.gateState === ActionGateState.Allowed && submission.dispatchState === ActionDispatchState.Dispatched) {

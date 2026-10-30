@@ -51,12 +51,15 @@ export function accountUpdate(expectedVersion: number, edit: AccountPreferenceEd
   if (edit.followSystem !== undefined) update.followSystem = edit.followSystem;
   if (edit.locale !== undefined) update.locale = edit.locale;
   if (edit.componentPreferences) {
-    const values: Record<string, boolean | string | null> = {};
-    for (const [key, value] of Object.entries(edit.componentPreferences)) {
-      if (KEY.test(key) && key.length <= 64 && (value === null || typeof value === "boolean" || (typeof value === "string" && OPTION.test(value))))
-        values[key] = value;
+    // Wire form (contracts README §1): [{key, value?}], BOOLEAN as "true"/"false", absent value removes.
+    const changes: { key: string; value?: string }[] = [];
+    for (const [key, value] of Object.entries(edit.componentPreferences).sort(([a], [b]) => a.localeCompare(b))) {
+      if (!KEY.test(key) || key.length > 64) continue;
+      if (value === null) changes.push({ key });
+      else if (typeof value === "boolean") changes.push({ key, value: String(value) });
+      else if (typeof value === "string" && OPTION.test(value)) changes.push({ key, value });
     }
-    if (Object.keys(values).length) update.componentPreferences = values;
+    if (changes.length) update.componentPreferences = changes;
   }
   return update as unknown as AccountPreferencesUpdate;
 }
@@ -80,10 +83,17 @@ export function localAccountSnapshot(): AccountPreferenceEdit | null {
   return Object.keys(snapshot).length ? snapshot : null;
 }
 
+/**
+ * Core carries every value as a string: BOOLEAN declarations as "true"/"false", ENUM as the
+ * option value. The device store keeps BOOLEAN values as booleans, so "true"/"false" become
+ * booleans here; resolveValue still checks each value against its declaration when used.
+ */
 function componentValues(value: AccountPreferences["componentPreferences"] | undefined): ComponentPreferenceValues {
   const values: ComponentPreferenceValues = {};
-  for (const [key, item] of Object.entries((value ?? {}) as Record<string, unknown>).slice(0, MAX_COMPONENT_KEYS)) {
-    if (KEY.test(key) && (typeof item === "boolean" || (typeof item === "string" && OPTION.test(item)))) values[key] = item;
+  for (const item of (Array.isArray(value) ? value : []).slice(0, MAX_COMPONENT_KEYS)) {
+    const key = item?.key, raw = item?.value;
+    if (typeof key !== "string" || !KEY.test(key) || typeof raw !== "string" || !OPTION.test(raw)) continue;
+    values[key] = raw === "true" ? true : raw === "false" ? false : raw;
   }
   return values;
 }

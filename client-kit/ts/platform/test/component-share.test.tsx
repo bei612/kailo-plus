@@ -87,7 +87,7 @@ describe("ComponentShareDialog", () => {
     await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="component-share-save"]')!.click());
     await settle();
     expect(submitted).toHaveLength(1);
-    expect(submitted[0]).toMatchObject({ actionKey: "component.share.set", componentShareSet: { intentId: INTENT,
+    expect(submitted[0]).toMatchObject({ actionKey: "component.share.set", explicitConfirmation: true, componentShareSet: { intentId: INTENT,
       grants: [{ subject: { kind: "TENANT" }, access: "READ" }, { subject: { kind: "PRINCIPAL", principalId: QA3 }, access: "WRITE" }] } });
     expect(onClose).toHaveBeenCalled();
   });
