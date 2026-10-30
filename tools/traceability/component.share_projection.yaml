@@ -26,6 +26,26 @@ validation:
       ref: core/crates/platform-core/src/component_share.rs
     - dimension: 单元测试
       ref: core/crates/platform-core/src/spicedb.rs
+    - dimension: 组件集成
+      ref: file-storage/fork/verify/kailo-authorization-projection.md
+    - dimension: 单元测试
+      ref: file-storage/common/auth/native-oidc-directory_test.go
+    - dimension: 单元测试
+      ref: file-storage/frontend/assets/kailo.embed/kailo-cells.test.js
+    - dimension: 组件集成
+      ref: knowledge/fork/verify/kailo-authz-projection.md
+    - dimension: 单元测试
+      ref: knowledge/internal/application/service/kailo_share_projection_test.go
+    - dimension: 单元测试
+      ref: knowledge/internal/middleware/kailo_share_routes_test.go
+    - dimension: 单元测试
+      ref: knowledge/frontend/src/kailo/share.test.ts
+    - dimension: 单元测试
+      ref: data-query/wren-ui/src/kailoMemberDirectory.test.ts
+    - dimension: 单元测试
+      ref: data-query/wren-ui/src/kailoAdminWrites.test.ts
+    - dimension: 单元测试
+      ref: client-kit/ts/platform/test/component-share.test.tsx
 
 implementation:
   owners: [team-platform]
@@ -37,6 +57,21 @@ implementation:
     - core/crates/platform-core/src/service_api.rs
     - core/crates/platform-core/src/bff.rs
     - deploy/local/authorization/schema.zed
+    - file-storage/common/auth/native-oidc-directory.go
+    - file-storage/common/auth/native-oidc-shares.go
+    - file-storage/common/auth/native-oidc-people.go
+    - file-storage/frontend/web/service/kailo-share.go
+    - file-storage/idm/share/rest/native-link.go
+    - file-storage/frontend/assets/kailo.embed/kailo-cells.js
+    - knowledge/internal/application/service/kailo_directory_sync.go
+    - knowledge/internal/types/kailo_org.go
+    - knowledge/internal/middleware/kailo_managed.go
+    - knowledge/frontend/src/kailo
+    - data-query/wren-ui/src/apollo/server/services/kailoMemberDirectory.ts
+    - client-kit/embed/kailo-embed.js
+    - client-kit/ts/platform/src/react/component-share-dialog.tsx
+    - client-kit/ts/platform/src/react/directory-receipt-status.tsx
+    - client-kit/ts/platform/src/react/native-application-page.tsx
   surfaces: [web, desktop]
   schemas:
     - contracts/api/component_member_directory_v2.schema.json
