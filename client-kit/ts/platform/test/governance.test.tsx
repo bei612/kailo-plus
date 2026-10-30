@@ -151,8 +151,10 @@ describe("TasksPage", () => {
     }, <TasksPage />);
     const el = await host;
     await settle();
-    expect(el.textContent).toContain("the result is unknown");
-    expect(el.textContent).not.toContain("not started any");
+    // DD-170 §16.4: an unread list is an error with a retry, never the empty state.
+    expect(el.querySelector("[data-testid=error-state]")).not.toBeNull();
+    expect(el.querySelector("[data-testid=empty-state]")).toBeNull();
+    expect(el.textContent).not.toContain("No tasks yet");
   });
 
   it("列表 → 详情：状态、原因、operation 与审批；撤回需确认并经 BFF", async () => {
