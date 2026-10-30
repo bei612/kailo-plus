@@ -416,7 +416,7 @@ describe('DD-138(4) notification events', () => {
           updateOne: jest.fn(),
         } as any,
         projectService: {
-          getCurrentProject: jest.fn().mockResolvedValue({ id: 5 }),
+          getProjectById: jest.fn().mockResolvedValue({ id: 5 }),
         } as any,
         deployService: {
           getLastDeployment: jest.fn().mockResolvedValue({ manifest: {} }),

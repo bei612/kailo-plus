@@ -46,8 +46,9 @@ describe('original dashboard scheduled SQL admission boundary', () => {
         })),
         updateOne: jest.fn().mockResolvedValue(undefined),
       },
+      // DD-169(2)④: the tracker reads the dashboard's own project.
       projectService: {
-        getCurrentProject: jest.fn().mockResolvedValue({ id: 5 }),
+        getProjectById: jest.fn().mockResolvedValue({ id: 5 }),
       },
       deployService: {
         getLastDeployment: jest.fn().mockResolvedValue({ manifest: {} }),
@@ -113,7 +114,7 @@ describe('original dashboard scheduled SQL admission boundary', () => {
         boundary === 'items'
           ? dependencies.dashboardItemRepository.findAllBy
           : boundary === 'project'
-            ? dependencies.projectService.getCurrentProject
+            ? dependencies.projectService.getProjectById
             : dependencies.deployService.getLastDeployment;
       const original = await selected();
       selected.mockImplementation(async () => {

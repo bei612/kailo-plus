@@ -121,7 +121,12 @@ describe('WrenAIAdaptor', () => {
         data: { status: 'finished', execution_id: executionId },
       });
       expect(
-        await adaptor.deploy({ manifest: sampleManifest, hash, executionId }),
+        await adaptor.deploy({
+          manifest: sampleManifest,
+          hash,
+          executionId,
+          projectId: 3,
+        }),
       ).toEqual({ status: 'SUCCESS' });
       expect(mockedAxios.post).toHaveBeenCalledWith(
         `${baseEndpoint}/v1/semantics-preparations`,
@@ -129,6 +134,8 @@ describe('WrenAIAdaptor', () => {
           mdl: JSON.stringify(sampleManifest),
           id: hash,
           execution_id: executionId,
+          // DD-169(2)③: every preparation is scoped to its project.
+          project_id: '3',
         },
       );
     });
@@ -136,13 +143,23 @@ describe('WrenAIAdaptor', () => {
     it('does not turn a dispatch disconnect or foreign acknowledgement into failure or success', async () => {
       mockedAxios.post.mockRejectedValueOnce(new Error('connection closed'));
       expect(
-        await adaptor.deploy({ manifest: sampleManifest, hash, executionId }),
+        await adaptor.deploy({
+          manifest: sampleManifest,
+          hash,
+          executionId,
+          projectId: 3,
+        }),
       ).toEqual({ status: 'IN_PROGRESS' });
       mockedAxios.post.mockResolvedValueOnce({
         data: { id: hash, execution_id: 'previous-log' },
       });
       expect(
-        await adaptor.deploy({ manifest: sampleManifest, hash, executionId }),
+        await adaptor.deploy({
+          manifest: sampleManifest,
+          hash,
+          executionId,
+          projectId: 3,
+        }),
       ).toEqual({ status: 'IN_PROGRESS' });
       expect(mockedAxios.get).not.toHaveBeenCalled();
     });
@@ -187,7 +204,12 @@ describe('WrenAIAdaptor', () => {
           data: { status: 'indexing', execution_id: executionId },
         });
         expect(
-          await adaptor.deploy({ manifest: sampleManifest, hash, executionId }),
+          await adaptor.deploy({
+            manifest: sampleManifest,
+            hash,
+            executionId,
+            projectId: 3,
+          }),
         ).toEqual({ status: 'IN_PROGRESS' });
         expect(mockedAxios.post).toHaveBeenCalledTimes(1);
       } finally {
