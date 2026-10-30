@@ -15,15 +15,7 @@
       "format": "uuid"
     },
     "state": {
-      "type": "string",
-      "enum": [
-        "CONVERGED",
-        "PENDING",
-        "NOT_CONVERGED",
-        "FAILED",
-        "NO_RECEIPT"
-      ],
-      "description": "CONVERGED: receipt APPLIED for the current version; PENDING: different version for at most two read intervals; NOT_CONVERGED: different for longer; FAILED: latest receipt FAILED; NO_RECEIPT: never reported."
+      "$ref": "../enums/component_directory_receipt_state.schema.json"
     },
     "schema": {
       "type": "integer"
@@ -32,7 +24,8 @@
       "type": "string"
     },
     "currentVersion": {
-      "type": "string"
+      "type": "string",
+      "description": "The directory version last served to the component for the reported schema."
     },
     "appliedAt": {
       "type": "string",

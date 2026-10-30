@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/component_directory_receipt_state.schema.json",
+  "title": "ComponentDirectoryReceiptState",
+  "description": "DD-164(4)⑥: CONVERGED: the latest receipt is APPLIED for the version last served to the component; PENDING: a newer version was served within two read intervals; NOT_CONVERGED: the component has not applied what it was served for longer, or stopped reading for more than two intervals; FAILED: the latest receipt is FAILED; NO_RECEIPT: never reported.",
+  "type": "string",
+  "enum": [
+    "CONVERGED",
+    "PENDING",
+    "NOT_CONVERGED",
+    "FAILED",
+    "NO_RECEIPT"
+  ]
+}

@@ -17,7 +17,7 @@
   "properties": {
     "schema": {
       "type": "integer",
-      "const": 2
+      "description": "Always 2."
     },
     "bindingId": {
       "type": "string",

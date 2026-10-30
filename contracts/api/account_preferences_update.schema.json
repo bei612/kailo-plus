@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api/account_preferences_update.schema.json",
   "title": "AccountPreferencesUpdate",
-  "description": "PUT /api/v1/account/preferences (DD-164(7)): compare-and-swap on version; absent fields are unchanged, componentPreferences entries are merged by key and a null value removes the key. 409 returns the current AccountPreferences.",
+  "description": "PUT /api/v1/account/preferences (DD-164(7)): compare-and-swap on version; absent fields are unchanged, componentPreferences entries are merged by key and an entry without value removes the key. 409 returns the current AccountPreferences.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -10,8 +10,7 @@
   ],
   "properties": {
     "expectedVersion": {
-      "type": "integer",
-      "minimum": 0
+      "type": "integer"
     },
     "theme": {
       "type": "string"
@@ -23,20 +22,26 @@
       "type": "boolean"
     },
     "locale": {
-      "type": "string",
-      "enum": [
-        "zh-CN",
-        "en"
-      ]
+      "$ref": "../enums/account_locale.schema.json"
     },
     "componentPreferences": {
-      "type": "object",
-      "additionalProperties": {
-        "type": [
-          "boolean",
-          "string",
-          "null"
-        ]
+      "type": "array",
+      "items": {
+        "title": "AccountComponentPreferenceChange",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string",
+            "description": "Absent removes the key."
+          }
+        }
       }
     }
   }

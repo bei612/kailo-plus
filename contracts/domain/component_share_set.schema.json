@@ -15,12 +15,10 @@
       "format": "uuid"
     },
     "resourceVersion": {
-      "type": "integer",
-      "minimum": 1
+      "type": "integer"
     },
     "grants": {
       "type": "array",
-      "maxItems": 100,
       "items": {
         "$ref": "component_share_grant.schema.json"
       }
