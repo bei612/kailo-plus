@@ -20,7 +20,7 @@
           "agentDisplayName": {"type": "string", "minLength": 1, "description": "固定版本 personaIdentity 的显示名；缺省时客户端用公钥简写，不以 Installation 目录合成作者名。"},
           "ownerPrincipalId": {"type": "string", "format": "uuid"},
           "ownerDisplayName": {"type": "string", "minLength": 1, "description": "owner 在本 Tenant 的显示名；owner 已不是 ACTIVE 成员时省略，客户端显示原版 owner unavailable。"},
-          "archived": {"type": "boolean", "const": true, "description": "DD-162：Installation 已停用（agent.installation.disable）即原版 NIP-IA 的“已存档身份”：其历史消息保留 owner 行并显示“已存档”，客户端不把它列为提及或选择候选。未存档时省略。"}
+          "archived": {"type": "boolean", "description": "DD-162：Installation 已停用（agent.installation.disable）即原版 NIP-IA 的“已存档身份”：其历史消息保留 owner 行并显示“已存档”，客户端不把它列为提及或选择候选。只在为 true 时出现，未存档时省略。"}
         }
       }
     }
