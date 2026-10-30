@@ -316,3 +316,261 @@ binds:
           requestTimeout: 30s
       backends:
       - host: ${BFF_UPSTREAM}
+
+# 入口拓扑（.design 02 DD-164(10)、07 §4.6「入口拓扑」）：组件 origin 只由 Kailo 网关对外提供。
+# 每个组件 origin 一个专用 listener，容器端口固定（18092/18094/18095/18096），宿主发布端口只在
+# 运行目录叠加 data/edge/agentgateway.compose.json 中出现，该叠加由 deploy/local/edge-overlay.py
+# 按 .env 的 KAILO_EDGE_COMPONENTS 渲染（组件不再自己公开端口后才启用，迁移见
+# deploy/components/entry-topology.md）。未启用的组件 listener 不发布到宿主，只是容器内的空闲端口。
+# 组件自己的会话、cookie 与 Authorization 原样转给组件（它们是组件自己的认证），Host 保持浏览器
+# 所见的组件 origin（urlRewrite authority none），只移除平台身份 header 与代理凭据（纵深防御）。
+# 规则：Sec-Fetch-Dest: document 的顶层导航 302 到 Kailo 内容区（/app/applications/open），
+# 文件下载类路径除外；其余（iframe 导航、子资源、XHR、WebSocket、IdP 服务端 back-channel
+# 请求）照常转发；文档编辑服务的运维接口对外 404。
+- port: 18092
+  listeners:
+  - name: component-edge-file-storage
+    protocol: HTTP
+    policies:
+      transformations:
+        request:
+          remove:
+          - proxy-authorization
+          - x-platform-oidc-issuer
+          - x-platform-oidc-subject
+          - x-platform-human-identity
+          - x-platform-tenant
+          - x-platform-workspace
+          - x-platform-principal
+          - x-platform-client-surface
+          - x-kailo-oidc-issuer
+          - x-kailo-oidc-subject
+          - x-kailo-client-surface
+          - x-kailo-human-identity
+          - x-kailo-tenant
+          - x-kailo-workspace
+          - x-kailo-principal
+    routes:
+    - name: top-level-file
+      matches:
+      - path:
+          regex: "/(io|a|wopi|dav)/.*"
+        headers:
+        - name: sec-fetch-dest
+          value:
+            exact: document
+      policies:
+        urlRewrite:
+          authority: none
+      backends:
+      - host: ${KAILO_EDGE_FILE_STORAGE_UPSTREAM}
+    - name: top-level-page
+      matches:
+      - path:
+          pathPrefix: /
+        headers:
+        - name: sec-fetch-dest
+          value:
+            exact: document
+      policies:
+        directResponse:
+          status: 302
+          headers:
+            location: "'${PUBLIC_ORIGIN}/app/applications/open?origin=' + '${PUBLIC_ORIGIN}'.split('://')[0] + '://' + string(request.host) + '&path=' + string(request.pathAndQuery).regexReplace('%', '%25').regexReplace('&', '%26').regexReplace('[+]', '%2B').regexReplace('#', '%23')"
+            cache-control: "'no-store'"
+    - name: component
+      matches:
+      - path:
+          pathPrefix: /
+      policies:
+        urlRewrite:
+          authority: none
+      backends:
+      - host: ${KAILO_EDGE_FILE_STORAGE_UPSTREAM}
+- port: 18094
+  listeners:
+  - name: component-edge-knowledge
+    protocol: HTTP
+    policies:
+      transformations:
+        request:
+          remove:
+          - proxy-authorization
+          - x-platform-oidc-issuer
+          - x-platform-oidc-subject
+          - x-platform-human-identity
+          - x-platform-tenant
+          - x-platform-workspace
+          - x-platform-principal
+          - x-platform-client-surface
+          - x-kailo-oidc-issuer
+          - x-kailo-oidc-subject
+          - x-kailo-client-surface
+          - x-kailo-human-identity
+          - x-kailo-tenant
+          - x-kailo-workspace
+          - x-kailo-principal
+    routes:
+    - name: top-level-file
+      matches:
+      - path:
+          regex: "/(api|files)/.*"
+        headers:
+        - name: sec-fetch-dest
+          value:
+            exact: document
+      policies:
+        urlRewrite:
+          authority: none
+      backends:
+      - host: ${KAILO_EDGE_KNOWLEDGE_UPSTREAM}
+    - name: top-level-page
+      matches:
+      - path:
+          pathPrefix: /
+        headers:
+        - name: sec-fetch-dest
+          value:
+            exact: document
+      policies:
+        directResponse:
+          status: 302
+          headers:
+            location: "'${PUBLIC_ORIGIN}/app/applications/open?origin=' + '${PUBLIC_ORIGIN}'.split('://')[0] + '://' + string(request.host) + '&path=' + string(request.pathAndQuery).regexReplace('%', '%25').regexReplace('&', '%26').regexReplace('[+]', '%2B').regexReplace('#', '%23')"
+            cache-control: "'no-store'"
+    - name: component
+      matches:
+      - path:
+          pathPrefix: /
+      policies:
+        urlRewrite:
+          authority: none
+      backends:
+      - host: ${KAILO_EDGE_KNOWLEDGE_UPSTREAM}
+- port: 18095
+  listeners:
+  - name: component-edge-data-query
+    protocol: HTTP
+    policies:
+      transformations:
+        request:
+          remove:
+          - proxy-authorization
+          - x-platform-oidc-issuer
+          - x-platform-oidc-subject
+          - x-platform-human-identity
+          - x-platform-tenant
+          - x-platform-workspace
+          - x-platform-principal
+          - x-platform-client-surface
+          - x-kailo-oidc-issuer
+          - x-kailo-oidc-subject
+          - x-kailo-client-surface
+          - x-kailo-human-identity
+          - x-kailo-tenant
+          - x-kailo-workspace
+          - x-kailo-principal
+    routes:
+    - name: top-level-file
+      matches:
+      - path:
+          regex: "/api/.*"
+        headers:
+        - name: sec-fetch-dest
+          value:
+            exact: document
+      policies:
+        urlRewrite:
+          authority: none
+      backends:
+      - host: ${KAILO_EDGE_DATA_QUERY_UPSTREAM}
+    - name: top-level-page
+      matches:
+      - path:
+          pathPrefix: /
+        headers:
+        - name: sec-fetch-dest
+          value:
+            exact: document
+      policies:
+        directResponse:
+          status: 302
+          headers:
+            location: "'${PUBLIC_ORIGIN}/app/applications/open?origin=' + '${PUBLIC_ORIGIN}'.split('://')[0] + '://' + string(request.host) + '&path=' + string(request.pathAndQuery).regexReplace('%', '%25').regexReplace('&', '%26').regexReplace('[+]', '%2B').regexReplace('#', '%23')"
+            cache-control: "'no-store'"
+    - name: component
+      matches:
+      - path:
+          pathPrefix: /
+      policies:
+        urlRewrite:
+          authority: none
+      backends:
+      - host: ${KAILO_EDGE_DATA_QUERY_UPSTREAM}
+- port: 18096
+  listeners:
+  - name: component-edge-document-editor
+    protocol: HTTP
+    policies:
+      transformations:
+        request:
+          remove:
+          - proxy-authorization
+          - x-platform-oidc-issuer
+          - x-platform-oidc-subject
+          - x-platform-human-identity
+          - x-platform-tenant
+          - x-platform-workspace
+          - x-platform-principal
+          - x-platform-client-surface
+          - x-kailo-oidc-issuer
+          - x-kailo-oidc-subject
+          - x-kailo-client-surface
+          - x-kailo-human-identity
+          - x-kailo-tenant
+          - x-kailo-workspace
+          - x-kailo-principal
+    routes:
+    - name: operations-denied
+      matches:
+      - path:
+          regex: "(?i)/(healthcheck|info|example|welcome|internal|command|converter|docbuilder|coauthoring/commandservice\\.ashx|convertservice\\.ashx|lool|cool|hosting/capabilities|hosting/wopi/convert-and-edit[^/]*|wopi/files|dummycallback|ai-proxy|metrics)([/.].*)?"
+      policies:
+        directResponse:
+          status: 404
+    - name: top-level-file
+      matches:
+      - path:
+          regex: "/(downloadfile|printfile|cache/files)/.*"
+        headers:
+        - name: sec-fetch-dest
+          value:
+            exact: document
+      policies:
+        urlRewrite:
+          authority: none
+      backends:
+      - host: ${KAILO_EDGE_DOCUMENT_EDITOR_UPSTREAM}
+    - name: top-level-page
+      matches:
+      - path:
+          pathPrefix: /
+        headers:
+        - name: sec-fetch-dest
+          value:
+            exact: document
+      policies:
+        directResponse:
+          status: 302
+          headers:
+            location: "'${PUBLIC_ORIGIN}/app/applications/open?origin=' + '${PUBLIC_ORIGIN}'.split('://')[0] + '://' + string(request.host) + '&path=' + string(request.pathAndQuery).regexReplace('%', '%25').regexReplace('&', '%26').regexReplace('[+]', '%2B').regexReplace('#', '%23')"
+            cache-control: "'no-store'"
+    - name: component
+      matches:
+      - path:
+          pathPrefix: /
+      policies:
+        urlRewrite:
+          authority: none
+      backends:
+      - host: ${KAILO_EDGE_DOCUMENT_EDITOR_UPSTREAM}

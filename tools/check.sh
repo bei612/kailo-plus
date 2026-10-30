@@ -1631,6 +1631,40 @@ if os.path.exists(agw_cfg):
                     bad.append("agentgateway automation-webhook: 只允许一条 POST /hooks/<uuid> 到 ${BFF_UPSTREAM} 的 route（DD-116）")
                 continue
 
+            # DD-164(10)、07 §4.6「入口拓扑」：组件 origin 的专用 listener。组件有自己的 OIDC 会话与授权，
+            # 网关只做入口：不挂认证、不投影身份，必须清洗平台身份与代理凭据 header；只能转发到该组件
+            # 的固定上游，顶层导航只能 302 到 Kailo 内容区，其余直接回应只能是 404。
+            if lis_name.startswith("component-edge-"):
+                checked += 1
+                component = lis_name[len("component-edge-"):]
+                upstream = "${KAILO_EDGE_" + component.upper().replace("-", "_") + "_UPSTREAM}"
+                tr = transform_of(lis)
+                removes = {str(h).lower() for h in (tr.get("remove") or [])}
+                need = PROJECTED | {SURFACE} | LEGACY | MUST_REMOVE | {
+                    "x-platform-human-identity", "x-platform-tenant", "x-platform-workspace", "x-platform-principal"}
+                if component not in ("file-storage", "knowledge", "data-query", "document-editor"):
+                    bad.append(f"agentgateway {lis_name}: 未登记的组件 edge listener（DD-164(10)）")
+                if oidc or jwt or tr.get("set"):
+                    bad.append(f"agentgateway {lis_name}: 组件 edge listener 不得挂认证或投影身份（DD-164(10)）")
+                for h in sorted(need - removes):
+                    bad.append(f"agentgateway {lis_name}: 未移除 {h}（DD-164(10)）")
+                for route in routes:
+                    rp = route.get("policies") or {}
+                    hosts = [b.get("host") for b in route.get("backends") or []]
+                    direct = rp.get("directResponse")
+                    where = f"agentgateway {lis_name}/{route.get('name') or '?'}"
+                    if rp.get("oidc") or rp.get("jwtAuth") or (transform_of(route) or {}).get("set"):
+                        bad.append(f"{where}: 组件 edge route 不得挂认证或投影身份（DD-164(10)）")
+                    if direct:
+                        status = int(direct.get("status") or 0)
+                        location = str((direct.get("headers") or {}).get("location") or "")
+                        if hosts or status not in (302, 404) or (status == 302) != bool(location) or (
+                                status == 302 and not location.startswith("'${PUBLIC_ORIGIN}/app/applications/open?origin=")):
+                            bad.append(f"{where}: 直接回应只能是 302 到 Kailo 内容区或 404（DD-164(10)）")
+                    elif hosts != [upstream] or (rp.get("urlRewrite") or {}).get("authority") != "none":
+                        bad.append(f"{where}: 只能以原 Host 转发到 {upstream}（DD-164(10)）")
+                continue
+
             # 认证必须挂在 listener 上，且恰好一种：浏览器入口用 OIDC（cookie 会话），
             # 原生入口用 jwtAuth（Bearer）。两者同挂时 OIDC 先执行，会把不带 cookie
             # 的原生请求当成未登录导航（SF-AGW-22、DD-78）。

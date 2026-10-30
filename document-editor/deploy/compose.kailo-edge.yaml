@@ -1,0 +1,15 @@
+# Kailo entry topology (DD-164(10), .design/07 §4.6): browsers reach the editor origin
+# only through the Kailo gateway's component listener (operations endpoints answer 404
+# there), which forwards to the alias below on the existing platform edge network.
+# Added by start.sh only when DOCUMENT_EDITOR_EDGE_NETWORK is set; the container port
+# itself is published on loopback only.
+services:
+  document-server:
+    networks:
+      kailo-edge:
+        aliases: [kailo-edge-document-editor]
+
+networks:
+  kailo-edge:
+    external: true
+    name: ${DOCUMENT_EDITOR_EDGE_NETWORK:?existing platform edge network required}
