@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -117,6 +118,9 @@ type fakeCore struct {
 	query                   string
 	receipts                []map[string]any
 	receiptStatus           int
+	adoptStatus             int
+	adoptOwner              string
+	adoptions               []map[string]any
 	intents                 []map[string]any
 }
 
@@ -164,6 +168,19 @@ func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		f.receipts = append(f.receipts, receipt)
 		w.WriteHeader(http.StatusNoContent)
+	case "/service/v1/component-directory/bindings/" + dirBinding + "/share-adoptions":
+		var adoption map[string]any
+		if r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer directory-token" || json.NewDecoder(r.Body).Decode(&adoption) != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if f.adoptStatus != 0 {
+			w.WriteHeader(f.adoptStatus)
+			return
+		}
+		f.adoptions = append(f.adoptions, adoption)
+		_ = json.NewEncoder(w).Encode(map[string]any{"resourceId": adoptedResource(adoption["nativeId"].(string)),
+			"ownerPrincipalId": f.adoptOwner, "adopted": true, "grants": adoption["grants"]})
 	case "/service/v1/component-directory/bindings/" + dirBinding + "/share-intents":
 		var intent map[string]any
 		if r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer directory-token" || json.NewDecoder(r.Body).Decode(&intent) != nil {
@@ -336,14 +353,15 @@ func TestNativeOIDCMemberDirectory(t *testing.T) {
 		auth.NativeOIDCWorkspaceFolder = folders.ensure
 		defer func() { auth.NativeOIDCWorkspaceFolder = previousFolder }()
 		// Shared folders (DD-164(4)): node UUID → name; absent = deleted natively.
+		// Shared folders sit in the Ops Workspace root (datasource path).
 		shareNodes := map[string]string{}
 		var shareNodesMu sync.Mutex
 		previousNode := auth.NativeOIDCShareNode
-		auth.NativeOIDCShareNode = func(_ context.Context, id string) (bool, bool, string, error) {
+		auth.NativeOIDCShareNode = func(_ context.Context, id string) (auth.NativeOIDCNode, error) {
 			shareNodesMu.Lock()
 			defer shareNodesMu.Unlock()
 			name, ok := shareNodes[id]
-			return ok, ok, name, nil
+			return auth.NativeOIDCNode{Exists: ok, Folder: ok, Label: name, Path: dirRoot + "/" + dirWsOps + "/" + name}, nil
 		}
 		defer func() { auth.NativeOIDCShareNode = previousNode }()
 		// 07 §4.7.4 撤员时的原生令牌: logins whose tokens were revoked.
@@ -681,6 +699,147 @@ func TestNativeOIDCMemberDirectory(t *testing.T) {
 			}
 		})
 
+		// DD-164(4)⑧ (design 1c803580): existing native Cells are adopted
+		// before shares[] converge; nothing is removed while an adoption is
+		// indefinite; a Cell retires only when its Kailo share covers it;
+		// unmappable Cells and links stay and are reported.
+		t.Run("schema2-adoption", func(t *testing.T) {
+			group := tenantGroup(t, ctx, dirTenant).GetUuid()
+			const cell1, cell2, cell3, link = "c1000000-0000-4000-8000-0000000000c1", "c2000000-0000-4000-8000-0000000000c2",
+				"c3000000-0000-4000-8000-0000000000c3", "c4000000-0000-4000-8000-0000000000c4"
+			nodeC, nodeD, nodeE := "e0000000-0000-4000-8000-0000000000c1", "e0000000-0000-4000-8000-0000000000d1", "e0000000-0000-4000-8000-0000000000e1"
+			shareNodesMu.Lock()
+			shareNodes[nodeC], shareNodes[nodeD], shareNodes[nodeE] = "Legacy", "Team", "Pre"
+			shareNodesMu.Unlock()
+			nativeCell(t, ctx, cell1, idm.WorkspaceScope_ROOM, derived("dir-admin"), nodeC, map[string][]string{
+				derived("dir-admin"): {"read", "write"}, derived("dir-pre"): {"read"}, "kailo-ws-" + dirWsOps: {"read", "write"}, group: {"read"}})
+			nativeCell(t, ctx, cell2, idm.WorkspaceScope_ROOM, derived("dir-admin"), nodeD, map[string][]string{"native-team": {"read"}})
+			nativeCell(t, ctx, cell3, idm.WorkspaceScope_ROOM, derived("dir-admin"), nodeE, map[string][]string{derived("dir-pre"): {"read"}})
+			nativeCell(t, ctx, link, idm.WorkspaceScope_LINK, derived("dir-admin"), nodeC, map[string][]string{"link-user": {"read"}})
+			kept := shareWorkspace(t, ctx, "d0000000-0000-4000-8000-0000000000a1")
+			if kept == nil {
+				t.Fatal("precondition: share A from the previous step")
+			}
+			core.adoptOwner = admin.principal
+			core.adoptStatus = http.StatusServiceUnavailable
+			core.receipts = nil
+			core.set(http.StatusOK, dirSnapshot("a", dirTenant, both, admin, bob, pre))
+			if _, err := auth.SyncNativeOIDCDirectory(ctx, cfg); err != nil {
+				t.Fatalf("pending adoption apply: %v", err)
+			}
+			reasons := func() map[string]string {
+				out := map[string]string{}
+				for _, f := range core.receipts[len(core.receipts)-1]["failures"].([]any) {
+					m := f.(map[string]any)
+					out[m["ref"].(string)] = m["reasonCode"].(string)
+				}
+				return out
+			}
+			if r := reasons(); r[cell1] != "ADOPTION_PENDING" || r[cell2] != "NATIVE_SHARE_UNMAPPABLE" || r[link] != "NATIVE_LINK_UNMAPPABLE" {
+				t.Fatalf("pending receipt: %v", r)
+			}
+			// Nothing converged or removed while an adoption is indefinite.
+			if shareWorkspace(t, ctx, "d0000000-0000-4000-8000-0000000000a1") == nil || cellWorkspace(t, ctx, cell1) == nil {
+				t.Fatal("a share was removed while an adoption was pending")
+			}
+			core.adoptStatus = 0
+			if applied, err := auth.SyncNativeOIDCDirectory(ctx, cfg); err != nil || !applied {
+				t.Fatalf("pending adoption not retried on the same version: %v %v", applied, err)
+			}
+			if len(core.adoptions) != 2 {
+				t.Fatalf("adoptions: %v", core.adoptions)
+			}
+			var first map[string]any
+			for _, a := range core.adoptions {
+				if a["nativeId"] == nodeC {
+					first = a
+				}
+			}
+			var keys []string
+			for _, g := range first["grants"].([]any) {
+				sub := g.(map[string]any)["subject"].(map[string]any)
+				keys = append(keys, fmt.Sprintf("%v:%v%v:%v", sub["kind"], sub["principalId"], sub["workspaceId"], g.(map[string]any)["access"]))
+			}
+			slices.Sort(keys)
+			want := []string{"PRINCIPAL:" + pre.principal + "<nil>:READ", "TENANT:<nil><nil>:READ", "WORKSPACE:<nil>" + dirWsOps + ":WRITE"}
+			if first["owner"].(map[string]any)["subject"] != "dir-admin" || first["workspaceId"] != dirWsOps || first["name"] != "Legacy" || !slices.Equal(keys, want) {
+				t.Fatalf("adoption request: %v %v", first, keys)
+			}
+			// Adopted but not yet in Kailo's snapshot: the Cell stays.
+			if cellWorkspace(t, ctx, cell1) == nil || cellWorkspace(t, ctx, cell2) == nil {
+				t.Fatal("native Cell removed before its Kailo share exists")
+			}
+			r1, r3 := adoptedResource(nodeC), adoptedResource(nodeE)
+			if reasons()[r1] != "NATIVE_SHARE_NOT_RETIRED" {
+				t.Fatalf("retirement pending not reported: %v", reasons())
+			}
+			snap := dirSnapshot("b", dirTenant, both, admin, bob, pre)
+			snap["shares"] = []any{
+				dirShare(r1, nodeC, admin.principal, dirGrant("PRINCIPAL", admin.principal, "WRITE"), dirGrant("PRINCIPAL", pre.principal, "READ"),
+					dirGrant("WORKSPACE", dirWsOps, "WRITE"), dirGrant("TENANT", "", "WRITE")),
+				// The owner narrowed this one in Kailo: the native Cell is not covered.
+				dirShare(r3, nodeE, admin.principal, dirGrant("PRINCIPAL", admin.principal, "WRITE")),
+			}
+			core.set(http.StatusOK, snap)
+			if _, err := auth.SyncNativeOIDCDirectory(ctx, cfg); err != nil {
+				t.Fatal(err)
+			}
+			if len(core.adoptions) != 2 {
+				t.Fatal("an adopted Cell was adopted again")
+			}
+			ws := shareWorkspace(t, ctx, r1)
+			if ws == nil || !slices.Contains(workspaceACLs(t, ctx, ws), group+":write:"+nodeC) {
+				t.Fatalf("TENANT WRITE share: %v", ws)
+			}
+			if cellWorkspace(t, ctx, cell1) != nil {
+				t.Fatal("covered native Cell not retired")
+			}
+			if cellWorkspace(t, ctx, cell2) == nil || cellWorkspace(t, ctx, cell3) == nil || cellWorkspace(t, ctx, link) == nil {
+				t.Fatal("unmappable, uncovered Cell or link removed")
+			}
+			if r := reasons(); r[r3] != "NATIVE_SHARE_NOT_RETIRED" || r[cell2] != "NATIVE_SHARE_UNMAPPABLE" {
+				t.Fatalf("receipt after retirement: %v", r)
+			}
+			shareNodesMu.Lock()
+			if _, ok := shareNodes[nodeC]; !ok {
+				t.Fatal("folder touched")
+			}
+			shareNodesMu.Unlock()
+		})
+
+		// DD-164(3) owner records: the creator's account role gets read+write
+		// on its node (no workspace id); non-Kailo accounts are not recorded.
+		t.Run("owner-record", func(t *testing.T) {
+			previous := auth.NativeOIDCShareIntentDirectory
+			auth.NativeOIDCShareIntentDirectory = func() (*auth.NativeOIDCDirectoryConfig, error) { return cfg, nil }
+			defer func() { auth.NativeOIDCShareIntentDirectory = previous }()
+			for p, want := range map[string]string{dirRoot + "/" + dirWsOps + "/notes": dirWsOps, dirRoot + "/" + dirWsOps + "/a/b.txt": dirWsOps,
+				dirRoot + "/" + dirWsOps: "", dirRoot + "/other/x": "", "personal/dir-pre/x": ""} {
+				if got := auth.NativeOIDCOwnerTarget(p); got != want {
+					t.Errorf("owner target of %s: %q, want %q", p, got, want)
+				}
+			}
+			const node = "f0000000-0000-4000-8000-0000000000f1"
+			pre := userByUUID(t, ctx, derived("dir-pre"))
+			for i := 0; i < 2; i++ {
+				if err := auth.RecordNativeOIDCOwner(ctx, pre, node); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got := nodeACLs(t, ctx, node)
+			if len(got) != 2 || !slices.Contains(got, derived("dir-pre")+":read:") || !slices.Contains(got, derived("dir-pre")+":write:") {
+				t.Fatalf("owner record: %v", got)
+			}
+			local, err := permissions.SearchUniqueUser(ctx, "admin", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := auth.RecordNativeOIDCOwner(ctx, local, "f0000000-0000-4000-8000-0000000000f2"); err != nil ||
+				len(nodeACLs(t, ctx, "f0000000-0000-4000-8000-0000000000f2")) != 0 {
+				t.Fatal("non-Kailo account recorded as owner")
+			}
+		})
+
 		t.Run("failed-apply-and-receipt-retry", func(t *testing.T) {
 			core.receipts = nil
 			core.receiptStatus = http.StatusServiceUnavailable
@@ -809,6 +968,13 @@ func TestParseNativeOIDCDirectory(t *testing.T) {
 	withShare["shares"] = []any{dirShare("D0000000-0000-4000-8000-0000000000A1", "n1", member.principal,
 		dirGrant("PRINCIPAL", member.principal, "WRITE"), dirGrant("WORKSPACE", dirWsOps, "READ"), dirGrant("TENANT", "", "READ"))}
 	raw, _ = json.Marshal(withShare)
+	tenantWrite := dirSnapshot("a", dirTenant, map[string]string{dirWsOps: "Ops"}, member)
+	tenantWrite["shares"] = []any{dirShare("d0000000-0000-4000-8000-0000000000a1", "n1", member.principal, dirGrant("TENANT", "", "WRITE"))}
+	if raw, _ := json.Marshal(tenantWrite); true {
+		if tw, err := auth.ParseNativeOIDCDirectory(raw); err != nil || !tw.Shares[0].Grants[0].Write {
+			t.Fatalf("TENANT WRITE (design 1c803580) refused: %v", err)
+		}
+	}
 	if s, err = auth.ParseNativeOIDCDirectory(raw); err != nil || len(s.Shares) != 1 || s.Shares[0].ResourceID != "d0000000-0000-4000-8000-0000000000a1" ||
 		len(s.Shares[0].Grants) != 3 || !s.Shares[0].Grants[0].Write || s.Shares[0].Grants[1].WorkspaceID != dirWsOps {
 		t.Fatalf("shares: %v %+v", err, s)
@@ -838,9 +1004,6 @@ func TestParseNativeOIDCDirectory(t *testing.T) {
 		"no-tenant-create": func(m map[string]any) { delete(m["members"].([]map[string]any)[0], "tenantCreate") },
 		"no-ws-create": func(m map[string]any) {
 			delete(m["members"].([]map[string]any)[0]["workspaces"].([]map[string]any)[0], "create")
-		},
-		"tenant-write": func(m map[string]any) {
-			m["shares"] = []any{dirShare("d0000000-0000-4000-8000-0000000000a1", "n1", member.principal, dirGrant("TENANT", "", "WRITE"))}
 		},
 		"unknown-grantee": func(m map[string]any) {
 			m["shares"] = []any{dirShare("d0000000-0000-4000-8000-0000000000a1", "n1", member.principal,
@@ -890,5 +1053,80 @@ func shareWorkspace(t *testing.T, ctx context.Context, resourceID string) *idm.W
 			t.Fatal(err)
 		}
 		found = r.GetWorkspace()
+	}
+}
+
+func adoptedResource(nativeID string) string {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(nativeID)).String()
+}
+
+// nativeCell creates a native Cell (ROOM) or link (LINK) owned by owner and
+// rooted on node, with role → actions ACLs on the root.
+func nativeCell(t *testing.T, ctx context.Context, id string, scope idm.WorkspaceScope, owner, node string, roles map[string][]string) {
+	t.Helper()
+	ws := &idm.Workspace{UUID: id, Slug: "native-" + id[:4], Label: "Native " + id[:4], Scope: scope, Policies: []*service.ResourcePolicy{
+		{Resource: id, Subject: owner, Action: service.ResourcePolicyAction_OWNER, Effect: service.ResourcePolicy_allow},
+		{Resource: id, Subject: permissions.PolicySubjectUuidPrefix + owner, Action: service.ResourcePolicyAction_WRITE, Effect: service.ResourcePolicy_allow}}}
+	if scope == idm.WorkspaceScope_ROOM {
+		ws.Label = ""
+	}
+	if _, err := idmc.WorkspaceServiceClient(ctx).CreateWorkspace(ctx, &idm.CreateWorkspaceRequest{Workspace: ws}); err != nil {
+		t.Fatal(err)
+	}
+	acls := []*idm.ACL{{NodeID: node, WorkspaceID: id, Action: &idm.ACLAction{Name: permissions.AclWsrootActionName, Value: "uuid:" + node}}}
+	for role, actions := range roles {
+		for _, a := range actions {
+			action := permissions.AclRead
+			if a == "write" {
+				action = permissions.AclWrite
+			}
+			acls = append(acls, &idm.ACL{NodeID: node, WorkspaceID: id, RoleID: role, Action: &idm.ACLAction{Name: action.Name, Value: action.Value}})
+		}
+	}
+	for _, acl := range acls {
+		if _, err := idmc.ACLServiceClient(ctx).CreateACL(ctx, &idm.CreateACLRequest{ACL: acl}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func cellWorkspace(t *testing.T, ctx context.Context, id string) *idm.Workspace {
+	t.Helper()
+	q, _ := anypb.New(&idm.WorkspaceSingleQuery{Uuid: id})
+	stream, err := idmc.WorkspaceServiceClient(ctx).SearchWorkspace(ctx, &idm.SearchWorkspaceRequest{Query: &service.Query{SubQueries: []*anypb.Any{q}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *idm.Workspace
+	for {
+		r, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			return found
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		found = r.GetWorkspace()
+	}
+}
+
+// nodeACLs lists "<role>:<action>:<workspace>" of one node.
+func nodeACLs(t *testing.T, ctx context.Context, node string) []string {
+	t.Helper()
+	q, _ := anypb.New(&idm.ACLSingleQuery{NodeIDs: []string{node}})
+	stream, err := idmc.ACLServiceClient(ctx).SearchACL(ctx, &idm.SearchACLRequest{Query: &service.Query{SubQueries: []*anypb.Any{q}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for {
+		r, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			return out
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, r.GetACL().GetRoleID()+":"+r.GetACL().GetAction().GetName()+":"+r.GetACL().GetWorkspaceID())
 	}
 }

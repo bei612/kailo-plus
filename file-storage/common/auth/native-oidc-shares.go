@@ -15,7 +15,8 @@ package auth
 //     derived from issuer+subject, or the explicitly linked account),
 //     WORKSPACE → both native roles of that Kailo Workspace (kailo-ws-<id>
 //     and kailo-wsr-<id>: a share is for every member of the Workspace),
-//     TENANT → the native Tenant group role;
+//     TENANT → the native Tenant group role (READ or WRITE, DD-164(4)③ as
+//     amended at design 1c803580);
 //   - visible (READ policy) to exactly those roles; only native admins may
 //     edit it natively, and the native share endpoints refuse users in Kailo
 //     mode (idm/share/rest): grants change only through Kailo.
@@ -121,7 +122,7 @@ func validNativeShareID(id string) bool {
 }
 
 // parseDirectoryShares checks shares[] strictly: unique Resources, known
-// native types, grantees present in this snapshot, TENANT only READ, no
+// native types, grantees present in this snapshot, no
 // repeated subject. Any violation refuses the whole snapshot.
 func parseDirectoryShares(wire []directoryShareWire, principals map[string]bool, workspaces map[string]string) ([]NativeOIDCDirectoryShare, bool) {
 	out := []NativeOIDCDirectoryShare{}
@@ -157,7 +158,7 @@ func parseDirectoryShares(wire []directoryShareWire, principals map[string]bool,
 					return nil, false
 				}
 			case NativeOIDCShareTenant:
-				if g.Subject.PrincipalID != nil || g.Subject.WorkspaceID != nil || grant.Write {
+				if g.Subject.PrincipalID != nil || g.Subject.WorkspaceID != nil {
 					return nil, false
 				}
 			default:
@@ -175,10 +176,17 @@ func parseDirectoryShares(wire []directoryShareWire, principals map[string]bool,
 	return out, true
 }
 
-// NativeOIDCShareNode reads a node by UUID in the admin tree and reports
-// whether it exists, is a folder, and its display name. It is installed by
-// the frontend service (the node router cannot be imported here).
-var NativeOIDCShareNode func(ctx context.Context, nodeUUID string) (exists, folder bool, label string, err error)
+// NativeOIDCNode is what the admin tree says about one node.
+type NativeOIDCNode struct {
+	Exists, Folder bool
+	Label          string
+	// Path is the datasource path <datasource>/<...> (admin view).
+	Path string
+}
+
+// NativeOIDCShareNode reads a node by UUID in the admin tree. It is installed
+// by the frontend service (the node router cannot be imported here).
+var NativeOIDCShareNode func(ctx context.Context, nodeUUID string) (NativeOIDCNode, error)
 
 // NativeOIDCShareSlug is the slug of the Kailo-managed shared workspace of a Resource.
 func NativeOIDCShareSlug(resourceID string) string {
@@ -292,16 +300,17 @@ func ensureNativeOIDCShare(ctx context.Context, share NativeOIDCDirectoryShare, 
 	if NativeOIDCShareNode == nil {
 		return "", errors.New("member directory shared folders are unavailable in this process")
 	}
-	exists, folder, label, err := NativeOIDCShareNode(ctx, share.NativeID)
+	node, err := NativeOIDCShareNode(ctx, share.NativeID)
 	if err != nil {
 		return "", err
 	}
-	if !exists {
+	if !node.Exists {
 		return NativeOIDCReasonObjectMissing, nil
 	}
-	if !folder {
+	if !node.Folder {
 		return NativeOIDCReasonObjectNotFolder, nil
 	}
+	label := node.Label
 	slug := NativeOIDCShareSlug(share.ResourceID)
 	wsUUID := nativeOIDCWorkspaceUUID(slug)
 	if label = strings.TrimSpace(label); label == "" {
