@@ -1,4 +1,7 @@
 // DD-102 / 05 §2.8: Catalog metadata, not a component host or a binding authority.
+// DD-170 (.design/20 §16): a contract table with total and paging, technical digests behind
+// the row's detail, registration in a form card, and every governed transition confirmed in a
+// dialog; an UNKNOWN outcome keeps the exact command until it is re-checked.
 import {
   ActionDispatchState, ActionGateState, CapabilityContractStatus, ReasonCode,
   type ActionCommand, type ActionSubmission, type CapabilityContractPage,
@@ -6,10 +9,17 @@ import {
 } from "@client-kit/contracts";
 import { useRef, useState } from "react";
 import { newIdempotencyKey } from "../governance";
-import { BffError, TransportError, type WriteFailure, writeFailure } from "../transport";
+import type { BffClient } from "../client";
+import { TransportError, type WriteFailure, writeFailure } from "../transport";
 import { useBffClient, useFailureText, useReasonText, useT } from "./context";
-import { Badge, Button, Cell, Notice, ReadFailure, Table } from "./ui";
+import { Badge, Button, type Tone } from "./ui";
 import { useLoad } from "./use-load";
+import { CellStack, DataTable, type DataColumn } from "./data-table";
+import { EmptyState, ErrorState, PermissionState, readRefusal, TableSkeleton } from "./state-views";
+import { IdText, KeyValueList, RawData, Tag } from "./key-value";
+import { ConfirmDialog } from "./confirm-dialog";
+import { PageSection, RefreshButton } from "./page-layout";
+import { OutcomeNotice, PRIMARY_ACTION_CLASS, RowActionsMenu, UnknownInDialog } from "./roles";
 
 const statusLabels = {
   [CapabilityContractStatus.Draft]: "capabilities.draft",
@@ -53,19 +63,50 @@ function registration(raw: string): CapabilityContractRegistration | null {
   } catch { return null; }
 }
 
+type Directory = { contracts: CapabilityContractView[]; canRegister: boolean; complete: boolean };
+const contractKey = (row: { categoryKey: string; contractVersion: number }) => `${row.categoryKey}@${row.contractVersion}`;
+
+/** DD-170 §16.2(3): the offset-paged Catalog is read to its end, bounded per round. */
+async function loadContracts(client: BffClient, pages: number): Promise<Directory> {
+  const contracts: CapabilityContractView[] = [];
+  const seen = new Set<string>();
+  let canRegister = false;
+  let offset = 0;
+  for (let index = 0; index < pages; index++) {
+    const page = await client.capabilityContracts(offset);
+    if (!validPage(page, offset)) throw new TransportError("Invalid capability contract page");
+    if (index === 0) canRegister = page.canRegister;
+    for (const row of page.contracts) {
+      if (seen.has(contractKey(row))) throw new TransportError("Repeated capability contract");
+      seen.add(contractKey(row)); contracts.push(row);
+    }
+    if (page.nextOffset === undefined) return { contracts, canRegister, complete: true };
+    offset = page.nextOffset;
+  }
+  return { contracts, canRegister, complete: false };
+}
+
+const statusTone: Record<CapabilityContractStatus, Tone> = {
+  [CapabilityContractStatus.Draft]: "info",
+  [CapabilityContractStatus.Active]: "positive",
+  [CapabilityContractStatus.Deprecated]: "warning",
+  [CapabilityContractStatus.Retired]: "neutral",
+};
+
 export function CapabilityContractsPanel() {
   const client = useBffClient();
   const t = useT();
   const failureText = useFailureText();
   const reasonText = useReasonText();
-  const [offsets, setOffsets] = useState([0]);
-  const [index, setIndex] = useState(0);
-  const offset = offsets[index] ?? 0;
-  const [state, reload] = useLoad(`capability-contracts:${offset}`, () => client.capabilityContracts(offset));
-  const page = state.status === "ok" && validPage(state.data, offset) ? state.data : null;
+  const [budget, setBudget] = useState(10);
+  const [state, reload] = useLoad(`capability-contracts:${budget}`, () => loadContracts(client, budget), { keepWhileRevalidating: true });
+  const page = state.status === "ok" ? state.data : null;
   const [document, setDocument] = useState("");
   const [invalid, setInvalid] = useState(false);
+  const [registering, setRegistering] = useState(false);
+  const [openKey, setOpenKey] = useState<string | null>(null);
   const [intent, setIntent] = useState<ActionCommand | null>(null);
+  const [dialog, setDialog] = useState(false);
   const [submission, setSubmission] = useState<ActionSubmission | null>(null);
   const [failure, setFailure] = useState<WriteFailure | null>(null);
   const [busy, setBusy] = useState(false);
@@ -82,6 +123,7 @@ export function CapabilityContractsPanel() {
     setSubmission(null); setFailure(null);
     setIntent({ actionKey: "capability_contract.register", idempotencyKey: newIdempotencyKey(),
       explicitConfirmation: true, capabilityContractRegistration: value });
+    setDialog(true);
   };
   const prepareTransition = (row: CapabilityContractView, approve: boolean) => {
     if (frozen || !page?.contracts.includes(row) || !(approve ? row.canApprove : row.canDeprecate)) return;
@@ -89,6 +131,7 @@ export function CapabilityContractsPanel() {
     setIntent({ actionKey: approve ? "capability_contract.approve" : "capability_contract.deprecate",
       idempotencyKey: newIdempotencyKey(), capabilityContractRef: { categoryKey: row.categoryKey, contractVersion: row.contractVersion },
       ...(approve ? {} : { explicitConfirmation: true }) });
+    setDialog(true);
   };
   const submit = async () => {
     if (!intent || sending.current) return;
@@ -110,70 +153,99 @@ export function CapabilityContractsPanel() {
       setSubmission(result); setFailure(null);
       if (result.dispatchState !== ActionDispatchState.Unknown && result.gateState !== ActionGateState.Evaluating
         && !(result.gateState === ActionGateState.Allowed && result.dispatchState === ActionDispatchState.NotDispatched)) {
-        setIntent(null);
+        setIntent(null); setDialog(false);
         if (intent.actionKey === "capability_contract.register" && result.dispatchState === ActionDispatchState.Dispatched) setDocument("");
       }
     } catch (error) {
       // A refusal of a later query cannot decide the first unknown side effect.
       if (!unknown) {
         const failed = writeFailure(error); setFailure(failed);
-        if (failed.kind !== "unknown") setIntent(null);
+        if (failed.kind !== "unknown") { setIntent(null); setDialog(false); }
       }
     } finally { sending.current = false; setBusy(false); reload(); }
   };
-  // An unavailable Catalog cannot produce a management entry. Preserve existing
+  // An unavailable Catalog cannot produce a management entry: it states why. Preserve existing
   // receipts and UNKNOWN intents when later reads lose permission or fail.
-  if (!intent && !submission && !failure && (state.status === "pending"
-    || (state.status === "error" && state.error instanceof BffError && [403, 404].includes(state.error.status)))) return null;
+  if (!intent && !submission && !failure && state.status === "error") {
+    const refusal = readRefusal(state.error);
+    if (refusal === "denied") return <PermissionState description={t("adminArea.capabilities.deniedBody")} />;
+    if (refusal === "missing") return <EmptyState title={t("adminArea.unavailableTitle")} description={t("adminArea.unavailableBody")} />;
+  }
   const target = intent?.capabilityContractRegistration ?? intent?.capabilityContractRef;
-  return <section className="flex flex-col gap-3 border-t pt-3" data-testid="capability-contracts">
-    <h2 className="font-medium">{t("capabilities.title")}</h2>
-    <p className="text-sm text-muted-foreground">{t("capabilities.boundary")}</p>
-    {intent && target ? <div role="group" className="flex flex-col gap-2 text-sm">
-      <p>{target.categoryKey} · {target.contractVersion}</p>
-      <p>{t(intent.actionKey === "capability_contract.register" ? "capabilities.registerWarning"
-        : intent.actionKey === "capability_contract.approve" ? "capabilities.approveWarning" : "capabilities.deprecateWarning")}</p>
-      {intent.capabilityContractRegistration ? <pre className="overflow-auto whitespace-pre-wrap break-all">{JSON.stringify(intent.capabilityContractRegistration, null, 2)}</pre> : null}
-      <div className="flex gap-2">
-        <Button disabled={busy} onClick={() => void submit()}>{t(busy ? "platform.loading" : unknown ? "agents.retry" : "agents.confirm")}</Button>
-        {!busy && !unknown ? <Button onClick={() => setIntent(null)}>{t("platform.cancel")}</Button> : null}
-      </div>
+  const kind = intent?.actionKey === "capability_contract.register" ? "register"
+    : intent?.actionKey === "capability_contract.approve" ? "approve" : "deprecate";
+  const names = { category: target?.categoryKey ?? "", version: target ? t("adminArea.capabilities.versionValue", { version: String(target.contractVersion) }) : "" };
+  const version = (row: CapabilityContractView) => t("adminArea.capabilities.versionValue", { version: String(row.contractVersion) });
+  const columns: DataColumn<CapabilityContractView>[] = [
+    { key: "category", header: t("adminArea.capabilities.category"), truncate: true, title: (row) => row.categoryKey,
+      sortValue: (row) => row.categoryKey, cell: (row) => <CellStack primary={row.categoryKey} /> },
+    { key: "version", header: t("adminArea.capabilities.version"), width: "6rem", align: "end", sortValue: (row) => row.contractVersion,
+      cell: (row) => version(row) },
+    { key: "status", header: t("platform.state"), width: "9rem", sortValue: (row) => t(statusLabels[row.status]),
+      cell: (row) => <Badge tone={statusTone[row.status]}>{t(statusLabels[row.status])}</Badge> },
+    { key: "source", header: t("adminArea.capabilities.source"), width: "7rem", secondary: true,
+      cell: (row) => <Tag>{t(row.bootstrapActionExecutionId ? "adminArea.capabilities.source.seed" : "adminArea.capabilities.source.registered")}</Tag> },
+  ];
+  const open = openKey ? page?.contracts.find((row) => contractKey(row) === openKey) : undefined;
+  const receiptText = submission ? unknown ? t("agents.unknown", { operation: submission.operationId })
+    : submission.gateState === ActionGateState.Waiting ? t("adminArea.capabilities.waiting") : t("adminArea.capabilities.recorded") : null;
+
+  return <PageSection id="admin-capabilities" title={t("capabilities.title")} description={t("adminArea.capabilities.description")} testId="capability-contracts"
+    actions={page?.canRegister || intent?.capabilityContractRegistration ? <Button className={registering ? undefined : PRIMARY_ACTION_CLASS}
+      disabled={frozen} aria-expanded={registering} onClick={() => setRegistering(!registering)}>
+      {registering ? t("platform.cancel") : t("adminArea.capabilities.registerOpen")}</Button> : undefined}>
+    {submission ? <OutcomeNotice tone={unknown ? "alert" : "status"}
+      action={unknown && intent ? <Button disabled={busy} onClick={() => void submit()}>{t("agents.retry")}</Button> : undefined}>
+      <span>{receiptText}{submission.reason ? ` ${reasonText(submission.reason)}` : ""}</span>
+      <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1">{t("adminArea.operation")}<IdText value={submission.operationId} label={t("adminArea.operation")} /></span>
+        {submission.approvalWorkflowId ? <span className="inline-flex items-center gap-1">{t("adminArea.capabilities.approval")}<IdText value={submission.approvalWorkflowId} label={t("adminArea.capabilities.approval")} /></span> : null}
+      </span>
+    </OutcomeNotice> : null}
+    {failure ? <OutcomeNotice tone="alert" action={failure.kind === "unknown" && intent ? <Button disabled={busy} onClick={() => void submit()}>{t("agents.retry")}</Button> : undefined}>
+      {failure.kind === "unknown" ? t("agents.unknown", { operation: failure.operationId ?? submission?.operationId ?? "—" }) : failureText(failure)}
+    </OutcomeNotice> : null}
+    {(registering || intent?.capabilityContractRegistration) && page?.canRegister ? <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4" data-testid="capability-registration">
+      <h3 className="text-sm font-semibold text-foreground">{t("adminArea.capabilities.registerFormTitle")}</h3>
+      <label className="flex flex-col gap-1.5 text-sm">{t("capabilities.document")}
+        <textarea className="min-h-40 w-full rounded-lg border border-input bg-background p-2.5 font-mono text-xs shadow-xs focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+          value={document} disabled={frozen} onChange={(event) => { setDocument(event.target.value); setInvalid(false); }} />
+      </label>
+      <p className="text-xs text-muted-foreground">{t("capabilities.documentHelp")}</p>
+      {invalid ? <p role="alert" className="text-sm text-danger-text">{t("capabilities.invalid")}</p> : null}
+      <Button className="w-fit" disabled={frozen || !document.trim()} onClick={prepareRegistration}>{t("capabilities.register")}</Button>
     </div> : null}
-    {submission ? <p role="status" className="break-all text-sm">{unknown
-      ? t("agents.unknown", { operation: submission.operationId })
-      : t("agents.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}
-      {submission.approvalWorkflowId ? ` · ${submission.approvalWorkflowId}` : ""}
-      {submission.reason ? ` · ${reasonText(submission.reason)}` : ""}</p> : null}
-    {failure ? <p role={failure.kind === "unknown" ? "status" : "alert"}>{failure.kind === "unknown"
-      ? t("agents.unknown", { operation: failure.operationId ?? submission?.operationId ?? "—" }) : failureText(failure)}</p> : null}
-    <Button className="w-fit" onClick={reload}>{t("platform.refresh")}</Button>
-    {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
-      : !page ? <ReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
-      : <>
-        {page.canRegister ? <div className="flex flex-col gap-2">
-          <label className="text-sm">{t("capabilities.document")}
-            <textarea className="min-h-32 w-full rounded-md border border-input bg-transparent p-2 font-mono text-xs"
-              value={document} disabled={frozen} onChange={(event) => { setDocument(event.target.value); setInvalid(false); }} />
-          </label>
-          <p className="text-sm text-muted-foreground">{t("capabilities.documentHelp")}</p>
-          {invalid ? <p role="alert">{t("capabilities.invalid")}</p> : null}
-          <Button className="w-fit" disabled={frozen || !document.trim()} onClick={prepareRegistration}>{t("capabilities.register")}</Button>
-        </div> : null}
-        {!page.contracts.length ? <Notice>{t("capabilities.none")}</Notice> : <div className="overflow-x-auto">
-          <Table head={[t("capabilities.key"), t("platform.state"), t("capabilities.schemaDigest"), t("capabilities.suiteDigest"), t("platform.action")]}>
-            {page.contracts.map((row) => <tr key={`${row.categoryKey}@${row.contractVersion}`}>
-              <Cell>{row.categoryKey} · {row.contractVersion}</Cell>
-              <Cell><Badge tone="neutral">{t(statusLabels[row.status])}</Badge></Cell>
-              <Cell mono>{row.schemaSetDigest}</Cell><Cell mono>{row.conformanceSuiteDigest}</Cell>
-              <Cell>{row.canApprove ? <Button disabled={frozen} onClick={() => prepareTransition(row, true)}>{t("capabilities.approve")}</Button> : null}
-                {row.canDeprecate ? <Button disabled={frozen} onClick={() => prepareTransition(row, false)}>{t("capabilities.deprecate")}</Button> : null}</Cell>
-            </tr>)}
-          </Table>
-        </div>}
-        <div className="flex gap-2">
-          {index > 0 ? <Button onClick={() => setIndex(index - 1)}>{t("roles.previous")}</Button> : null}
-          {page.nextOffset !== undefined ? <Button onClick={() => { setOffsets((old) => [...old.slice(0, index + 1), page.nextOffset!]); setIndex(index + 1); }}>{t("roles.next")}</Button> : null}
-        </div>
-      </>}
-  </section>;
+    {state.status === "pending" ? <TableSkeleton rows={3} columns={4} />
+      : !page ? <ErrorState error={state.status === "error" ? state.error : undefined} onRetry={reload} />
+      : <DataTable label={t("adminArea.capabilities.listLabel")} rows={page.contracts} columns={columns} rowKey={contractKey}
+        onRowClick={(row) => setOpenKey(openKey === contractKey(row) ? null : contractKey(row))} selectedKey={openKey}
+        search={{ placeholder: t("adminArea.capabilities.search"), text: (row) => `${row.categoryKey} ${t(statusLabels[row.status])}` }}
+        toolbar={<RefreshButton onClick={reload} />}
+        rowActions={(row) => <RowActionsMenu name={`${row.categoryKey} ${version(row)}`} disabled={frozen} actions={[
+          ...(row.canApprove ? [{ key: "approve", label: t("capabilities.approve"), onSelect: () => prepareTransition(row, true) }] : []),
+          ...(row.canDeprecate ? [{ key: "deprecate", danger: true, label: t("adminArea.capabilities.deprecateConfirm"), onSelect: () => prepareTransition(row, false) }] : []),
+        ]} />} rowActionsWidth="3.5rem"
+        partial={page.complete ? undefined : <button type="button" className="text-brand-text hover:underline" onClick={() => setBudget((n) => n + 10)}>
+          {t("list.partial", { count: String(page.contracts.length) })} · {t("list.loadMore")}</button>}
+        empty={<EmptyState title={t("adminArea.capabilities.emptyTitle")} description={t("adminArea.capabilities.emptyBody")} />} />}
+    {open ? <div className="flex flex-col gap-2" data-testid="capability-contract-detail">
+      <h3 className="text-sm font-semibold text-foreground">{open.categoryKey} {version(open)}</h3>
+      <KeyValueList items={[
+        { id: "status", label: t("platform.state"), value: t(statusLabels[open.status]) },
+        { id: "schema", label: t("adminArea.capabilities.schemaDigest"), value: <IdText value={open.schemaSetDigest} label={t("adminArea.capabilities.schemaDigest")} /> },
+        { id: "suite", label: t("adminArea.capabilities.suiteDigest"), value: <IdText value={open.conformanceSuiteDigest} label={t("adminArea.capabilities.suiteDigest")} /> },
+        open.registeredByActionExecutionId ? { id: "registered", label: t("adminArea.capabilities.registeredBy"), value: <IdText value={open.registeredByActionExecutionId} /> } : null,
+        open.bootstrapActionExecutionId ? { id: "bootstrap", label: t("adminArea.capabilities.bootstrap"), value: <IdText value={open.bootstrapActionExecutionId} /> } : null,
+      ]} />
+    </div> : null}
+    <ConfirmDialog open={dialog && intent !== null} testId="capability-contract-dialog" pending={busy} tone={kind === "deprecate" ? "danger" : "default"}
+      onOpenChange={(next) => { if (next) return; setDialog(false); if (!unknown) setIntent(null); }}
+      title={t(kind === "register" ? "adminArea.capabilities.registerTitle" : kind === "approve" ? "adminArea.capabilities.approveTitle" : "adminArea.capabilities.deprecateTitle", names)}
+      description={t(kind === "register" ? "adminArea.capabilities.registerBody" : kind === "approve" ? "adminArea.capabilities.approveBody" : "adminArea.capabilities.deprecateBody")}
+      confirmLabel={unknown ? t("agents.retry") : t(kind === "register" ? "adminArea.capabilities.registerConfirm" : kind === "approve" ? "adminArea.capabilities.approveConfirm" : "adminArea.capabilities.deprecateConfirm")}
+      onConfirm={() => void submit()}>
+      {intent?.capabilityContractRegistration ? <RawData value={intent.capabilityContractRegistration} /> : null}
+      {unknown ? <UnknownInDialog operation={failure?.kind === "unknown" ? failure.operationId ?? submission?.operationId : submission?.operationId} /> : null}
+    </ConfirmDialog>
+  </PageSection>;
 }

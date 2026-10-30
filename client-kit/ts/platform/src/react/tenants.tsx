@@ -1,6 +1,8 @@
 // DD-96：Platform Catalog 的业务 Tenant 暂停与恢复。只有 Catalog 会话且持有 Catalog
-// manage 的人能读到这个视图（其余 403，整节不渲染）；动作键是 BFF 按当前事实给出的
-// 只读提示，提交仍由 Core 完整重新准入。Web 与 Desktop 共用；Mobile 不提供此写入口。
+// manage 的人能读到这个视图（其余 403：说明需要的角色，不留空白）；动作键是 BFF 按当前
+// 事实给出的只读提示，提交仍由 Core 完整重新准入。Web 与 Desktop 共用；Mobile 不提供此写入口。
+// DD-170 (.design/20 §16): one organization table with total and paging; suspension and
+// restoration confirm in a dialog that names the organization; UNKNOWN keeps the command.
 
 import {
   ActionDispatchState,
@@ -8,15 +10,22 @@ import {
   TenantLifecycleActionKey,
   TenantState,
   type ActionCommand,
+  type PlatformTenantPage,
   type PlatformTenantView,
 } from "@client-kit/contracts";
 import { useRef, useState } from "react";
+import type { BffClient } from "../client";
 import { newIdempotencyKey } from "../governance";
 import { enumLabel, tenantStateMessages } from "../i18n";
-import { BffError, TransportError, writeFailure } from "../transport";
+import { TransportError, writeFailure } from "../transport";
 import { useBffClient, useFailureText, useLocale, useReasonText, useT } from "./context";
-import { Badge, Button, Cell, Notice, Table } from "./ui";
+import { Badge, Button, type Tone } from "./ui";
 import { useLoad } from "./use-load";
+import { CellStack, DataTable, type DataColumn } from "./data-table";
+import { EmptyState, ErrorState, PermissionState, readRefusal, TableSkeleton } from "./state-views";
+import { ConfirmDialog } from "./confirm-dialog";
+import { PageSection, RefreshButton } from "./page-layout";
+import { OutcomeNotice, RowActionsMenu, UnknownInDialog } from "./roles";
 
 type Intent = { command: ActionCommand; name: string; slug: string };
 type Outcome =
@@ -24,6 +33,38 @@ type Outcome =
   | { kind: "aborted"; operation: string; reason: string }
   | { kind: "unknown"; operation?: string }
   | { kind: "rejected"; reason: string };
+type Directory = { tenants: PlatformTenantView[]; complete: boolean };
+
+const tenantTone = (state: TenantState): Tone => state === TenantState.Active ? "positive"
+  : state === TenantState.Error ? "negative"
+  : state === TenantState.Suspended || state === TenantState.Deleted ? "neutral" : "info";
+
+function validPage(data: PlatformTenantPage, offset: number): boolean {
+  return !!data && Array.isArray(data.tenants)
+    && data.tenants.every((row) => row && typeof row.id === "string" && typeof row.name === "string"
+      && typeof row.slug === "string" && Object.values(TenantState).includes(row.state)
+      && (row.lifecycleActionKey === undefined
+        || Object.values(TenantLifecycleActionKey).includes(row.lifecycleActionKey)))
+    && (data.nextOffset === undefined || (Number.isSafeInteger(data.nextOffset) && data.nextOffset > offset));
+}
+
+/** DD-170 §16.2(3): the offset-paged directory is read to its end, bounded per round. */
+async function loadTenants(client: BffClient, pages: number): Promise<Directory> {
+  const tenants: PlatformTenantView[] = [];
+  const seen = new Set<string>();
+  let offset = 0;
+  for (let index = 0; index < pages; index++) {
+    const page = await client.platformTenants(offset);
+    if (!validPage(page, offset)) throw new TransportError("Invalid organization page");
+    for (const row of page.tenants) {
+      if (seen.has(row.id)) throw new TransportError("Repeated organization");
+      seen.add(row.id); tenants.push(row);
+    }
+    if (page.nextOffset === undefined) return { tenants, complete: true };
+    offset = page.nextOffset;
+  }
+  return { tenants, complete: false };
+}
 
 export function PlatformTenantManagement() {
   const client = useBffClient();
@@ -31,36 +72,20 @@ export function PlatformTenantManagement() {
   const locale = useLocale();
   const failureText = useFailureText();
   const reasonText = useReasonText();
-  const [offsets, setOffsets] = useState<number[]>([0]);
-  const [pageIndex, setPageIndex] = useState(0);
-  const offset = offsets[pageIndex] ?? 0;
-  const [state, reload] = useLoad(`platform-tenants:${offset}`, () => client.platformTenants(offset));
+  const [budget, setBudget] = useState(10);
+  const [state, reload] = useLoad(`platform-tenants:${budget}`, () => loadTenants(client, budget), { keepWhileRevalidating: true });
   const inFlight = useRef(false);
-  // 意图不随列表刷新或分页丢失：结果不明时只能以同一幂等键重查
+  // 意图不随列表刷新、翻页或对话框关闭丢失：结果不明时只能以同一幂等键重查
   const [intent, setIntent] = useState<Intent | null>(null);
+  const [dialog, setDialog] = useState(false);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
-
-  // 非 Catalog 会话、无 Catalog manage 或能力未发布：整节不出现
-  if (state.status === "error" && state.error instanceof BffError
-    && (state.error.status === 403 || state.error.status === 404))
-    return null;
-  if (state.status === "pending") return null;
-
-  const data = state.status === "ok" ? state.data : null;
-  const page = data && Array.isArray(data.tenants)
-    && data.tenants.every((row) => row && typeof row.id === "string" && typeof row.name === "string"
-      && typeof row.slug === "string" && Object.values(TenantState).includes(row.state)
-      && (row.lifecycleActionKey === undefined
-        || Object.values(TenantLifecycleActionKey).includes(row.lifecycleActionKey)))
-    && (data.nextOffset === undefined || (Number.isSafeInteger(data.nextOffset) && data.nextOffset > offset))
-    ? data : null;
+  const unknown = outcome?.kind === "unknown";
 
   const submit = async () => {
     if (!intent || inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
-    setOutcome(null);
     try {
       const result = await client.submitAction(intent.command);
       if (!result || result.actionKey !== intent.command.actionKey
@@ -71,15 +96,11 @@ export function PlatformTenantManagement() {
         throw new TransportError(t("platform.loadFailed"));
       if (result.gateState === ActionGateState.Allowed && result.dispatchState === ActionDispatchState.Dispatched) {
         setOutcome({ kind: "recorded", operation: result.operationId });
-        setIntent(null);
+        setIntent(null); setDialog(false);
         reload();
       } else if (result.dispatchState === ActionDispatchState.Aborted) {
-        setOutcome({
-          kind: "aborted",
-          operation: result.operationId,
-          reason: result.reason ? reasonText(result.reason) : result.dispatchState,
-        });
-        setIntent(null);
+        setOutcome({ kind: "aborted", operation: result.operationId, reason: result.reason ? reasonText(result.reason) : result.dispatchState });
+        setIntent(null); setDialog(false);
         reload();
       } else {
         // 未派发或派发结果不明：保留原命令与幂等键，只允许重查原请求
@@ -91,7 +112,7 @@ export function PlatformTenantManagement() {
         setOutcome({ kind: "unknown", operation: failed.operationId });
       } else {
         setOutcome({ kind: "rejected", reason: failureText(failed) });
-        setIntent(null);
+        setIntent(null); setDialog(false);
         reload();
       }
     } finally {
@@ -100,8 +121,8 @@ export function PlatformTenantManagement() {
     }
   };
 
-  const unknown = outcome?.kind === "unknown";
   const choose = (row: PlatformTenantView, key: TenantLifecycleActionKey) => {
+    if (intent || inFlight.current) return;
     setOutcome(null);
     setIntent({
       // EXPLICIT：确认位随命令冻结，Core 以它判定用户已在目标详情上确认
@@ -109,86 +130,57 @@ export function PlatformTenantManagement() {
       name: row.name,
       slug: row.slug,
     });
+    setDialog(true);
   };
 
+  // 非 Catalog 会话或无 Catalog manage：说明需要的角色；能力未发布：说明未开放。保留未决意图。
+  if (state.status === "error" && !intent && !outcome) {
+    const refusal = readRefusal(state.error);
+    if (refusal === "denied") return <PermissionState description={t("adminArea.tenants.deniedBody")} />;
+    if (refusal === "missing") return <EmptyState title={t("adminArea.unavailableTitle")} description={t("adminArea.unavailableBody")} />;
+  }
+
+  const stateLabel = (row: PlatformTenantView) => enumLabel(locale, tenantStateMessages, row.state);
+  const columns: DataColumn<PlatformTenantView>[] = [
+    { key: "name", header: t("tenants.name"), sortValue: (row) => row.name.toLocaleLowerCase(), truncate: true, title: (row) => `${row.name} (${row.slug})`,
+      cell: (row) => <CellStack primary={row.name} secondary={row.slug} mono /> },
+    { key: "state", header: t("platform.state"), width: "10rem", sortValue: stateLabel,
+      cell: (row) => <Badge tone={tenantTone(row.state)}>{stateLabel(row)}</Badge> },
+  ];
+  const suspend = intent?.command.actionKey === TenantLifecycleActionKey.TenantSuspend;
+
   return (
-    <section className="flex flex-col gap-3" data-testid="platform-tenants">
-      <h2 className="text-sm font-medium">{t("tenants.title")}</h2>
-      <Button className="w-fit" onClick={reload}>{t("platform.refresh")}</Button>
-      {intent ? (
-        <div className="flex flex-col gap-2 rounded-md border p-3" role="group">
-          <p>{t(intent.command.actionKey === TenantLifecycleActionKey.TenantSuspend
-            ? "tenants.confirmSuspend" : "tenants.confirmRestore", { name: intent.name, slug: intent.slug })}</p>
-          <div className="flex gap-2">
-            <Button disabled={busy} onClick={() => void submit()}>
-              {busy ? t("platform.loading") : unknown ? t("workspace.lifecycle.retry") : t("platform.confirm")}
-            </Button>
-            {unknown ? null : (
-              <Button disabled={busy} onClick={() => setIntent(null)}>{t("platform.cancel")}</Button>
-            )}
-          </div>
-        </div>
-      ) : null}
-      {outcome?.kind === "recorded" ? (
-        <p role="status" className="break-words text-sm">
-          {t("workspace.lifecycle.recorded", { operation: outcome.operation })}
-        </p>
-      ) : outcome ? (
-        <p role="alert" className="break-words text-sm">
+    <PageSection id="admin-tenants" title={t("tenants.title")} description={t("adminArea.tenants.description")} testId="platform-tenants">
+      {outcome?.kind === "recorded" ? <OutcomeNotice tone="status">{t("workspace.lifecycle.recorded", { operation: outcome.operation })}</OutcomeNotice>
+        : outcome ? <OutcomeNotice tone="alert" action={unknown && intent ? <Button disabled={busy} onClick={() => void submit()}>{t("workspace.lifecycle.retry")}</Button> : undefined}>
           {outcome.kind === "unknown"
             ? t("workspace.lifecycle.unknown", { operation: outcome.operation ?? "—" })
             : outcome.kind === "aborted"
               ? t("workspace.lifecycle.aborted", { reason: outcome.reason, operation: outcome.operation })
               : t("workspace.lifecycle.rejected", { reason: outcome.reason })}
-        </p>
-      ) : null}
-      {state.status === "error" || !page ? (
-        <Notice role="alert">
-          {t("platform.loadFailed")}
-          <Button onClick={reload}>{t("platform.retry")}</Button>
-        </Notice>
-      ) : (
-        <>
-          {page.tenants.length === 0 ? <Notice>{t("tenants.none")}</Notice> : (
-            <Table head={[t("tenants.name"), t("tenants.slug"), t("platform.state"), t("platform.action")]}>
-              {page.tenants.map((row) => (
-                <tr key={row.id}>
-                  <Cell>{row.name}</Cell>
-                  <Cell mono>{row.slug}</Cell>
-                  <Cell>
-                    <Badge tone={row.state === TenantState.Active ? "positive" : "neutral"}>
-                      {enumLabel(locale, tenantStateMessages, row.state)}
-                    </Badge>
-                  </Cell>
-                  <Cell>
-                    {row.lifecycleActionKey ? (
-                      <Button
-                        disabled={busy || intent !== null}
-                        onClick={() => choose(row, row.lifecycleActionKey as TenantLifecycleActionKey)}
-                      >
-                        {row.lifecycleActionKey === TenantLifecycleActionKey.TenantSuspend
-                          ? t("tenants.suspend") : t("tenants.restore")}
-                      </Button>
-                    ) : "—"}
-                  </Cell>
-                </tr>
-              ))}
-            </Table>
-          )}
-          <div className="flex gap-2">
-            {pageIndex > 0 ? (
-              <Button onClick={() => setPageIndex(pageIndex - 1)}>{t("roles.previous")}</Button>
-            ) : null}
-            {page.nextOffset !== undefined ? (
-              <Button onClick={() => {
-                const next = page.nextOffset as number;
-                setOffsets((old) => [...old.slice(0, pageIndex + 1), next]);
-                setPageIndex(pageIndex + 1);
-              }}>{t("roles.next")}</Button>
-            ) : null}
-          </div>
-        </>
-      )}
-    </section>
+        </OutcomeNotice> : null}
+      {state.status === "pending" ? <TableSkeleton rows={4} columns={3} />
+        : state.status === "error" ? <ErrorState error={state.error} onRetry={reload} />
+        : <DataTable label={t("adminArea.tenants.listLabel")} rows={state.data.tenants} columns={columns} rowKey={(row) => row.id}
+          toolbar={<RefreshButton onClick={reload} />}
+          search={{ placeholder: t("adminArea.tenants.search"), text: (row) => `${row.name} ${row.slug} ${stateLabel(row)}` }}
+          rowActions={(row) => row.lifecycleActionKey ? <RowActionsMenu name={row.name} disabled={busy || intent !== null} actions={[{
+            key: "lifecycle",
+            label: row.lifecycleActionKey === TenantLifecycleActionKey.TenantSuspend ? t("tenants.suspend") : t("tenants.restore"),
+            danger: row.lifecycleActionKey === TenantLifecycleActionKey.TenantSuspend,
+            onSelect: () => choose(row, row.lifecycleActionKey as TenantLifecycleActionKey),
+          }]} /> : null} rowActionsWidth="3.5rem"
+          partial={state.data.complete ? undefined : <button type="button" className="text-brand-text hover:underline" onClick={() => setBudget((n) => n + 10)}>
+            {t("list.partial", { count: String(state.data.tenants.length) })} · {t("list.loadMore")}</button>}
+          empty={<EmptyState title={t("adminArea.tenants.emptyTitle")} description={t("adminArea.tenants.emptyBody")} />} />}
+      <ConfirmDialog open={dialog && intent !== null} testId="tenant-lifecycle-dialog" pending={busy} tone={suspend ? "danger" : "default"}
+        onOpenChange={(next) => { if (next) return; setDialog(false); if (!unknown) setIntent(null); }}
+        title={intent ? t(suspend ? "adminArea.tenants.suspendTitle" : "adminArea.tenants.restoreTitle", { name: intent.name }) : ""}
+        description={t(suspend ? "adminArea.tenants.suspendBody" : "adminArea.tenants.restoreBody")}
+        confirmLabel={unknown ? t("workspace.lifecycle.retry") : t(suspend ? "tenants.suspend" : "tenants.restore")}
+        onConfirm={() => void submit()}>
+        {unknown ? <UnknownInDialog operation={outcome?.kind === "unknown" ? outcome.operation : undefined} /> : null}
+      </ConfirmDialog>
+    </PageSection>
   );
 }

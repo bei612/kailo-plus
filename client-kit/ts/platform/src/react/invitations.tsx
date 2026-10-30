@@ -2,13 +2,15 @@
 // 审批详情里带出兑换者自报名。Web 与 Desktop 渲染同一份。
 //
 // 入口是否出现只看 BFF 的回答：邀请列表只对持有 Tenant manage 的人开放（FullyConsistent
-// Check），回 403 就说明此人不是 admin，整节不渲染——前端不自判权限。
+// Check），回 403 就说明此人不是 admin——嵌入成员页或设置时不渲染入口，管理区的独立分区
+// 说明需要的角色（DD-170 §16.4），前端不自判权限。
 //
 // 凭据的纪律：链接只在签发回应里出现一次，这里只放在组件内存里展示，不写日志、不进存储；
 // 兑换时凭据只进请求体。宿主负责从 URL fragment 取出凭据并立即清掉 fragment。
 
 import {
   type ActionCommand,
+  ApprovalStatus,
   ActionDispatchState,
   ActionGateState,
   type ActionSubmission,
@@ -21,15 +23,20 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 import { relativeTime } from "../format";
 import { newIdempotencyKey, redemptionPhase } from "../governance";
 import {
-  approvalStatusMessages,
   enumLabel,
   invitationStatusMessages,
+  type PlatformMessageKey,
   tenantMembershipStateMessages,
 } from "../i18n";
 import { BffError, TransportError, type WriteFailure, writeFailure } from "../transport";
 import { useBffClient, useFailureText, useLocale, useReasonText, useT } from "./context";
 import { Resource } from "./pages";
-import { Badge, Button, Cell, Notice, Table } from "./ui";
+import { Badge, Button, type Tone } from "./ui";
+import { CellStack, DataTable, type DataColumn } from "./data-table";
+import { EmptyState, ErrorState, NoMatchState, PermissionState, TableSkeleton } from "./state-views";
+import { ConfirmDialog } from "./confirm-dialog";
+import { FilterChips, PageSection, RefreshButton } from "./page-layout";
+import { OutcomeNotice, PRIMARY_ACTION_CLASS, RowActionsMenu, UnknownInDialog } from "./roles";
 import { useLoad, type Loaded } from "./use-load";
 import { CommunityInviteDialog } from "./community-members/CommunityInviteDialog";
 import { InviteLinkSection } from "./community-members/InviteLinkSection";
@@ -61,7 +68,34 @@ type IssueOutcome =
   | { kind: "noLink" }
   | { kind: "failed"; failure: WriteFailure };
 
-/** 成员页上的邀请一节。非 admin（列表 403）时整节不渲染。 */
+const invitationTone = (status: TenantInvitationStatus): Tone => status === TenantInvitationStatus.Redeemed ? "positive"
+  : status === TenantInvitationStatus.Issued ? "info" : "neutral";
+
+/** The identity check of a used invitation, in words an admin acts on (DD-170 §16.5(1)). */
+const checkLabel: Record<ApprovalStatus, PlatformMessageKey> = {
+  [ApprovalStatus.Requested]: "adminArea.invitations.check.waiting",
+  [ApprovalStatus.Waiting]: "adminArea.invitations.check.waiting",
+  [ApprovalStatus.Approved]: "adminArea.invitations.check.approved",
+  [ApprovalStatus.Consumed]: "adminArea.invitations.check.approved",
+  [ApprovalStatus.Denied]: "adminArea.invitations.check.denied",
+  [ApprovalStatus.Expired]: "adminArea.invitations.check.expired",
+  [ApprovalStatus.Cancelled]: "adminArea.invitations.check.withdrawn",
+  [ApprovalStatus.Invalidated]: "adminArea.invitations.check.invalid",
+};
+const checkTone = (status: ApprovalStatus): Tone => status === ApprovalStatus.Approved || status === ApprovalStatus.Consumed ? "positive"
+  : status === ApprovalStatus.Requested || status === ApprovalStatus.Waiting ? "warning"
+  : status === ApprovalStatus.Denied ? "negative" : "neutral";
+
+type StatusFilter = "all" | "issued" | "redeemed" | "ended";
+const matchesFilter = (inv: TenantInvitationView, filter: StatusFilter) => filter === "all"
+  || (filter === "issued" && inv.status === TenantInvitationStatus.Issued)
+  || (filter === "redeemed" && inv.status === TenantInvitationStatus.Redeemed)
+  || (filter === "ended" && (inv.status === TenantInvitationStatus.Revoked || inv.status === TenantInvitationStatus.Expired));
+
+/**
+ * 成员管理区的“邀请”分区（DD-83；DD-170 §16）：签发表单、邀请表（状态筛选、总数与翻页）、
+ * 撤回确认。非 admin（列表 403）时独立分区说明需要的角色；嵌在成员页或设置里时不渲染入口。
+ */
 export function TenantInvitations({dialog=false,settings=false,active=true,onAccessChange}:{dialog?:boolean;settings?:boolean;active?:boolean;onAccessChange?:(state:Loaded<boolean>,reload:()=>void)=>void} = {}) {
   const client = useBffClient();
   const t = useT();
@@ -72,7 +106,9 @@ export function TenantInvitations({dialog=false,settings=false,active=true,onAcc
   const [busy, setBusy] = useState(false);
   const [issued, setIssued] = useState<IssueOutcome | null>(null);
   const [confirming, setConfirming] = useState<TenantInvitationView | null>(null);
+  const [withdrawDialog, setWithdrawDialog] = useState(false);
   const [withdrawFailure, setWithdrawFailure] = useState<WriteFailure | null>(null);
+  const [filter, setFilter] = useState<StatusFilter>("all");
   const [open,setOpen]=useState(false);
   const [issueIntent,setIssueIntent]=useState<ActionCommand|null>(null);
   const [withdrawIntent,setWithdrawIntent]=useState<ActionCommand|null>(null);
@@ -81,6 +117,7 @@ export function TenantInvitations({dialog=false,settings=false,active=true,onAcc
   const inFlight=useRef(false);
   const readStatus=state.status;
   const readError=state.status==="error"?state.error:undefined;
+  const standalone=!dialog&&!settings;
   useEffect(()=>{
     onAccessChange?.(readStatus==="ok"?{status:"ok",data:true}:readStatus==="error"?{status:"error",error:readError}:{status:"pending"},reload);
   },[readStatus,readError,onAccessChange,reload]);
@@ -92,12 +129,18 @@ export function TenantInvitations({dialog=false,settings=false,active=true,onAcc
   // unresolved governed intent or first-response-only link.
   useEffect(()=>{if(!active)setOpen(false);},[active]);
 
-  // 第一次得到 BFF 的回答之前不画任何东西：非 admin 不该看到这一节闪一下再消失。
-  // 重读期间保持已有的画面（签发出的链接还要留在屏幕上）。
+  // 第一次得到 BFF 的回答之前不画列表：嵌入成员页或设置时，非 admin 不该看到入口闪一下
+  // 再消失；独立分区则以骨架占位。重读期间保持已有的画面（签发出的链接还要留在屏幕上）。
   const answered = useRef(false);
   if (state.status === "ok") answered.current = true;
-  if (state.status === "error" && forbidden(state.error)) return null;
-  if (state.status === "pending" && !answered.current) return null;
+  const denied = state.status === "error" && forbidden(state.error);
+  if (denied && !standalone) return null;
+  if (denied && !issueIntent && !withdrawIntent && !issued)
+    return <PermissionState title={t("invitations.accessRequired")} description={t("invitations.accessRequiredBody")} />;
+  if (state.status === "pending" && !answered.current)
+    return standalone ? <PageSection id="admin-invitations" title={t("invitations.title")} description={t("adminArea.invitations.description")}>
+      <TableSkeleton rows={4} columns={5} />
+    </PageSection> : null;
 
   const issue = async (e: FormEvent) => {
     e.preventDefault();
@@ -146,11 +189,11 @@ export function TenantInvitations({dialog=false,settings=false,active=true,onAcc
       const confirmed=invitationReceipt(receipt,command,withdrawReceipt.current);
       withdrawReceipt.current=receipt;
       if(!confirmed){setWithdrawFailure({kind:"unknown",operationId:receipt.operationId});return;}
-      setWithdrawIntent(null);setConfirming(null);setWithdrawFailure(null);withdrawReceipt.current=null;
+      setWithdrawIntent(null);setConfirming(null);setWithdrawDialog(false);setWithdrawFailure(null);withdrawReceipt.current=null;
     } catch (err) {
       if(!wasUnknown){
         const failure=writeFailure(err);setWithdrawFailure(failure);
-        if(failure.kind!=="unknown"){setWithdrawIntent(null);setConfirming(null);withdrawReceipt.current=null;}
+        if(failure.kind!=="unknown"){setWithdrawIntent(null);setConfirming(null);setWithdrawDialog(false);withdrawReceipt.current=null;}
       }
     } finally {
       inFlight.current=false;
@@ -158,102 +201,96 @@ export function TenantInvitations({dialog=false,settings=false,active=true,onAcc
       reload();
     }
   };
+  const withdrawUnknown=withdrawFailure?.kind==="unknown";
 
   const invitationForm = <>
       {answered.current ? (
-        <>
-          {!dialog&&!settings?<p className="text-xs text-muted-foreground">{t("invitations.explain")}</p>:null}
-          <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => void issue(e)}>
-            <label className="flex flex-col gap-1 text-sm">
-              <span>{t("invitations.inviteeLabel")}</span>
-              <input
-                className={inputClass}
-                name="inviteeLabel"
-                required
-                disabled={busy||issueIntent!==null||withdrawIntent!==null}
-                value={label}
-                onChange={(e) => setLabel(e.target.value)}
-              />
-            </label>
-            <Button disabled={busy || withdrawIntent!==null || (!issueIntent&&!label.trim())} type="submit">
+        <form className="flex flex-col gap-2" onSubmit={(e) => void issue(e)}>
+          <label className="text-sm font-medium text-foreground" htmlFor={`invitee-label-${dialog?"dialog":settings?"settings":"page"}`}>{t("adminArea.invitations.inviteeLabel")}</label>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              id={`invitee-label-${dialog?"dialog":settings?"settings":"page"}`}
+              className="h-8 min-w-0 flex-1 basis-56 rounded-lg border border-input bg-background px-2.5 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:border-brand focus-visible:outline-hidden focus-visible:ring-[3px] focus-visible:ring-ring/15 disabled:opacity-60"
+              name="inviteeLabel"
+              required
+              autoComplete="off"
+              placeholder={t("adminArea.invitations.inviteePlaceholder")}
+              disabled={busy||issueIntent!==null||withdrawIntent!==null}
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+            />
+            <Button className={PRIMARY_ACTION_CLASS} disabled={busy || withdrawIntent!==null || (!issueIntent&&!label.trim())} type="submit">
               {t(issueIntent?"platform.retry":"invitations.issue")}
             </Button>
-          </form>
-          <p className="text-xs text-muted-foreground">{t("invitations.inviteeHint")}</p>
-        </>
+          </div>
+          <p className="text-xs text-muted-foreground">{t("adminArea.invitations.inviteeHint")}</p>
+        </form>
       ) : null}
       {issued ? <IssuedNotice outcome={issued} /> : null}
   </>;
 
+  const rows = state.status === "ok" ? state.data : null;
+  const shown = rows ? rows.filter((inv) => matchesFilter(inv, filter)) : [];
+  const columns: DataColumn<TenantInvitationView>[] = [
+    { key: "invitee", header: t("adminArea.invitations.inviteeLabel"), truncate: true, title: (inv) => inv.inviteeLabel,
+      sortValue: (inv) => inv.inviteeLabel.toLocaleLowerCase(),
+      cell: (inv) => <CellStack primary={inv.inviteeLabel} secondary={t("adminArea.invitations.created", { time: relativeTime(locale, inv.createdAt) })} /> },
+    { key: "status", header: t("platform.state"), width: "8rem", sortValue: (inv) => enumLabel(locale, invitationStatusMessages, inv.status),
+      cell: (inv) => <Badge tone={invitationTone(inv.status)}>{enumLabel(locale, invitationStatusMessages, inv.status)}</Badge> },
+    { key: "expires", header: t("approvals.expires"), width: "8rem", secondary: true, sortValue: (inv) => Date.parse(inv.expiresAt),
+      title: (inv) => new Date(inv.expiresAt).toLocaleString(locale), cell: (inv) => <span className="whitespace-nowrap text-muted-foreground">{relativeTime(locale, inv.expiresAt)}</span> },
+    { key: "redeemer", header: t("invitations.redeemer"), truncate: true, title: (inv) => inv.redeemerDisplayName,
+      sortValue: (inv) => inv.redeemerDisplayName?.toLocaleLowerCase(),
+      cell: (inv) => inv.redeemerDisplayName ? <CellStack primary={inv.redeemerDisplayName}
+        secondary={inv.membershipState ? enumLabel(locale, tenantMembershipStateMessages, inv.membershipState) : undefined} /> : null },
+    { key: "check", header: t("adminArea.invitations.confirmation"), width: "9rem",
+      sortValue: (inv) => inv.approvalStatus ? t(checkLabel[inv.approvalStatus]) : undefined,
+      cell: (inv) => inv.approvalStatus && checkLabel[inv.approvalStatus]
+        ? <Badge tone={checkTone(inv.approvalStatus)}>{t(checkLabel[inv.approvalStatus])}</Badge> : null },
+  ];
+  const statusOptions = [
+    { value: "all" as const, label: t("adminArea.filterAll") },
+    { value: "issued" as const, label: enumLabel(locale, invitationStatusMessages, TenantInvitationStatus.Issued) },
+    { value: "redeemed" as const, label: enumLabel(locale, invitationStatusMessages, TenantInvitationStatus.Redeemed) },
+    { value: "ended" as const, label: t("adminArea.invitations.ended") },
+  ];
+
+  const list = state.status === "error" && !denied ? <ErrorState error={state.error} onRetry={reload} />
+    : !rows ? null
+    : rows.length === 0 ? <EmptyState title={t("adminArea.invitations.emptyTitle")} description={t("adminArea.invitations.emptyBody")} />
+    : <DataTable label={t("adminArea.invitations.listLabel")} rows={shown} columns={columns} rowKey={(inv) => inv.invitationId}
+      search={{ placeholder: t("adminArea.invitations.search"), text: (inv) => `${inv.inviteeLabel} ${inv.redeemerDisplayName ?? ""}` }}
+      toolbar={<><FilterChips label={t("adminArea.filterStatus")} value={filter} options={statusOptions} onChange={setFilter} /><RefreshButton onClick={reload} /></>}
+      rowActions={(inv) => inv.status === TenantInvitationStatus.Issued ? <RowActionsMenu name={inv.inviteeLabel}
+        disabled={busy||issueIntent!==null||withdrawIntent!==null} actions={[{ key: "withdraw", danger: true, label: t("invitations.withdraw"),
+          onSelect: () => { setWithdrawFailure(null); setConfirming(inv); setWithdrawDialog(true); } }]} /> : null}
+      rowActionsWidth="3.5rem"
+      empty={<NoMatchState onClear={() => setFilter("all")} />} />;
+
   const content = (
-    <section className="flex flex-col gap-3" data-testid="tenant-invitations">
-      {!dialog&&!settings?<h2 className="text-sm font-medium">{t("invitations.title")}</h2>:null}
-      {!settings?invitationForm:null}
+    <section className="flex min-w-0 flex-col gap-4" data-testid="tenant-invitations">
+      {standalone ? <PageSection id="admin-invitations" title={t("invitations.title")} description={t("adminArea.invitations.description")}>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <h3 className="mb-3 text-sm font-semibold text-foreground">{t("adminArea.invitations.formTitle")}</h3>
+          {invitationForm}
+        </div>
+      </PageSection> : dialog ? invitationForm : null}
       {withdrawFailure ? (
-        <p className={withdrawFailure.kind === "rejected" ? "text-destructive" : ""} role="alert">
-          {withdrawFailure.kind === "unknown"
+        <OutcomeNotice tone="alert" action={withdrawUnknown && confirming ? <Button disabled={busy} onClick={() => setWithdrawDialog(true)}>{t("adminArea.reopen")}</Button> : undefined}>
+          {withdrawUnknown
             ? t("invitations.withdrawUnknown", { operation: withdrawFailure.operationId ?? "—" })
             : t("invitations.withdrawRejected", { reason: failureText(withdrawFailure) })}
-        </p>
+        </OutcomeNotice>
       ) : null}
-      {confirming ? (
-        <div className="flex flex-col gap-2 rounded-md border p-3" role="group">
-          <p>{t("invitations.confirmWithdraw", { label: confirming.inviteeLabel })}</p>
-          <div className="flex gap-2">
-            <Button disabled={busy} onClick={() => void withdraw(confirming)}>{t("platform.confirm")}</Button>
-            {withdrawIntent?null:<Button disabled={busy} onClick={() => setConfirming(null)}>{t("platform.cancel")}</Button>}
-          </div>
-        </div>
-      ) : null}
-      <div>
-        <Button onClick={reload}>{t("platform.refresh")}</Button>
-      </div>
-      <Resource state={state} reload={reload}>
-        {(rows) =>
-          rows.length === 0 ? (
-            <Notice>{t("invitations.none")}</Notice>
-          ) : (
-            <Table
-              head={[
-                t("invitations.invitee"),
-                t("platform.state"),
-                t("approvals.expires"),
-                t("invitations.redeemer"),
-                t("invitations.confirmation"),
-                "",
-              ]}
-            >
-              {rows.map((inv) => (
-                <tr key={inv.invitationId}>
-                  <Cell>{inv.inviteeLabel}</Cell>
-                  <Cell>
-                    <Badge tone={inv.status === TenantInvitationStatus.Redeemed ? "positive" : "neutral"}>
-                      {enumLabel(locale, invitationStatusMessages, inv.status)}
-                    </Badge>
-                    {inv.membershipState ? (
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        {enumLabel(locale, tenantMembershipStateMessages, inv.membershipState)}
-                      </span>
-                    ) : null}
-                  </Cell>
-                  <Cell title={inv.expiresAt}>{relativeTime(locale, inv.expiresAt)}</Cell>
-                  <Cell>{inv.redeemerDisplayName ?? "—"}</Cell>
-                  <Cell>
-                    {inv.approvalStatus ? enumLabel(locale, approvalStatusMessages, inv.approvalStatus) : "—"}
-                  </Cell>
-                  <Cell>
-                    {inv.status === TenantInvitationStatus.Issued ? (
-                      <Button disabled={busy||issueIntent!==null||withdrawIntent!==null} onClick={() => setConfirming(inv)}>
-                        {t("invitations.withdraw")}
-                      </Button>
-                    ) : null}
-                  </Cell>
-                </tr>
-              ))}
-            </Table>
-          )
-        }
-      </Resource>
+      {list}
+      <ConfirmDialog open={withdrawDialog && confirming !== null} testId="invitation-withdraw-dialog" pending={busy}
+        onOpenChange={(next) => { if (next) return; setWithdrawDialog(false); if (!withdrawIntent) setConfirming(null); }}
+        title={t("adminArea.invitations.withdrawTitle", { label: confirming?.inviteeLabel ?? "" })}
+        description={t("adminArea.invitations.withdrawBody")}
+        confirmLabel={withdrawUnknown ? t("workspace.lifecycle.retry") : t("invitations.withdraw")}
+        onConfirm={() => { if (confirming) void withdraw(confirming); }}>
+        {withdrawUnknown ? <UnknownInDialog operation={withdrawFailure?.operationId} /> : null}
+      </ConfirmDialog>
     </section>
   );
   if(settings)return <>

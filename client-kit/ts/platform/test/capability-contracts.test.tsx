@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { useState } from "react";
+import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { CapabilityContractsPanel } from "../src/react/capability-contracts";
@@ -29,6 +29,20 @@ function transport(route: (request: BffRequest) => BffReply | Promise<BffReply>)
 function mount(t: BffTransport) {
   return render(<PlatformProvider client={createBffClient(t)} locale="en"><CapabilityContractsPanel /></PlatformProvider>);
 }
+const dialog = () => window.document.querySelector<HTMLElement>("[data-testid=capability-contract-dialog]");
+async function rowAction(host: HTMLElement, label: string) {
+  const trigger = host.querySelector<HTMLButtonElement>('button[aria-label^="Actions for"]');
+  if (!trigger) throw new Error("no row menu");
+  await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  await settle();
+  const item = [...window.document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((node) => node.textContent === label);
+  if (!item) throw new Error(`no menu item ${label}`);
+  await click(item);
+}
+async function openRegistration(host: HTMLElement) {
+  await settle();
+  await click(button(host, "Register contract"));
+}
 function receipt(request: BffRequest, gateState = "ALLOWED", dispatchState = "DISPATCHED") {
   return { actionKey: (request.body as { actionKey: string }).actionKey, actionExecutionId: "capability-ae",
     operationId: "capability-op", gateState, dispatchState };
@@ -40,8 +54,15 @@ describe("shared Catalog capability contract management", () => {
     const t = transport(() => ({ status: 200, body: { ...activePage,
       contracts: [{ ...seed, categoryKey: "knowledge", bootstrapActionExecutionId: "bootstrap-ae" }] } }));
     const host = await mount(t);
+    await settle();
     expect(host.textContent).toContain("knowledge");
     expect(host.textContent).toContain("Active contract");
+    expect(host.textContent).toContain("Built in");
+    expect(host.querySelector("[data-testid=list-total]")?.textContent).toBe("1 total");
+    // Digests are technical details of the row, not columns of the table.
+    expect(host.querySelector("table")?.textContent).not.toContain("a".repeat(64));
+    await click(host.querySelector<HTMLElement>("tbody tr")!);
+    expect(host.querySelector(`[data-testid=capability-contract-detail] [title="${"a".repeat(64)}"]`)).not.toBeNull();
     expect([...host.querySelectorAll("button")].some((node) => node.textContent === "Request contract approval")).toBe(false);
     expect(t.send.mock.calls.every(([request]) => request.method === "GET")).toBe(true);
   });
@@ -49,13 +70,16 @@ describe("shared Catalog capability contract management", () => {
   it("previews and freezes the actual registration document; does not invent caller scope or mark a component ready", async () => {
     const t = transport((request) => request.method === "POST" ? { status: 200, body: receipt(request) } : { status: 200, body: page });
     const host = await mount(t);
+    await openRegistration(host);
     await type(host.querySelector("textarea")!, JSON.stringify(document));
     await click(button(host, "Review contract registration"));
     expect(t.send.mock.calls.filter(([r]) => r.method === "POST")).toHaveLength(0);
     expect(host.querySelector("textarea")!.disabled).toBe(true);
-    expect(host.textContent).toContain("Registration creates a draft only");
-    expect(host.querySelector("pre")!.textContent).toContain(document.schemaDocuments[0]!.replaceAll('"', '\\"'));
-    await click(button(host, "Submit governed request"));
+    expect(dialog()!.textContent).toContain("Registration creates a draft only");
+    expect(dialog()!.querySelector("pre")).toBeNull();
+    await click(button(dialog()!, "Show raw data"));
+    expect(dialog()!.querySelector("pre")!.textContent).toContain(document.schemaDocuments[0]!.replaceAll('"', '\\"'));
+    await click(button(dialog()!, "Register"));
     expect(t.send.mock.calls.find(([r]) => r.method === "POST")![0].body).toEqual({
       actionKey: "capability_contract.register", idempotencyKey: expect.any(String), explicitConfirmation: true,
       capabilityContractRegistration: document,
@@ -69,14 +93,16 @@ describe("shared Catalog capability contract management", () => {
     const t = transport((request) => request.method === "POST" ? { status: 202,
       body: { ...receipt(request, "WAITING", "NOT_DISPATCHED"), approvalWorkflowId: "catalog-approval" } } : { status: 200, body: page });
     const host = await mount(t);
-    await click(button(host, "Request contract approval"));
-    expect(host.textContent).toContain("Another Catalog tenant administrator must approve");
-    await click(button(host, "Submit governed request"));
+    await settle();
+    await rowAction(host, "Request contract approval");
+    expect(dialog()!.textContent).toContain("Another organization admin must approve it");
+    await click(button(dialog()!, "Request approval"));
     expect(t.send.mock.calls.find(([r]) => r.method === "POST")![0].body).toEqual({
       actionKey: "capability_contract.approve", idempotencyKey: expect.any(String),
       capabilityContractRef: { categoryKey: draft.categoryKey, contractVersion: draft.contractVersion },
     });
-    expect(host.textContent).toContain("catalog-approval");
+    expect(host.textContent).toContain("Waiting for another admin to approve.");
+    expect(host.querySelector('[title="catalog-approval"]')).not.toBeNull();
     expect(host.textContent).not.toContain("Active contract");
   });
 
@@ -86,10 +112,12 @@ describe("shared Catalog capability contract management", () => {
       ? ++writes === 1 ? { status: 202, body: receipt(request, "ALLOWED", "UNKNOWN") } : { status: 403, body: undefined }
       : writes ? { status: 403, body: undefined } : { status: 200, body: activePage });
     const host = await mount(t);
-    await click(button(host, "Review contract deprecation"));
-    expect(host.textContent).toContain("Existing bindings remain available");
-    await click(button(host, "Submit governed request"));
-    await click(button(host, "Refresh"));
+    await settle();
+    await rowAction(host, "Deprecate");
+    expect(dialog()!.textContent).toContain("Existing connections keep working");
+    expect(button(dialog()!, "Deprecate").className).toContain("bg-danger");
+    await click(button(dialog()!, "Deprecate"));
+    await click(host.querySelector<HTMLButtonElement>('button[aria-label="Refresh"]')!);
     await click(button(host, "Re-check same request"));
     const commands = t.send.mock.calls.filter(([r]) => r.method === "POST").map(([r]) => r.body);
     expect(commands).toHaveLength(2);
@@ -109,17 +137,21 @@ describe("shared Catalog capability contract management", () => {
       return { status: 409, body: undefined };
     });
     const host = await mount(t);
-    await click(button(host, "Review contract deprecation"));
-    await click(button(host, "Submit governed request"));
+    await settle();
+    await rowAction(host, "Deprecate");
+    await click(button(dialog()!, "Deprecate"));
     await click(button(host, "Re-check same request"));
     expect(host.textContent).toContain("Outcome is not confirmed.");
     expect(button(host, "Re-check same request")).toBeTruthy();
   });
 
-  it.each([403, 404])("does not render a Catalog entry for initial HTTP %s", async (status) => {
+  it.each([[403, "permission-state", "Only Catalog admins can manage capability contracts."], [404, "empty-state", "Not available here"]] as const)(
+    "does not render a Catalog entry for initial HTTP %s but explains why", async (status, state, text) => {
     const t = transport(() => ({ status, body: undefined }));
     const host = await mount(t);
+    await settle();
     expect(host.querySelector("[data-testid=capability-contracts]")).toBeNull();
+    expect(host.querySelector(`[data-testid=${state}]`)?.textContent).toContain(text);
     expect(t.send.mock.calls.some(([r]) => r.method === "POST")).toBe(false);
   });
 
@@ -132,6 +164,8 @@ describe("shared Catalog capability contract management", () => {
   ])("unverified or contradictory Catalog metadata cannot create actions (%j)", async (body) => {
     const t = transport(() => ({ status: 200, body }));
     const host = await mount(t);
+    await settle();
+    expect(host.querySelector("[data-testid=error-state]")).not.toBeNull();
     expect(host.querySelector("textarea")).toBeNull();
     expect([...host.querySelectorAll("button")].some((node) => node.textContent === "Request contract approval")).toBe(false);
     expect(t.send.mock.calls.some(([r]) => r.method === "POST")).toBe(false);
@@ -142,21 +176,28 @@ describe("shared Catalog capability contract management", () => {
   ])("malformed registration never prepares a governed command (%s)", async (raw) => {
     const t = transport(() => ({ status: 200, body: page }));
     const host = await mount(t);
+    await openRegistration(host);
     await type(host.querySelector("textarea")!, raw);
     await click(button(host, "Review contract registration"));
     expect(host.textContent).toContain("lacks required contract fields");
-    expect(host.querySelector("[role=group]")).toBeNull();
+    expect(dialog()).toBeNull();
     expect(t.send.mock.calls.some(([r]) => r.method === "POST")).toBe(false);
   });
 
-  it("paged metadata preserves a frozen target and follows only the BFF cursor", async () => {
+  it("reads the paged Catalog to its end by the BFF cursor and keeps a frozen target across refresh", async () => {
+    const second = { ...activePage.contracts[0]!, categoryKey: "files" };
     const t = transport((request) => ({ status: 200, body: request.path.endsWith("offset=3")
-      ? { contracts: [], canRegister: false } : { ...activePage, nextOffset: 3 } }));
+      ? { contracts: [second], canRegister: false } : { ...activePage, nextOffset: 3 } }));
     const host = await mount(t);
-    await click(button(host, "Review contract deprecation"));
-    await click(button(host, "Next page"));
-    expect(host.querySelector("[role=group]")!.textContent).toContain(draft.categoryKey);
-    expect(t.send.mock.calls.some(([r]) => r.path === "/api/v1/platform/capability-contracts?offset=3")).toBe(true);
+    await settle();
+    expect(t.send.mock.calls.map(([r]) => r.path)).toEqual(["/api/v1/platform/capability-contracts?offset=0", "/api/v1/platform/capability-contracts?offset=3"]);
+    expect(host.querySelector("[data-testid=list-total]")?.textContent).toBe("2 total");
+    await rowAction(host, "Deprecate");
+    await click(button(dialog()!, "Cancel"));
+    expect(dialog()).toBeNull();
+    await rowAction(host, "Deprecate");
+    await click(host.querySelector<HTMLButtonElement>('button[aria-label="Refresh"]')!);
+    expect(dialog()!.textContent).toContain(draft.categoryKey);
     expect(t.send.mock.calls.some(([r]) => r.method === "POST")).toBe(false);
   });
 
@@ -170,8 +211,9 @@ describe("shared Catalog capability contract management", () => {
         <PlatformProvider client={clients[index]!} locale="en"><CapabilityContractsPanel /></PlatformProvider></>;
     }
     const host = await render(<Host />);
-    await click(button(host, "Review contract deprecation"));
-    await click(button(host, "Submit governed request"));
+    await settle();
+    await rowAction(host, "Deprecate");
+    await click(button(dialog()!, "Deprecate"));
     await click(button(host, "Switch Catalog"));
     await settle();
     expect(host.querySelector("[data-testid=capability-contracts]")).toBeNull();

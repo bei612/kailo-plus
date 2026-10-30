@@ -87,10 +87,46 @@ describe("DD-158 actual shared feedback consumers", () => {
     });
     const host = await render(<PlatformProvider client={createBffClient({ send })} locale="en"><PlatformFeedback/></PlatformProvider>);
     await settle();
+    expect(host.querySelector("[data-testid=list-total]")?.textContent).toBe("1 total");
+    expect(host.textContent).toContain("Tenant One");
+    expect(host.textContent).toContain("New");
+    await click(host.querySelector<HTMLElement>(`tr[data-row-key="${feedbackId}"]`)!);
+    expect(host.querySelector("[data-testid=platform-feedback-detail]")?.textContent).toContain("Feedback from Tenant One");
     await click(button(host, "Attached image"));
     expect(host.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,iVBORw0KGgo=");
     await click(button(host, "Mark as triaged"));
     expect(host.textContent).toContain("Triaged");
     expect(button(host, "Close feedback")).toBeTruthy();
+    await click(button(host, "Back"));
+    expect(host.querySelector("[data-testid=platform-feedback-detail]")).toBeNull();
+  });
+
+  it("operator list reads every offset page, filters by state on the server and states refusal instead of a blank page", async () => {
+    const row = (id: string, extra: Record<string, unknown> = {}) => ({ feedbackId: id, tenantId: "tenant-1", tenantName: "Tenant One", client: "DESKTOP",
+      message: `Message ${id}`, createdAt, state: "NEW", version: 1, ...extra });
+    const send = vi.fn(async (request: BffRequest) => {
+      if (request.path.includes("state=CLOSED")) return { status: 200, body: { items: [row("c-1", { state: "CLOSED" })] } };
+      return request.path.endsWith("offset=0") ? { status: 200, body: { items: [row("a-1"), row("a-2")], nextOffset: 25 } }
+        : { status: 200, body: { items: [row("b-1", { diagnostics: JSON.stringify({ appVersion: "1.2.3", platform: "macOS" }) })] } };
+    });
+    const host = await render(<PlatformProvider client={createBffClient({ send })} locale="zh-CN"><PlatformFeedback/></PlatformProvider>);
+    await settle();
+    expect(send.mock.calls.map(([r]) => r.path)).toEqual(["/api/v1/platform/feedback?offset=0", "/api/v1/platform/feedback?offset=25"]);
+    expect(host.querySelector("[data-testid=list-total]")?.textContent).toBe("共 3 条");
+    expect(host.textContent).toContain("桌面端");
+    expect(host.textContent).not.toContain("DESKTOP");
+    await click(host.querySelector<HTMLElement>('tr[data-row-key="b-1"]')!);
+    const detail = host.querySelector("[data-testid=platform-feedback-detail]")!;
+    expect(detail.textContent).toContain("1.2.3");
+    expect(detail.querySelector("pre")).toBeNull();
+    await click(button(host, "返回"));
+    const closed = [...host.querySelectorAll<HTMLElement>("[role=radio]")].find((node) => node.textContent === "已关闭")!;
+    await click(closed);
+    expect(send.mock.calls.at(-1)?.[0].path).toBe("/api/v1/platform/feedback?offset=0&state=CLOSED");
+    expect(host.querySelector("[data-testid=list-total]")?.textContent).toBe("共 1 条");
+
+    const denied = await render(<PlatformProvider client={createBffClient({ send: vi.fn(async () => ({ status: 403, body: {} })) })} locale="zh-CN"><PlatformFeedback/></PlatformProvider>);
+    await settle();
+    expect(denied.querySelector("[data-testid=permission-state]")?.textContent).toContain("只有本部署的运营管理员可以查看私有反馈。");
   });
 });

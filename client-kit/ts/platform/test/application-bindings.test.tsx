@@ -56,6 +56,8 @@ async function selectReadPair(host: HTMLElement) {
   await selectResource(host, "Source resource", readSource.resourceId);
 }
 
+const readDialog = () => document.querySelector<HTMLElement>("[data-testid=service-read-dialog]");
+
 describe("shared SERVICE read permissions on existing connection management", () => {
   it("renders the same receiver workflow in Chinese without a raw SERVICE ID input",async()=>{
     const client=createBffClient({send:async request=>({status:200,body:request.path==="/api/v1/workspaces"?[]:
@@ -78,8 +80,10 @@ describe("shared SERVICE read permissions on existing connection management", ()
     await selectReadPair(host);
     await click(button(host,"Request read access"));
     expect(send.mock.calls.filter(([request])=>request.method==="POST")).toHaveLength(0);
-    expect(host.textContent).toContain("source owner approves");
-    await click(button(host,"Confirm"));
+    expect(readDialog()?.textContent).toContain("source owner approves");
+    expect(readDialog()?.textContent).toContain("native-source → native-receiver");
+    await click(button(readDialog()!,"Submit request"));
+    expect(readDialog()).toBeNull();
     const command=send.mock.calls.find(([request])=>request.method==="POST")?.[0].body;
     expect(command).toMatchObject({actionKey:"resource.grant_read",resourceId:readSource.resourceId,resourceVersion:7,
       principalId:"receiver-service",receiverResource:{id:readReceiver.resourceId,version:9}});
@@ -101,7 +105,11 @@ describe("shared SERVICE read permissions on existing connection management", ()
         ? readPage(new URL(request.path,"https://test.invalid").searchParams.get("direction")!)
         : {bindings:[{...connection,hasReadReceiver:true}],canCreate:false}};
     });
-    await selectReadPair(host); await click(button(host,"Revoke read access")); await click(button(host,"Confirm"));
+    await selectReadPair(host); await click(button(host,"Revoke read access"));
+    expect(button(readDialog()!,"Revoke").className).toContain("bg-danger");
+    await click(button(readDialog()!,"Revoke"));
+    expect(readDialog()?.textContent).toContain("The result is unknown");
+    await click(button(readDialog()!,"Cancel")); expect(readDialog()).toBeNull();
     expect(button(host,"Back").disabled).toBe(true);
     expect(host.querySelector("select")?.disabled).toBe(true);
     expect([...host.querySelectorAll("button")].some(item=>item.textContent==="Cancel")).toBe(false);
@@ -149,7 +157,7 @@ describe("shared SERVICE read permissions on existing connection management", ()
     function SwitchActor(){const [client,setClient]=useState(first);return <PlatformProvider client={client} locale="en">
       <button onClick={()=>setClient(second)}>Switch actor</button><ApplicationBindingsPanel/></PlatformProvider>;}
     const host=await render(<SwitchActor/>); await selectReadPair(host);
-    await click(button(host,"Request read access")); await click(button(host,"Confirm"));
+    await click(button(host,"Request read access")); await click(button(readDialog()!,"Submit request"));
     await click(button(host,"Switch actor"));
     await act(async()=>finish?.({status:200,body:{actionKey:"resource.grant_read",actionExecutionId:"old-read-action",
       operationId:"old-read-operation",gateState:"ALLOWED",dispatchState:"DISPATCHED"}}));

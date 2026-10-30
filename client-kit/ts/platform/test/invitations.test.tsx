@@ -34,6 +34,17 @@ function mount(route: Route, ui: React.ReactNode) {
   };
 }
 
+async function withdrawFromMenu(host: HTMLElement, name: string) {
+  const trigger = host.querySelector<HTMLButtonElement>(`button[aria-label="Actions for ${name}"]`);
+  if (!trigger) throw new Error(`no row menu for ${name}`);
+  await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  await settle();
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((node) => node.textContent === "Withdraw");
+  if (!item) throw new Error("no Withdraw menu item");
+  await click(item);
+}
+const withdrawDialog = () => document.querySelector<HTMLElement>("[data-testid=invitation-withdraw-dialog]");
+
 const denied = { status: 403, body: { class: ErrorClass.Denied, reason: ReasonCode.PermissionDenied } };
 const CREDENTIAL = "c".repeat(64);
 const LINK = `http://gateway.example/app/invite#${CREDENTIAL}`;
@@ -207,18 +218,58 @@ describe("TenantInvitations", () => {
       return {status:200,body:{actionKey:"tenant.member.invite.revoke",actionExecutionId:"ae-revoke",operationId:"op-revoke",
         gateState:"ALLOWED",dispatchState:attempts===1?"UNKNOWN":"DISPATCHED"}};
     },<TenantInvitations/>);
-    const el=await host;await settle();await click(button(el,"Withdraw"));await click(button(el,"Confirm"));
-    await click(button(el,"Confirm"));expect(el.textContent).toContain("op-revoke");
-    expect([...el.querySelectorAll('button')].some(b=>b.textContent==="Cancel")).toBe(false);
-    await click(button(el,"Confirm"));expect(el.querySelector('[role=group]')).toBeNull();
+    const el=await host;await settle();await withdrawFromMenu(el,"Grace from Ops");
+    expect(withdrawDialog()?.textContent).toContain("Withdraw the invitation for Grace from Ops?");
+    await click(button(withdrawDialog()!,"Withdraw"));
+    expect(el.textContent).toContain("op-revoke");
+    expect(withdrawDialog()?.textContent).toContain("The result is unknown");
+    // Closing the dialog does not drop the uncertain command; it is reopened, never replaced.
+    await click(button(withdrawDialog()!,"Cancel"));expect(withdrawDialog()).toBeNull();
+    expect(el.querySelector<HTMLButtonElement>('button[aria-label="Actions for Grace from Ops"]')?.disabled).toBe(true);
+    await click(button(el,"Review request"));
+    await click(button(withdrawDialog()!,"Retry same request"));expect(el.textContent).toContain("op-revoke");
+    await click(button(withdrawDialog()!,"Retry same request"));expect(withdrawDialog()).toBeNull();
     const commands=send.mock.calls.filter(([request])=>request.method==="POST").map(([request])=>request.body);
     expect(commands).toHaveLength(3);for(const command of commands)expect(command).toEqual(commands[0]);
   });
-  it("BFF 回 403（不是 admin）：整节不渲染", async () => {
+  it("BFF 回 403（不是 admin）：管理区分区说明需要的权限，不留空白", async () => {
     const { host } = mount(() => denied, <TenantInvitations />);
     const el = await host;
     await settle();
+    expect(el.querySelector("[data-testid=permission-state]")?.textContent).toContain("Only organization admins can invite people.");
+    expect(el.querySelector("input[name=inviteeLabel]")).toBeNull();
+  });
+  it("嵌在成员页时 403 不渲染入口", async () => {
+    const { host } = mount(() => denied, <TenantInvitations dialog />);
+    const el = await host;
+    await settle();
     expect(el.textContent).toBe("");
+  });
+
+  it("邀请表：总数、状态与身份确认为译文徽标，按状态筛选，可清除筛选", async () => {
+    const rows = [
+      invitation(),
+      invitation({ invitationId: "inv-2", inviteeLabel: "Ada", status: "REDEEMED", redeemerDisplayName: "Ada L.", membershipState: "INVITED", approvalStatus: "CONSUMED" }),
+      invitation({ invitationId: "inv-3", inviteeLabel: "Bo", status: "REVOKED" }),
+    ];
+    const { host } = mount(() => ({ status: 200, body: rows }), <TenantInvitations />);
+    const el = await host;
+    await settle();
+    expect(el.querySelector("h2")?.textContent).toBe("Invitations");
+    expect(el.querySelector("[data-testid=list-total]")?.textContent).toBe("3 total");
+    expect(el.textContent).toContain("Confirmed");
+    expect(el.textContent).not.toContain("Approved and carried out");
+    expect(el.textContent).not.toContain("—");
+    expect(el.querySelector("label")?.textContent).toBe("Invitee");
+    const chip = (label: string) => [...el.querySelectorAll<HTMLElement>("[role=radio]")].find((node) => node.textContent === label)!;
+    await click(chip("Used"));
+    expect(el.querySelector("[data-testid=list-total]")?.textContent).toBe("1 total");
+    expect(el.querySelector("tbody")?.textContent).toContain("Ada L.");
+    await click(chip("Not used yet"));
+    expect(el.querySelector("tbody")?.textContent).toContain("Grace from Ops");
+    expect(el.querySelector("tbody")?.textContent).not.toContain("Bo");
+    await click(chip("All"));
+    expect(el.querySelector("[data-testid=list-total]")?.textContent).toBe("3 total");
   });
 
   it("签发：链接只显示一次、提示丢失即撤回重发；撤回需确认并带 invitationId", async () => {
@@ -248,7 +299,7 @@ describe("TenantInvitations", () => {
     }, <TenantInvitations />);
     const el = await host;
     await settle();
-    expect(el.textContent).toContain("No invitations yet.");
+    expect(el.querySelector("[data-testid=empty-state]")?.textContent).toContain("No invitations yet");
     await type(el.querySelector("input[name=inviteeLabel]") as HTMLInputElement, "Grace from Ops");
     await click(button(el, "Create invitation link"));
     const issued = el.querySelector("[data-testid=issued-invitation]");
@@ -260,9 +311,11 @@ describe("TenantInvitations", () => {
     // 列表不含凭据：链接只在签发回应里
     expect(el.querySelector("table")?.textContent).not.toContain(CREDENTIAL);
 
-    await click(button(el, "Withdraw"));
-    expect(el.textContent).toContain("Its link will stop working");
-    await click(button(el, "Confirm"));
+    await withdrawFromMenu(el, "Grace from Ops");
+    expect(send.mock.calls.filter(([r]) => (r as BffRequest).method === "POST")).toHaveLength(1);
+    expect(withdrawDialog()?.textContent).toContain("Its link stops working right away");
+    await click(button(withdrawDialog()!, "Withdraw"));
+    expect(withdrawDialog()).toBeNull();
     const posts = send.mock.calls.map(([r]) => r as BffRequest).filter((r) => r.method === "POST");
     expect(posts[1]?.body).toMatchObject({ actionKey: "tenant.member.invite.revoke", invitationId: "inv-1" });
     expect(el.textContent).toContain("Withdrawn");
