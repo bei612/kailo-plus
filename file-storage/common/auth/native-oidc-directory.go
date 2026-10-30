@@ -22,6 +22,15 @@ package auth
 //     appears; when it leaves the snapshot the role's ACLs are revoked and
 //     the workspace leaves the members' view, its folder and files stay.
 //     workspaces[].role does not raise the native profile.
+//   - schema 2 (DD-164(2)(3), 07 §4.7.4): content writes in a Workspace need
+//     Kailo `create` there. The Workspace has two native roles: kailo-ws-<id>
+//     (read and write ACLs on the root) for members with workspaces[].create,
+//     and kailo-wsr-<id> (read ACL only) for the others; both see the
+//     workspace. A Cells ACL is per role, so the two roles are the native way
+//     to give members of one workspace different rights without per-account
+//     ACLs.
+//   - shares[] (DD-164(4)) are converged in native-oidc-shares.go; a convergence
+//     receipt is reported to Core after every apply (07 §4.7.4 收敛回执).
 //   - A provisioned account of this issuer absent from the snapshot loses
 //     its admin profile and Workspace roles, is locked (native "logout" lock) and
 //     its recorded native sessions are ended; it is unlocked when it appears
@@ -71,6 +80,13 @@ import (
 // NativeOIDCWorkspaceRolePrefix starts the slug of the native workspace of a
 // Kailo Workspace and the id of its native role (07 §4.7.4: kailo-ws-<id>).
 const NativeOIDCWorkspaceRolePrefix = "kailo-ws-"
+
+// NativeOIDCWorkspaceReaderRolePrefix starts the id of the read-only native
+// role of a Kailo Workspace (schema 2: members without Workspace `create`).
+const NativeOIDCWorkspaceReaderRolePrefix = "kailo-wsr-"
+
+// NativeOIDCDirectorySchema is the member directory schema this instance reads.
+const NativeOIDCDirectorySchema = 2
 
 // NativeOIDCDirectoryLockAttribute marks an account locked by the directory
 // (only those are unlocked again by it; a lock set in the console stays).
@@ -261,7 +277,7 @@ func (c *NativeOIDCDirectoryConfig) clientCredentials(ctx context.Context) (stri
 }
 
 // Fetch reads one full snapshot and checks it against the contract
-// (contracts/api/component_member_directory.schema.json) and this binding.
+// (contracts/api/component_member_directory_v2.schema.json) and this binding.
 func (c *NativeOIDCDirectoryConfig) Fetch(ctx context.Context) (*NativeOIDCDirectorySnapshot, error) {
 	bearer, err := c.token(ctx)
 	if err != nil {
@@ -269,7 +285,8 @@ func (c *NativeOIDCDirectoryConfig) Fetch(ctx context.Context) (*NativeOIDCDirec
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	target := strings.TrimSuffix(c.CoreURL, "/") + "/service/v1/component-directory/bindings/" + url.PathEscape(c.BindingID) + "/members"
+	// DD-164(2): schema 2 only; a refusal keeps the applied state, never schema 1.
+	target := strings.TrimSuffix(c.CoreURL, "/") + "/service/v1/component-directory/bindings/" + url.PathEscape(c.BindingID) + "/members?schema=2"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return nil, &NativeOIDCDirectoryUnavailable{Stage: "read"}
@@ -308,6 +325,8 @@ type NativeOIDCDirectorySnapshot struct {
 	TenantName string
 	Workspaces map[string]string // workspaceId → name
 	Members    []NativeOIDCDirectoryMember
+	// Shares is the Resource-level share projection (schema 2, DD-164(4)).
+	Shares []NativeOIDCDirectoryShare
 }
 
 // NativeOIDCDirectoryMember is one person of the snapshot.
@@ -319,6 +338,10 @@ type NativeOIDCDirectoryMember struct {
 	Workspaces  []string
 	// WorkspaceAdmins lists the Workspaces where the member is ADMIN.
 	WorkspaceAdmins []string
+	// TenantCreate is Kailo Tenant `create` (schema 2).
+	TenantCreate bool
+	// WorkspaceWriters lists the Workspaces where the member has `create`.
+	WorkspaceWriters []string
 }
 
 // NativeOIDCDirectoryIdentity is one external identity of a member.
@@ -367,11 +390,13 @@ func ParseNativeOIDCDirectory(body []byte) (*NativeOIDCDirectorySnapshot, error)
 			WorkspaceID *string `json:"workspaceId"`
 			Name        *string `json:"name"`
 		} `json:"workspaces"`
+		Schema  *int `json:"schema"`
 		Members *[]struct {
-			PrincipalID *string `json:"principalId"`
-			DisplayName *string `json:"displayName"`
-			TenantRole  *string `json:"tenantRole"`
-			Identities  *[]struct {
+			PrincipalID  *string `json:"principalId"`
+			DisplayName  *string `json:"displayName"`
+			TenantRole   *string `json:"tenantRole"`
+			TenantCreate *bool   `json:"tenantCreate"`
+			Identities   *[]struct {
 				Issuer  *string `json:"issuer"`
 				Subject *string `json:"subject"`
 				Picture *string `json:"picture"`
@@ -379,11 +404,14 @@ func ParseNativeOIDCDirectory(body []byte) (*NativeOIDCDirectorySnapshot, error)
 			Workspaces *[]struct {
 				WorkspaceID *string `json:"workspaceId"`
 				Role        *string `json:"role"`
+				Create      *bool   `json:"create"`
 			} `json:"workspaces"`
 		} `json:"members"`
+		Shares *[]directoryShareWire `json:"shares"`
 	}
 	if strictDecode(body, &wire) != nil || wire.BindingID == nil || wire.DirectoryVersion == nil || wire.Tenant == nil ||
 		wire.Tenant.TenantID == nil || wire.Tenant.Name == nil || wire.Workspaces == nil || wire.Members == nil ||
+		wire.Schema == nil || *wire.Schema != NativeOIDCDirectorySchema || wire.Shares == nil ||
 		!directoryUUID.MatchString(*wire.BindingID) || !directoryVersion.MatchString(*wire.DirectoryVersion) ||
 		!directoryUUID.MatchString(*wire.Tenant.TenantID) {
 		return nil, invalid
@@ -403,12 +431,13 @@ func ParseNativeOIDCDirectory(body []byte) (*NativeOIDCDirectorySnapshot, error)
 	principals, identities := map[string]bool{}, map[string]bool{}
 	for _, m := range *wire.Members {
 		admin, ok := directoryRole(m.TenantRole)
-		if m.PrincipalID == nil || m.DisplayName == nil || m.Identities == nil || m.Workspaces == nil || !ok ||
+		if m.PrincipalID == nil || m.DisplayName == nil || m.Identities == nil || m.Workspaces == nil || !ok || m.TenantCreate == nil ||
 			!directoryUUID.MatchString(*m.PrincipalID) || principals[strings.ToLower(*m.PrincipalID)] {
 			return nil, invalid
 		}
 		principals[strings.ToLower(*m.PrincipalID)] = true
-		member := NativeOIDCDirectoryMember{PrincipalID: strings.ToLower(*m.PrincipalID), DisplayName: strings.TrimSpace(*m.DisplayName), Admin: admin}
+		member := NativeOIDCDirectoryMember{PrincipalID: strings.ToLower(*m.PrincipalID), DisplayName: strings.TrimSpace(*m.DisplayName), Admin: admin,
+			TenantCreate: *m.TenantCreate}
 		for _, id := range *m.Identities {
 			if id.Issuer == nil || id.Subject == nil || id.Picture == nil || *id.Issuer == "" || strings.TrimSpace(*id.Subject) == "" {
 				return nil, invalid
@@ -426,7 +455,7 @@ func ParseNativeOIDCDirectory(body []byte) (*NativeOIDCDirectorySnapshot, error)
 				return nil, invalid
 			}
 			wsAdmin, ok := directoryRole(w.Role)
-			if !ok {
+			if !ok || w.Create == nil {
 				return nil, invalid
 			}
 			id := strings.ToLower(*w.WorkspaceID)
@@ -438,11 +467,20 @@ func ParseNativeOIDCDirectory(body []byte) (*NativeOIDCDirectorySnapshot, error)
 			if wsAdmin {
 				member.WorkspaceAdmins = append(member.WorkspaceAdmins, id)
 			}
+			if *w.Create {
+				member.WorkspaceWriters = append(member.WorkspaceWriters, id)
+			}
 		}
 		slices.Sort(member.Workspaces)
 		slices.Sort(member.WorkspaceAdmins)
+		slices.Sort(member.WorkspaceWriters)
 		s.Members = append(s.Members, member)
 	}
+	shares, ok := parseDirectoryShares(*wire.Shares, principals, s.Workspaces)
+	if !ok {
+		return nil, invalid
+	}
+	s.Shares = shares
 	return s, nil
 }
 
@@ -458,6 +496,9 @@ type nativeOIDCDirectoryEntry struct {
 	Workspaces  []string `json:"workspaces,omitempty"`
 	// WorkspaceAdmins: Workspaces where this member is ADMIN.
 	WorkspaceAdmins []string `json:"workspaceAdmins,omitempty"`
+	// WorkspaceWriters: Workspaces where this member has Kailo `create`
+	// (schema 2; a schema 1 state has none and keeps read/write everywhere).
+	WorkspaceWriters []string `json:"workspaceWriters,omitempty"`
 }
 
 type nativeOIDCDirectoryState struct {
@@ -468,7 +509,12 @@ type nativeOIDCDirectoryState struct {
 	Workspaces map[string]string          `json:"workspaces"`
 	Members    []nativeOIDCDirectoryEntry `json:"members"`
 	Applied    int64                      `json:"applied"`
-	index      map[string]*nativeOIDCDirectoryEntry
+	// Schema of the applied snapshot; 0 in a state written before schema 2.
+	Schema int `json:"schema,omitempty"`
+	// Failures of the last apply (shares whose native object was missing);
+	// while present the same version is applied again every period.
+	Failures []NativeOIDCReceiptFailure `json:"failures,omitempty"`
+	index    map[string]*nativeOIDCDirectoryEntry
 }
 
 func (s *nativeOIDCDirectoryState) member(issuer, subject string) (*nativeOIDCDirectoryEntry, bool) {
@@ -564,9 +610,19 @@ type nativeOIDCMembership struct {
 func (e *nativeOIDCDirectoryEntry) membership(state *nativeOIDCDirectoryState) *nativeOIDCMembership {
 	m := &nativeOIDCMembership{admin: e.Admin, tenantName: state.TenantName, member: true}
 	for _, w := range e.Workspaces {
+		if state.Schema >= NativeOIDCDirectorySchema && !slices.Contains(e.WorkspaceWriters, w) {
+			m.workspaces = append(m.workspaces, NativeOIDCWorkspaceReaderRoleID(w))
+			continue
+		}
 		m.workspaces = append(m.workspaces, NativeOIDCWorkspaceRoleID(w))
 	}
 	return m
+}
+
+// NativeOIDCWorkspaceReaderRoleID is the id of the read-only native role of a
+// Kailo Workspace (schema 2, members without Workspace `create`).
+func NativeOIDCWorkspaceReaderRoleID(workspaceID string) string {
+	return NativeOIDCWorkspaceReaderRolePrefix + strings.ToLower(workspaceID)
 }
 
 // NativeOIDCWorkspaceRoleID is the slug of the native workspace of a Kailo
@@ -600,12 +656,15 @@ func nativeOIDCWorkspaceAdminOnly() []*service.ResourcePolicy {
 	return permissions.NewResourcePoliciesBuilder().WithProfileRead(common.PydioProfileAdmin).WithProfileWrite(common.PydioProfileAdmin).Policies()
 }
 
-// nativeOIDCWorkspacePolicies: the workspace is visible to its role; native
-// admins and the Workspace ADMINs (by account UUID) may edit it.
-func nativeOIDCWorkspacePolicies(roleID string, admins []string) []*service.ResourcePolicy {
+// nativeOIDCWorkspacePolicies: the workspace is visible to its roles (read and
+// write, read only); native admins and the Workspace ADMINs (by account UUID)
+// may edit it.
+func nativeOIDCWorkspacePolicies(roleID, readerRoleID string, admins []string) []*service.ResourcePolicy {
 	b := permissions.NewResourcePoliciesBuilder().
 		WithResourcePolicy(&service.ResourcePolicy{Action: service.ResourcePolicyAction_READ, Effect: service.ResourcePolicy_allow,
 			Subject: permissions.PolicySubjectRolePrefix + roleID}).
+		WithResourcePolicy(&service.ResourcePolicy{Action: service.ResourcePolicyAction_READ, Effect: service.ResourcePolicy_allow,
+			Subject: permissions.PolicySubjectRolePrefix + readerRoleID}).
 		WithProfileRead(common.PydioProfileAdmin).
 		WithProfileWrite(common.PydioProfileAdmin)
 	for _, id := range admins {
@@ -690,11 +749,15 @@ func ensureNativeOIDCWorkspaceRole(ctx context.Context, id, label, groupUUID str
 // role read/write ACLs, and the WRITE policy of its ADMINs; then reads it back.
 func ensureNativeOIDCWorkspace(ctx context.Context, root, workspaceID, name, groupUUID string, admins []string) error {
 	id := NativeOIDCWorkspaceRoleID(workspaceID)
+	reader := NativeOIDCWorkspaceReaderRoleID(workspaceID)
 	label := strings.TrimSpace(name)
 	if label == "" {
 		label = id
 	}
 	if err := ensureNativeOIDCWorkspaceRole(ctx, id, label, groupUUID); err != nil {
+		return err
+	}
+	if err := ensureNativeOIDCWorkspaceRole(ctx, reader, label+" (read only)", groupUUID); err != nil {
 		return err
 	}
 	if NativeOIDCWorkspaceFolder == nil {
@@ -709,7 +772,7 @@ func ensureNativeOIDCWorkspace(ctx context.Context, root, workspaceID, name, gro
 		return errors.New("member directory Workspace folder has no node UUID")
 	}
 	wsUUID := nativeOIDCWorkspaceUUID(id)
-	wanted := nativeOIDCWorkspacePolicies(id, admins)
+	wanted := nativeOIDCWorkspacePolicies(id, reader, admins)
 	found, err := searchNativeWorkspaces(ctx, &idm.WorkspaceSingleQuery{Slug: id})
 	if err != nil {
 		return err
@@ -768,6 +831,23 @@ func ensureNativeOIDCWorkspace(ctx context.Context, root, workspaceID, name, gro
 			grants = append(grants, &idm.ACL{NodeID: folder, WorkspaceID: wsUUID, RoleID: id, Action: &idm.ACLAction{Name: action.Name, Value: action.Value}})
 		}
 	}
+	// The read-only role holds exactly the read ACL (a write grant found on it
+	// is removed: only Kailo `create` gives write).
+	readerHeld, err := searchNativeACLs(ctx, &idm.ACLSingleQuery{WorkspaceIDs: []string{wsUUID}, NodeIDs: []string{folder}, RoleIDs: []string{reader},
+		Actions: []*idm.ACLAction{{Name: permissions.AclRead.Name}, {Name: permissions.AclWrite.Name}}})
+	if err != nil {
+		return err
+	}
+	if slices.ContainsFunc(readerHeld, func(a *idm.ACL) bool { return a.GetAction().GetName() == permissions.AclWrite.Name }) {
+		q, _ := anypb.New(&idm.ACLSingleQuery{WorkspaceIDs: []string{wsUUID}, RoleIDs: []string{reader}, Actions: []*idm.ACLAction{{Name: permissions.AclWrite.Name}}})
+		if _, err := idmc.ACLServiceClient(ctx).DeleteACL(ctx, &idm.DeleteACLRequest{Query: &service.Query{SubQueries: []*anypb.Any{q}}}); err != nil {
+			return err
+		}
+	}
+	if !slices.ContainsFunc(readerHeld, func(a *idm.ACL) bool { return a.GetAction().GetName() == permissions.AclRead.Name }) {
+		grants = append(grants, &idm.ACL{NodeID: folder, WorkspaceID: wsUUID, RoleID: reader,
+			Action: &idm.ACLAction{Name: permissions.AclRead.Name, Value: permissions.AclRead.Value}})
+	}
 	for _, acl := range grants {
 		if _, err := idmc.ACLServiceClient(ctx).CreateACL(ctx, &idm.CreateACLRequest{ACL: acl}); err != nil {
 			return err
@@ -788,6 +868,14 @@ func ensureNativeOIDCWorkspace(ctx context.Context, root, workspaceID, name, gro
 	}
 	if len(held) < 2 {
 		return errors.New("Kailo Workspace root grants could not be read back")
+	}
+	readerHeld, err = searchNativeACLs(ctx, &idm.ACLSingleQuery{WorkspaceIDs: []string{wsUUID}, NodeIDs: []string{folder}, RoleIDs: []string{reader},
+		Actions: []*idm.ACLAction{{Name: permissions.AclRead.Name}, {Name: permissions.AclWrite.Name}}})
+	if err != nil {
+		return err
+	}
+	if len(readerHeld) != 1 || readerHeld[0].GetAction().GetName() != permissions.AclRead.Name {
+		return errors.New("Kailo Workspace read-only grant could not be read back")
 	}
 	if len(grants) > 0 || current == nil {
 		log.Auditer(ctx).Info(fmt.Sprintf("Kailo Workspace [%s] converged", id), log.GetAuditId(common.AuditWsUpdate))
@@ -811,7 +899,8 @@ func retireNativeOIDCWorkspaces(ctx context.Context, active map[string]string) e
 		if _, ok := active[strings.TrimPrefix(slug, NativeOIDCWorkspaceRolePrefix)]; ok {
 			continue
 		}
-		q, _ := anypb.New(&idm.ACLSingleQuery{WorkspaceIDs: []string{ws.GetUUID()}, RoleIDs: []string{slug},
+		reader := NativeOIDCWorkspaceReaderRoleID(strings.TrimPrefix(slug, NativeOIDCWorkspaceRolePrefix))
+		q, _ := anypb.New(&idm.ACLSingleQuery{WorkspaceIDs: []string{ws.GetUUID()}, RoleIDs: []string{slug, reader},
 			Actions: []*idm.ACLAction{{Name: permissions.AclRead.Name}, {Name: permissions.AclWrite.Name}}})
 		if _, err := idmc.ACLServiceClient(ctx).DeleteACL(ctx, &idm.DeleteACLRequest{Query: &service.Query{SubQueries: []*anypb.Any{q}}}); err != nil {
 			return err
@@ -835,7 +924,8 @@ func explicitRoles(roles []*idm.Role, keepWorkspaces bool) []string {
 	var out []string
 	for _, r := range roles {
 		if r.GetUserRole() || r.GetGroupRole() || len(r.GetAutoApplies()) > 0 || r.GetUuid() == "" ||
-			(!keepWorkspaces && strings.HasPrefix(r.GetUuid(), NativeOIDCWorkspaceRolePrefix)) || slices.Contains(out, r.GetUuid()) {
+			(!keepWorkspaces && (strings.HasPrefix(r.GetUuid(), NativeOIDCWorkspaceRolePrefix) ||
+				strings.HasPrefix(r.GetUuid(), NativeOIDCWorkspaceReaderRolePrefix))) || slices.Contains(out, r.GetUuid()) {
 			continue
 		}
 		out = append(out, r.GetUuid())
@@ -962,30 +1052,33 @@ func directoryPicture(raw string) string {
 
 // ApplyNativeOIDCDirectory converges the native organisation to one checked
 // snapshot and records it. It holds the provisioning lock for the whole run.
-func ApplyNativeOIDCDirectory(ctx context.Context, snapshot *NativeOIDCDirectorySnapshot, workspaceRoot string) error {
+// It returns the per-item failures (shares whose native object is missing),
+// which are reported in the receipt and do not stop the rest of the snapshot.
+func ApplyNativeOIDCDirectory(ctx context.Context, snapshot *NativeOIDCDirectorySnapshot, workspaceRoot string) ([]NativeOIDCReceiptFailure, error) {
 	nativeOIDCProvisioning.Lock()
 	defer nativeOIDCProvisioning.Unlock()
 	c, err := loadNativeOIDCConnector(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !c.ProvisionUsers || c.Organization == nil {
-		return errors.New("member directory needs the provisioning connector of a dedicated Tenant")
+		return nil, errors.New("member directory needs the provisioning connector of a dedicated Tenant")
 	}
 	if !strings.EqualFold(snapshot.TenantID, c.Organization.Tenant.ID) {
-		return &NativeOIDCDirectoryUnavailable{Stage: "tenant"}
+		return nil, &NativeOIDCDirectoryUnavailable{Stage: "tenant"}
 	}
 	state := &nativeOIDCDirectoryState{Version: snapshot.Version, BindingID: strings.ToLower(snapshot.BindingID),
-		TenantID: c.Organization.Tenant.ID, TenantName: c.Organization.Tenant.Name, Workspaces: snapshot.Workspaces}
+		TenantID: c.Organization.Tenant.ID, TenantName: c.Organization.Tenant.Name, Workspaces: snapshot.Workspaces,
+		Schema: NativeOIDCDirectorySchema}
 	if validTenantName(snapshot.TenantName) {
 		state.TenantName = snapshot.TenantName
 	}
 	group, err := ensureNativeOIDCTenantGroup(ctx, NativeOIDCTenant{ID: c.Organization.Tenant.ID, Name: state.TenantName})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(snapshot.Workspaces) > 0 && !directoryWorkspaceRoot.MatchString(workspaceRoot) {
-		return errors.New("member directory Workspace root is not configured")
+		return nil, errors.New("member directory Workspace root is not configured")
 	}
 	linked := map[string]bool{}
 	for _, l := range c.Users {
@@ -999,7 +1092,7 @@ func ApplyNativeOIDCDirectory(ctx context.Context, snapshot *NativeOIDCDirectory
 			}
 			state.Members = append(state.Members, nativeOIDCDirectoryEntry{Issuer: id.Issuer, Subject: id.Subject, Principal: m.PrincipalID,
 				DisplayName: m.DisplayName, Picture: directoryPicture(id.Picture), Admin: m.Admin, Workspaces: m.Workspaces,
-				WorkspaceAdmins: m.WorkspaceAdmins})
+				WorkspaceAdmins: m.WorkspaceAdmins, WorkspaceWriters: m.WorkspaceWriters})
 		}
 	}
 	// Workspaces first (roles must exist before accounts carry them); their
@@ -1017,7 +1110,7 @@ func ApplyNativeOIDCDirectory(ctx context.Context, snapshot *NativeOIDCDirectory
 			}
 		}
 		if err := ensureNativeOIDCWorkspace(ctx, workspaceRoot, id, snapshot.Workspaces[id], group.GetUuid(), admins); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	for i := range state.Members {
@@ -1025,7 +1118,7 @@ func ApplyNativeOIDCDirectory(ctx context.Context, snapshot *NativeOIDCDirectory
 		uuid := nativeOIDCUserUUID(e.Issuer, e.Subject)
 		account, err := directoryAccount(ctx, uuid, e.Issuer, e.Subject)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		profile := nativeOIDCProfile{displayName: e.DisplayName, picture: e.Picture}
 		if account == nil {
@@ -1033,21 +1126,21 @@ func ApplyNativeOIDCDirectory(ctx context.Context, snapshot *NativeOIDCDirectory
 			// login comes from the display name (else the digest fallback).
 			preferred := strings.Join(strings.Fields(strings.ToLower(e.DisplayName)), ".")
 			if err := createNativeOIDCAccount(ctx, c, uuid, e.Issuer, e.Subject, preferred, profile, "from the Kailo member directory"); err != nil {
-				return err
+				return nil, err
 			}
 			if account, err = directoryAccount(ctx, uuid, e.Issuer, e.Subject); err != nil || account == nil {
-				return errors.New("pre-provisioned native OIDC account is unavailable")
+				return nil, errors.New("pre-provisioned native OIDC account is unavailable")
 			}
 		}
 		if err := convergeNativeOIDCAccount(ctx, c, account, profile, true, e.membership(state)); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	// Revocation: provisioned accounts of this issuer that the snapshot no
 	// longer lists (a person who left the Tenant or the binding scope).
 	accounts, err := searchNativeUsers(ctx, &idm.UserSingleQuery{AttributeName: NativeOIDCIssuerAttribute, AttributeValue: c.Issuer})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, account := range accounts {
 		subject := account.GetAttributes()[NativeOIDCSubjectAttribute]
@@ -1065,23 +1158,38 @@ func ApplyNativeOIDCDirectory(ctx context.Context, snapshot *NativeOIDCDirectory
 		_, err := EndNativeOIDCSessions(bounded, c.Issuer, subject, "", jti, time.Now().Add(24*time.Hour))
 		cancel()
 		if err != nil && !errors.Is(err, ErrNativeOIDCLogoutReplay) {
-			return err
+			return nil, err
 		}
 		if err := convergeNativeOIDCAccount(ctx, c, account, nativeOIDCProfile{}, true, &nativeOIDCMembership{tenantName: state.TenantName}); err != nil {
-			return err
+			return nil, err
+		}
+		// 07 §4.7.4 撤员时的原生令牌: its personal and document access tokens
+		// (online editing) are revoked too; revoking again is idempotent.
+		if err := NativeOIDCRevokeAccountTokens(ctx, account.GetLogin()); err != nil {
+			return nil, err
 		}
 	}
 	if err := retireNativeOIDCWorkspaces(ctx, snapshot.Workspaces); err != nil {
-		return err
+		return nil, err
 	}
+	// DD-164(4): shares after the accounts and Workspace roles they grant to.
+	failures, err := convergeNativeOIDCShares(ctx, c, snapshot, group.GetUuid())
+	if err != nil {
+		return nil, err
+	}
+	state.Failures = failures
 	state.Applied = time.Now().Unix()
-	return saveNativeOIDCDirectoryState(state)
+	return failures, saveNativeOIDCDirectoryState(state)
 }
 
 // SyncNativeOIDCDirectory performs one period: read, compare the version with
 // the applied one, and converge when it changed. It reports whether a new
 // snapshot was applied; on any error nothing was recorded.
+// After an apply (or a failed apply) a receipt is reported to Core
+// (DD-164(4)⑥); an undelivered receipt is retried next period and never
+// changes what was applied.
 func SyncNativeOIDCDirectory(ctx context.Context, cfg *NativeOIDCDirectoryConfig) (bool, error) {
+	defer cfg.deliverPendingReceipt(ctx)
 	snapshot, err := cfg.Fetch(ctx)
 	if err != nil {
 		return false, err
@@ -1090,12 +1198,16 @@ func SyncNativeOIDCDirectory(ctx context.Context, cfg *NativeOIDCDirectoryConfig
 	if err != nil {
 		return false, err
 	}
-	if applied != nil && applied.Version == snapshot.Version && applied.BindingID == strings.ToLower(snapshot.BindingID) {
+	if applied != nil && applied.Version == snapshot.Version && applied.BindingID == strings.ToLower(snapshot.BindingID) &&
+		applied.Schema == NativeOIDCDirectorySchema && len(applied.Failures) == 0 {
 		return false, nil
 	}
-	if err := ApplyNativeOIDCDirectory(ctx, snapshot, cfg.WorkspaceRoot); err != nil {
+	failures, err := ApplyNativeOIDCDirectory(ctx, snapshot, cfg.WorkspaceRoot)
+	if err != nil {
+		cfg.queueReceipt(nativeOIDCFailedReceipt(snapshot, err))
 		return false, err
 	}
+	cfg.queueReceipt(nativeOIDCAppliedReceipt(snapshot, failures))
 	return true, nil
 }
 

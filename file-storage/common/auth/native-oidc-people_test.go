@@ -98,6 +98,26 @@ func TestNativeOIDCPeopleScope(t *testing.T) {
 			}
 		})
 
+		// V-SCN-205, DD-164(1): a Kailo Tenant admin has the native admin
+		// profile but is a person of this Tenant; it finds only its Tenant.
+		t.Run("kailo-admin-narrowed", func(t *testing.T) {
+			inGroup := claim.ToContext(ctx, claim.Claims{Name: "tenant-alice", Profile: common.PydioProfileAdmin, GroupPath: tenantPath})
+			if scope, scoped := auth.NativeOIDCPeopleScope(inGroup); !scoped || scope != tenantPath {
+				t.Fatalf("Kailo admin in the Tenant group not narrowed: %q %v", scope, scoped)
+			}
+			const linkedUUID = "00000000-0000-4000-8000-0000000000aa"
+			createNativeUser(t, ctx, &idm.User{Uuid: linkedUUID, Login: "kailo-linked-admin", GroupPath: "/", Attributes: map[string]string{
+				idm.UserAttrProfile: common.PydioProfileAdmin, auth.NativeOIDCIssuerAttribute: provisionIssuer, auth.NativeOIDCSubjectAttribute: "linked-sub"}})
+			bySubject := claim.ToContext(ctx, claim.Claims{Subject: linkedUUID, Name: "kailo-linked-admin", Profile: common.PydioProfileAdmin, GroupPath: "/"})
+			if _, scoped := auth.NativeOIDCPeopleScope(bySubject); !scoped {
+				t.Fatal("admin-profile account with a Kailo identity link not narrowed")
+			}
+			unknown := claim.ToContext(ctx, claim.Claims{Subject: "00000000-0000-4000-8000-0000000000ff", Profile: common.PydioProfileAdmin})
+			if _, scoped := auth.NativeOIDCPeopleScope(unknown); !scoped {
+				t.Fatal("admin claims of an unreadable account not narrowed")
+			}
+		})
+
 		t.Run("member-sees-own-tenant-only", func(t *testing.T) {
 			scope, scoped := auth.NativeOIDCPeopleScope(member)
 			if !scoped || scope != tenantPath {

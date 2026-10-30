@@ -118,6 +118,9 @@ func TestMain(m *testing.M) {
 func TestMain(m *testing.M) {
 
 	cache_helper.SetStaticResolver("pm://", &gocache.URLOpener{})
+	// These are the original native share tests; Kailo mode (sharing managed
+	// in Kailo, DD-164) is covered by TestKailoModeRefusesNativeSharing.
+	auth.NativeKailoMode = func() bool { return false }
 
 	nodes.UseMockStorageClientType()
 	// Override default

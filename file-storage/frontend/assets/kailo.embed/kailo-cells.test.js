@@ -21,7 +21,7 @@ function memoryStorage() {
 
 // Runs kailo-embed.js then kailo-cells.js against a stand-in window (frame
 // relations, location, storage) and the jsdom document, like the page head.
-function load({ search = '', pathname = '/ws-files/folder', embedded = true, params, storage = memoryStorage(), pydio, features, uploader } = {}) {
+function load({ search = '', pathname = '/ws-files/folder', embedded = true, params, storage = memoryStorage(), pydio, features, uploader, requestShare, fetch, PydioApi } = {}) {
     document.documentElement.removeAttribute('data-kailo-embedded')
     document.documentElement.removeAttribute('data-kailo-theme')
     document.documentElement.removeAttribute('data-kailo-page-hosted')
@@ -40,9 +40,15 @@ function load({ search = '', pathname = '/ws-files/folder', embedded = true, par
         pydio,
         File,
         UploaderModel: uploader,
+        fetch,
+        PydioApi,
     }
     win.parent = embedded ? parent : win
     new Function('window', runtime)(win)
+    if (requestShare) {
+        // DD-164: the runtime API added by client-kit (KailoEmbed.requestShare).
+        win.KailoEmbed = Object.freeze({ ...win.KailoEmbed, requestShare })
+    }
     new Function('window', 'document', bridge)(win, document)
     const host = (data) => listeners.message({ origin: KAILO, source: win.parent, data: { source: 'kailo-host', version: 1, type: 'presentation', ...data } })
     const send = (data) => listeners.message({ origin: KAILO, source: win.parent, data: { source: 'kailo-host', version: 1, ...data } })
@@ -497,5 +503,55 @@ describe('DD-157 page shell over the Kailo embed runtime', () => {
         expect(relativePaths([f('a')], ['d/a'])).toEqual(['d/a'])
         expect(relativePaths([f('a'), f('b'), f('c'), f('e')], ['/a', 'd//b', 'd\\c', 'd/./e'])).toBe(null)
         expect(relativePaths([f('a'), f('b')], ['x/a', '../b'])).toEqual(['x/a', 'b'])
+    })
+})
+
+describe('Kailo share action (DD-164(4))', () => {
+    const NODE = '0e7c2a1e-8b9d-4e4f-a1b2-c3d4e5f60718'
+    const INTENT = '9e0c2a1e-8b9d-4e4f-a1b2-c3d4e5f60718'
+    const folder = (uuid = NODE, leaf = false) => ({ getMetadata: () => new Map([['uuid', uuid]]), isLeaf: () => leaf })
+    const session = { getRestClient: () => ({ getAuthToken: () => Promise.resolve('cells-token') }) }
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+    it('asks this instance for a share intent with the user session and hands it to Kailo', async () => {
+        const requestShare = vi.fn(() => true)
+        const fetch = vi.fn(async () => ({ ok: true, json: async () => ({ intentId: INTENT }) }))
+        const { api } = load({ requestShare, fetch, PydioApi: session, features: 'toast' })
+        expect(api.kailoShare(folder())).toBe(true)
+        await flush(); await flush(); await flush()
+        expect(fetch).toHaveBeenCalledWith('/auth/kailo/share-intent', expect.objectContaining({
+            method: 'POST', headers: expect.objectContaining({ Authorization: 'Bearer cells-token' }),
+            body: JSON.stringify({ nodeUuid: NODE }) }))
+        expect(requestShare).toHaveBeenCalledWith(INTENT)
+    })
+
+    it('never opens the native dialog in Kailo mode and shares folders only', async () => {
+        const requestShare = vi.fn(() => true)
+        const fetch = vi.fn()
+        const { api } = load({ requestShare, fetch, PydioApi: session, features: 'toast' })
+        expect(api.kailoShare(folder(NODE, true))).toBe(true)
+        expect(api.kailoShare(folder('not-a-uuid'))).toBe(true)
+        await flush()
+        expect(fetch).not.toHaveBeenCalled()
+        expect(requestShare).not.toHaveBeenCalled()
+    })
+
+    it('reports a refused intent or a host without the share API instead of sharing natively', async () => {
+        const requestShare = vi.fn(() => true)
+        const refused = vi.fn(async () => ({ ok: false, status: 403 }))
+        const a = load({ requestShare, fetch: refused, PydioApi: session, features: 'toast' })
+        expect(a.api.kailoShare(folder())).toBe(true)
+        await flush(); await flush(); await flush()
+        expect(requestShare).not.toHaveBeenCalled()
+        // Older Kailo runtime (no requestShare): handled, nothing fetched.
+        const fetch = vi.fn()
+        const b = load({ fetch, PydioApi: session })
+        expect(b.api.kailoShare(folder())).toBe(true)
+        expect(fetch).not.toHaveBeenCalled()
+    })
+
+    it('leaves the native dialog to pages outside Kailo mode', () => {
+        const { api } = load({ params: null, requestShare: vi.fn(), fetch: vi.fn(), PydioApi: session })
+        expect(api.kailoShare(folder())).toBe(false)
     })
 })

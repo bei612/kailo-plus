@@ -39,6 +39,7 @@ import (
 	"github.com/pydio/cells/v5/common/config"
 	"github.com/pydio/cells/v5/common/config/routing"
 	"github.com/pydio/cells/v5/common/middleware"
+	"github.com/pydio/cells/v5/common/middleware/authorizations"
 	"github.com/pydio/cells/v5/common/proto/front"
 	"github.com/pydio/cells/v5/common/runtime"
 	"github.com/pydio/cells/v5/common/service"
@@ -128,6 +129,8 @@ func init() {
 				m.Handle(web.KailoOIDCCallbackPath, middleware.HttpContextWrapper(ctx, http.HandlerFunc(web.NativeKailoOIDC)))
 				// OIDC back-channel logout of the Kailo SSO session (07 §4.7.5).
 				m.Handle(web.KailoOIDCBackchannelLogoutPath, middleware.HttpContextWrapper(ctx, http.HandlerFunc(web.NativeKailoOIDCBackchannelLogout)))
+				// DD-164(4)②: the Kailo share action of a folder (user session token).
+				m.Handle(KailoShareIntentPath, middleware.HttpContextWrapper(ctx, authorizations.HttpWrapperJWT(http.HandlerFunc(kailoShareIntent))))
 				m.Handle("index.json", fs)
 				m.Handle("plug/", fs, routing.WithStripPrefix())
 				indexHandler := web.NewIndexHandler(ctx, ResetPasswordPath)
