@@ -351,6 +351,8 @@ describe("Delegation tool scopes (DD-122 (5))", () => {
 });
 
 describe("AGENT receivers of resource.grant_read (DD-122 (6))", () => {
+  // DD-170 §16.6: the review is a confirmation dialog portalled beside the page.
+  const readDialog = () => document.querySelector<HTMLElement>("[data-testid=service-read-dialog]")!;
   // Organization-level connection: the Agent's Workspace is chosen beside the Agent.
   const binding = { bindingId: "connection-fixture", tenantId: "tenant-fixture", componentReleaseId: "release-fixture",
     componentTypeKey: "external_fixture", state: "ACTIVE", version: 3, activeProjectionGeneration: 1,
@@ -388,8 +390,8 @@ describe("AGENT receivers of resource.grant_read (DD-122 (6))", () => {
     await choose(host, "Source resource", readSource.resourceId);
     await click(button(host, "Request Agent access"));
     expect(send.mock.calls.some(([r]) => r.method === "POST")).toBe(false);
-    expect(host.textContent).toContain("native-source → Researcher · Execute");
-    await click(button(host, "Confirm"));
+    expect(readDialog().textContent).toContain("native-source → Researcher · Execute");
+    await click(button(readDialog(), "Submit request"));
     const command = send.mock.calls.find(([r]) => r.method === "POST")?.[0].body;
     expect(command).toEqual({ actionKey: "resource.grant_read", idempotencyKey: expect.any(String),
       resourceId: readSource.resourceId, resourceVersion: 7, principalId: installation.agentPrincipalId, grantPermission: "execute" });
@@ -400,7 +402,7 @@ describe("AGENT receivers of resource.grant_read (DD-122 (6))", () => {
     await choose(host, "Source resource", readSource.resourceId);
     expect([...host.querySelectorAll("label")].some((row) => row.textContent?.startsWith("Permission"))).toBe(false);
     await click(button(host, "Request read access"));
-    await click(button(host, "Confirm"));
+    await click(button(readDialog(), "Submit request"));
     const service = send.mock.calls.filter(([r]) => r.method === "POST")[1]?.[0].body;
     expect(service).toMatchObject({ actionKey: "resource.grant_read", principalId: "receiver-service",
       receiverResource: { id: readReceiver.resourceId, version: 9 } });
@@ -418,8 +420,9 @@ describe("AGENT receivers of resource.grant_read (DD-122 (6))", () => {
     await choose(host, "Permission", "consume");
     await choose(host, "Source resource", readSource.resourceId);
     await click(button(host, "Revoke Agent access"));
-    expect(host.textContent).toContain("Its next tool call on that resource is refused");
-    await click(button(host, "Confirm"));
+    expect(readDialog().textContent).toContain("Its next tool call on that resource is refused");
+    expect(button(readDialog(), "Revoke").className).toContain("bg-danger");
+    await click(button(readDialog(), "Revoke"));
     expect(send.mock.calls.find(([r]) => r.method === "POST")?.[0].body).toMatchObject({ actionKey: "resource.revoke_read",
       principalId: installation.agentPrincipalId, grantPermission: "consume", explicitConfirmation: true });
   });
