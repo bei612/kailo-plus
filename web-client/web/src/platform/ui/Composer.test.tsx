@@ -55,10 +55,19 @@ async function render(ui: ReactNode) {
   mounted = { root, host, queryClient };
   await act(async () => root.render(<QueryClientProvider client={queryClient}><TooltipProvider>{ui}</TooltipProvider></QueryClientProvider>));
   await settle();
+  await nextFrame();
   return host;
 }
 async function settle() {
   await act(async () => {await new Promise(resolve => setTimeout(resolve, 0));});
+}
+// A browser paints the mounted composer's first frame before any user input can reach it, and
+// the composer's mount autofocus (Tiptap focus) lands in that frame. jsdom runs frames on its
+// own 60 Hz interval, independent of act/settle, so without this a test could click while that
+// focus is still pending; it then lands after a popover opened and dismisses it as focus-outside.
+// Frame callbacks run in request order, so this one resolves after the autofocus has landed.
+async function nextFrame() {
+  await act(async () => {await new Promise(resolve => requestAnimationFrame(() => resolve(undefined)));});
 }
 async function rerender(ui: ReactNode) {
   await act(async () => mounted!.root.render(<QueryClientProvider client={mounted!.queryClient}><TooltipProvider>{ui}</TooltipProvider></QueryClientProvider>));

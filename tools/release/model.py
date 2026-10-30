@@ -464,6 +464,25 @@ def idp_declaration(decl=None):
     return spec
 
 
+METERING_MODE = re.compile(r"[a-z][a-z0-9-]*")
+
+
+def metering_declaration(decl=None):
+    """release.yaml 的 metering 段（DD-165(5)）：在哪个服务里以 /usr/local/bin/platform-core 执行对齐与回读。
+    apply 在该服务替换并就绪之后、任何其他服务之前执行（服务未替换时在替换其他服务之前执行）；verify 只读。
+    没有该段返回 None（旧发布树）。"""
+    decl = decl or declarations()
+    spec = decl.get("metering")
+    if spec is None:
+        return None
+    if not isinstance(spec, dict) or not isinstance(spec.get("service"), str) or set(spec) != {"service", "apply", "verify"}:
+        raise ReleaseError(f"{DECLARATIONS}: metering 必须恰有 service、apply、verify")
+    for key in ("apply", "verify"):
+        if not isinstance(spec[key], str) or not METERING_MODE.fullmatch(spec[key]):
+            raise ReleaseError(f"{DECLARATIONS}: metering.{key} 必须是 platform-core 的子命令名")
+    return spec
+
+
 def _literal(tree, name):
     import ast
     for node in tree.body:

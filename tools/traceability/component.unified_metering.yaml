@@ -1,0 +1,100 @@
+capability_id: component.unified_metering
+title: 组件计量、额度与用量视图并入 Kailo 统一体系（组件 meter 目录、上报与准入、成员上限、我的用量与按组件用量）
+stage: EXT-BASE
+status: in_progress
+# 源码批次：Core 平台 meter/额度项扩展与成员上限、组件上报与准入服务面、模型调用 ExtAuthz CHECK、
+# 两个 BFF 用量读取、迁移 20261102020000；client-kit 用量页；WeKnora 问答准入与上报、Wren 问数准入与
+# 上报、Cells 每小时存储快照。尚未构建进任何产物、未部署；合并后须重建 Core/Worker、Web/Desktop 与三组件镜像，
+# 发布入口在 Core 就绪后自动执行 platform-core align-metering 并在 verify 回读（DD-165(5)）。
+exposure: end_user
+
+design:
+  requirements: [V-REQ-09, V-REQ-10]
+  decisions: [DD-165]
+  facts: [SF-OMT-09]
+  seams: []
+  blockers: []
+  entities: [UsageEvent, OpenMeterBinding, ApplicationBinding, ComponentRelease, ExternalIdentity, TenantMembership]
+
+validation:
+  scenarios: [V-SCN-282, V-SCN-283, V-SCN-284, V-SCN-285, V-SCN-286, V-SCN-287, V-SCN-288]
+  evidence:
+    - dimension: 合同一致
+      ref: contracts/api/component_usage_report.schema.json
+    - dimension: 合同一致
+      ref: contracts/api/member_usage_page.schema.json
+    - dimension: 单元测试
+      ref: core/crates/platform-core/src/component_usage.rs
+    - dimension: 单元测试
+      ref: core/crates/platform-core/src/tenant_quota.rs
+    - dimension: 迁移演练
+      ref: core/migrations/20261102020000_component_usage.down.sql
+    - dimension: 呈现
+      ref: client-kit/ts/platform/test/tenant-quotas.test.tsx
+    - dimension: 发布对齐
+      ref: tools/release/test_node.py
+    - dimension: 验证记录
+      ref: core/verify/component-usage.md
+
+implementation:
+  owners: [team-platform, team-capabilities]
+  paths:
+    - contracts/api/component_usage_report.schema.json
+    - contracts/api/component_usage_receipt.schema.json
+    - contracts/api/component_usage_admission_request.schema.json
+    - contracts/api/component_usage_admission.schema.json
+    - contracts/api/component_usage_page.schema.json
+    - contracts/api/member_usage_page.schema.json
+    - contracts/api/tenant_quota_page.schema.json
+    - contracts/domain/tenant_quota_setting.schema.json
+    - contracts/enums/component_usage_meter.schema.json
+    - contracts/enums/component_usage_decision.schema.json
+    - contracts/enums/member_usage_state.schema.json
+    - core/migrations/20261102020000_component_usage.up.sql
+    - core/crates/platform-core/src/component_usage.rs
+    - core/crates/platform-core/src/metering_alignment.rs
+    - core/crates/platform-core/src/main.rs
+    - tools/release/release.yaml
+    - tools/release/model.py
+    - tools/release/node.py
+    - deploy/components/component-deploy.sh
+    - core/crates/platform-core/src/tenant_quota.rs
+    - core/crates/platform-core/src/openmeter.rs
+    - core/crates/platform-core/src/gateway_usage.rs
+    - core/crates/platform-core/src/application_model_route.rs
+    - core/crates/platform-core/src/business_observability.rs
+    - core/crates/platform-core/src/component_notification.rs
+    - core/crates/platform-core/src/service_api.rs
+    - core/crates/platform-core/src/bff.rs
+    - client-kit/ts/platform/src/react/business-observability.tsx
+    - client-kit/ts/platform/src/client.ts
+    - client-kit/ts/platform/src/i18n.ts
+    - knowledge/internal/application/service/kailo_usage.go
+    - knowledge/internal/handler/session/kailo_usage.go
+    - data-query/wren-ui/src/apollo/server/services/kailoUsage.ts
+    - file-storage/common/auth/native-oidc-usage.go
+    - file-storage/frontend/web/service/kailo-usage.go
+  surfaces: [web, desktop]
+  schemas:
+    - contracts/api/component_usage_report.schema.json
+    - contracts/api/component_usage_receipt.schema.json
+    - contracts/api/component_usage_admission_request.schema.json
+    - contracts/api/component_usage_admission.schema.json
+    - contracts/api/component_usage_page.schema.json
+    - contracts/api/member_usage_page.schema.json
+  migrations: [core/migrations/20261102020000_component_usage.up.sql]
+
+runtime:
+  routes: ["/api/v1/usage/me", "/api/v1/usage/components"]
+  actions: []
+  workflow_kinds: []
+
+release:
+  # 记录的是当前在发的 Core 与 Web 产物（与 metering.business_observability 同一对）；本能力源码
+  # 尚未构建进任何产物。
+  artifacts:
+    - name: core
+      digest: sha256:3baec0da7bdefe3beecfe2704e445e2a18557e40c21074ec10c377896c20231d
+    - name: web-client
+      digest: sha256:1680f7e3e8b599f55144fc7ed2f563b5a2ccaa3e9cf3c178e9b8fe40b172751f
+  gate: blocked_until_seams_closed

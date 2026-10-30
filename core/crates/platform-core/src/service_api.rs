@@ -262,7 +262,17 @@ pub fn router(state: ServiceState) -> Router {
             "/service/v1/component-notifications/bindings/{binding}/notifications",
             post(crate::component_notification::deliver),
         )
-        // DD-168(5), 07 §4.8.11: component secret custody with the same
+        // DD-165, 07 §4.8.9: component usage reports and quota admission with
+        // the same directory-client service identity.
+        .route(
+            "/service/v1/component-usage/bindings/{binding}/reports",
+            post(crate::component_usage::report),
+        )
+        .route(
+            "/service/v1/component-usage/bindings/{binding}/admission",
+            post(crate::component_usage::admission),
+        )
+        // DD-169(5), 07 §4.8.11: component secret custody with the same
         // directory-client service identity; values only in the Tenant's OpenBao.
         .route(
             "/service/v1/component-secrets/bindings/{binding}/secrets",

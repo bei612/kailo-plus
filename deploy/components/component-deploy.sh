@@ -78,6 +78,30 @@ stamp=$(date -u +%Y%m%dT%H%M%SZ)
 converge=$S/deploy/components/adapter-converge.py
 backup_root=${COMPONENT_BACKUP_ROOT:-/volumes/data/kailo/backups/components}
 before=$("${D[@]}" ps --format '{{.ID}} {{.Names}} {{.Image}} {{.Status}}' | sort -k2)
+# DD-165(5)、.design/07 §4.8.9：组件部署的前置条件是已完成计量对齐并通过只读回读的平台 Core。
+# 组件准入与上报依赖 Core 的组件用量合同与已登记的额度项；未满足即拒绝部署并说明原因（--check 不受限）。
+if ! "$check"; then
+  case "$component" in
+    file-storage|knowledge|data-query)
+      ci_config=$(sed -n 's/^  ci_config: *//p' "$S/tools/release/release.yaml")
+      platform_project=$(python3 -I -c 'import json,sys;print(json.load(open(sys.argv[1]))["compose_project"])' "$ci_config")
+      core_ctr=$("${D[@]}" ps -q --filter "label=com.docker.compose.project=$platform_project" \
+        --filter label=com.docker.compose.service=core-bff --filter status=running)
+      [ "$(printf '%s\n' "$core_ctr" | grep -c .)" = 1 ] \
+        || { echo "拒绝部署 $component：平台 Core（$platform_project/core-bff）未唯一运行；先用发布入口发布 Core" >&2; exit 3; }
+      if ! metering=$("${D[@]}" exec "$core_ctr" /usr/local/bin/platform-core verify-metering 2>/dev/null); then
+        echo "拒绝部署 $component：平台 Core 的计量对齐未完成或不支持组件用量合同（DD-165(5)）。" >&2
+        printf '%s\n' "$metering" | tail -1 | python3 -I -c 'import json,sys
+try: v=json.loads(sys.stdin.read() or "{}")
+except ValueError: v={}
+for p in (v.get("problems") or [])[:10]: print("  缺口：" + str(p)[:200], file=sys.stderr)' || true
+        echo "先以发布入口（tools/release/kailo-release.sh）发布并通过 verify 的 Core，再部署组件。" >&2
+        exit 3
+      fi
+      echo "== 前置：平台 Core 计量对齐已回读（DD-165(5)）"
+      ;;
+  esac
+fi
 
 private_env() {
   local file=$1
