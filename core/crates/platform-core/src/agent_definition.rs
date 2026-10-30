@@ -218,14 +218,26 @@ async fn move_asset_owner(
     let (tenant, resource, asset) = (tenant.to_string(), resource.to_string(), asset.to_string());
     let token = gov
         .spicedb
-        .replace_asset_owner(&asset, &tenant, &resource, &from.to_string(), &to.to_string())
+        .replace_asset_owner(
+            &asset,
+            &tenant,
+            &resource,
+            &from.to_string(),
+            &to.to_string(),
+        )
         .await
         .map_err(unavailable)?;
     if token.is_empty() {
         return Ok(false);
     }
     gov.spicedb
-        .asset_projection_matches(&asset, &tenant, &resource, &to.to_string(), gov.cfg.relationship_page)
+        .asset_projection_matches(
+            &asset,
+            &tenant,
+            &resource,
+            &to.to_string(),
+            gov.cfg.relationship_page,
+        )
         .await
         .map_err(unavailable)
 }
@@ -380,9 +392,16 @@ pub(crate) async fn dispatch(
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
     for (asset, from, _) in &assets {
-        sqlx::query("update catalog.asset set owner_principal_id=$3,version=version+1
-            where id=$1 and tenant_id=$2 and owner_principal_id=$4")
-            .bind(asset).bind(r.tenant_id).bind(owner).bind(from).execute(&mut *tx).await?;
+        sqlx::query(
+            "update catalog.asset set owner_principal_id=$3,version=version+1
+            where id=$1 and tenant_id=$2 and owner_principal_id=$4",
+        )
+        .bind(asset)
+        .bind(r.tenant_id)
+        .bind(owner)
+        .bind(from)
+        .execute(&mut *tx)
+        .await?;
     }
     sqlx::query("update catalog.agent_definition set status='ACTIVE' where resource_id=$1")
         .bind(r.id)
@@ -455,7 +474,8 @@ async fn abort_projection(
     };
     // 先前不明的一轮可能已把 Asset 写给新 owner：确定拒绝时同样恢复原 owner 并回读。
     let resolved = if resolved.is_some() && sem == Semantic::ResourceTransferOwner {
-        let assets = inherited_assets(&mut tx, r.tenant_id, r.id, r.owner_principal_id, true).await?;
+        let assets =
+            inherited_assets(&mut tx, r.tenant_id, r.id, r.owner_principal_id, true).await?;
         let mut restored = true;
         for (asset, from, _) in &assets {
             restored &= matches!(
@@ -954,7 +974,14 @@ mod transfer_tests {
     fn transfer_accepts_active_and_retained_resources_only() {
         assert!(transferable_state("ACTIVE"));
         assert!(transferable_state("RETAINED_READ_ONLY"));
-        for state in ["PROVISIONING", "UNKNOWN", "FAILED", "DELETING", "DELETED", ""] {
+        for state in [
+            "PROVISIONING",
+            "UNKNOWN",
+            "FAILED",
+            "DELETING",
+            "DELETED",
+            "",
+        ] {
             assert!(!transferable_state(state), "{state}");
         }
     }
@@ -992,12 +1019,23 @@ mod transfer_tests {
         .await
         .unwrap();
         // The old Agent-only reader never sees the route; the transfer reader does.
-        assert!(resource(&mut tx, tenant, route, false).await.unwrap().is_none());
-        let r = resource_any(&mut tx, tenant, route, true).await.unwrap().unwrap();
-        assert_eq!((r.home_workspace_id, r.owner_principal_id), (Some(workspace), a));
+        assert!(resource(&mut tx, tenant, route, false)
+            .await
+            .unwrap()
+            .is_none());
+        let r = resource_any(&mut tx, tenant, route, true)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (r.home_workspace_id, r.owner_principal_id),
+            (Some(workspace), a)
+        );
         assert!(transferable_state(&r.state));
         // b is not a member at all here, so its Asset counts as left behind and is gathered.
-        let moved = inherited_assets(&mut tx, tenant, definition, a, true).await.unwrap();
+        let moved = inherited_assets(&mut tx, tenant, definition, a, true)
+            .await
+            .unwrap();
         let mut ids = moved.iter().map(|(id, _, _)| *id).collect::<Vec<_>>();
         ids.sort();
         let mut want = vec![mine, theirs];
@@ -1012,11 +1050,24 @@ mod transfer_tests {
         .execute(&mut *tx)
         .await
         .unwrap();
-        let moved = inherited_assets(&mut tx, tenant, definition, a, true).await.unwrap();
-        assert_eq!(moved.into_iter().map(|(id, _, _)| id).collect::<Vec<_>>(), vec![mine]);
+        let moved = inherited_assets(&mut tx, tenant, definition, a, true)
+            .await
+            .unwrap();
+        assert_eq!(
+            moved.into_iter().map(|(id, _, _)| id).collect::<Vec<_>>(),
+            vec![mine]
+        );
         // Cross-Tenant reads find nothing.
-        assert!(resource_any(&mut tx, Uuid::new_v4(), route, false).await.unwrap().is_none());
-        assert!(inherited_assets(&mut tx, Uuid::new_v4(), definition, a, false).await.unwrap().is_empty());
+        assert!(resource_any(&mut tx, Uuid::new_v4(), route, false)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(
+            inherited_assets(&mut tx, Uuid::new_v4(), definition, a, false)
+                .await
+                .unwrap()
+                .is_empty()
+        );
         tx.rollback().await.unwrap();
     }
 }

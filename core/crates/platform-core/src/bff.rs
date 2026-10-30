@@ -540,10 +540,7 @@ pub fn router(state: BffState) -> Router {
             get(crate::tenant_member_joins::list),
         )
         // DD-168(2)：成员名下资源与移交前提，Tenant manage 持有人本人的只读投影
-        .exposed_route(
-            "/api/v1/owner-transfers",
-            get(crate::owner_transfer::list),
-        )
+        .exposed_route("/api/v1/owner-transfers", get(crate::owner_transfer::list))
         .exposed_route(
             "/api/v1/agent-definitions",
             get(crate::agent_definition::list),

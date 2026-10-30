@@ -240,10 +240,22 @@ mod tests {
     #[test]
     fn block_reasons_follow_the_transfer_admission() {
         assert_eq!(block_reason(&row("ACTIVE", true, false, false)), None);
-        assert_eq!(block_reason(&row("RETAINED_READ_ONLY", true, false, false)), None);
-        assert_eq!(block_reason(&row("ACTIVE", true, true, false)), Some("PROJECTION_PENDING"));
-        assert_eq!(block_reason(&row("DELETING", true, false, false)), Some("STATE"));
-        assert_eq!(block_reason(&row("ACTIVE", true, false, true)), Some("AUTOMATION_ENABLED"));
+        assert_eq!(
+            block_reason(&row("RETAINED_READ_ONLY", true, false, false)),
+            None
+        );
+        assert_eq!(
+            block_reason(&row("ACTIVE", true, true, false)),
+            Some("PROJECTION_PENDING")
+        );
+        assert_eq!(
+            block_reason(&row("DELETING", true, false, false)),
+            Some("STATE")
+        );
+        assert_eq!(
+            block_reason(&row("ACTIVE", true, false, true)),
+            Some("AUTOMATION_ENABLED")
+        );
         // Left-behind Assets under someone else's enabled automation are gathered by its owner.
         assert_eq!(block_reason(&row("ACTIVE", false, false, true)), None);
     }
@@ -255,7 +267,10 @@ mod tests {
         assert_eq!(view["transferable"], false);
         assert_eq!(view["blockReason"], "AUTOMATION_ENABLED");
         assert_eq!(view["homeWorkspaceName"], "Release");
-        let blank = ItemRow { name: Some("  ".into()), ..row("ACTIVE", true, false, false) };
+        let blank = ItemRow {
+            name: Some("  ".into()),
+            ..row("ACTIVE", true, false, false)
+        };
         assert!(item_view(&blank).get("name").is_none());
     }
 }
