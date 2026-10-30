@@ -222,6 +222,8 @@ Agent 与 Skill 的 accountable owner 始终是 active HUMAN。AgentPrincipal �
 
 Agents、Capabilities、Delegation、Approval、Operations 与 Usage 全部属于 `BUZZ_NATIVE` surface：实时继承 Buzz resolved theme/CSS variables，所有 label、reason code、validation、状态、空态和确认文案进入 `AppLocale(en/zh-CN) + MessageKey/t`。Codex、AgentGateway 或 Buzz native error 只作为受权 evidence 展开，不成为未本地化的主状态；Agent 定义不保存自己的主题或 locale（REQ-08、SF-WEB-03、DD-36）。
 
+Agents 页按“设计”和“运行”分成两个区，二者视觉与文案都不能相同（DD-168(7)）：「Agent 设计」放定义、团队、Skills 与工具，卡片表达“这个 Agent 是什么”，显示已发布版本序号或“尚未发布”；「运行中的 Agent」放所选工作区的 Installation，以行列表呈现（头像、名称、所在工作区、固定版本序号、运行状态与安装者显示名），表达“它在哪个频道以哪个版本工作、谁能用”。两区各自给出说明：修改定义不改变已在运行的 Agent，需要升级安装；运行区的操作（使用授权、委托、升级、记忆与会话）不出现在设计区。定义、版本与安装详情中的 owner 一律显示成员显示名，移交所有者以成员选择器选择新 owner（DD-168(1)(2)）。
+
 ## 9. AgentGateway 管理边界
 
 Core 是 Agent/Tool/LLM requested/effective 配置的唯一写入者，AgentGateway ConfigResource 是执行投影：
