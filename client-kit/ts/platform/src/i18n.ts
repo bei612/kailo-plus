@@ -496,6 +496,7 @@ export const platformMessages = {
   "messages.system.memberMany": {en:"{count} channel members","zh-CN":"{count} 位频道成员"},
   "messages.system.agentManaged": {en:"Agent managed by","zh-CN":"Agent 管理者为"},
   "messages.system.agentOwnerUnavailable": {en:"Agent; owner unavailable","zh-CN":"Agent；管理者信息不可用"},
+  "messages.system.agentArchived": {en:"Archived","zh-CN":"已存档"},
   "messages.system.managedBy": {en:"managed by","zh-CN":"管理者为"},
   "messages.system.ownerUnavailable": {en:"owner unavailable","zh-CN":"管理者信息不可用"},
   "messages.agentRespondToAllowlist": { en: "Selected people can send instructions to this agent", "zh-CN": "仅选定的人可以向此 Agent 下达指令" },

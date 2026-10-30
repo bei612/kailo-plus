@@ -407,17 +407,21 @@ pub async fn list_members(
     }
     // 一人多把公钥时按人聚合：左连接直接展开会让同一个人出现多行。公钥是公开
     // 事实，与私钥托管无关；客户端据此把任一端签发的消息归到同一个人名下（DD-77）。
-    match sqlx::query_as::<_, (Uuid, String, Vec<String>, String)>(
+    // DD-162: REVOKED keys are the original NIP-IA "archived identities" (key rotation and
+    // revocation, DD-79): returned apart so history stays attributed, never as candidates.
+    match sqlx::query_as::<_, (Uuid, String, Vec<String>, Vec<String>, String)>(
         "select wm.tenant_principal_id, hi.display_name,
                 coalesce(array_agg(bib.pubkey order by bib.pubkey)
-                         filter (where bib.pubkey is not null), '{}') as pubkeys,
+                         filter (where bib.state = 'ACTIVE'), '{}') as pubkeys,
+                coalesce(array_agg(bib.pubkey order by bib.pubkey)
+                         filter (where bib.state = 'REVOKED'), '{}') as archived_pubkeys,
                 wm.state
          from identity.workspace_membership wm
          join identity.tenant_membership tm
            on tm.tenant_principal_id = wm.tenant_principal_id
          join identity.human_identity hi on hi.id = tm.human_identity_id
          left join identity.buzz_identity_binding bib
-           on bib.principal_id = wm.tenant_principal_id and bib.state = 'ACTIVE'
+           on bib.principal_id = wm.tenant_principal_id and bib.state in ('ACTIVE', 'REVOKED')
          where wm.workspace_id = $1 and wm.state <> 'REVOKED'
          group by wm.tenant_principal_id, hi.display_name, wm.state
          order by hi.display_name",
@@ -428,7 +432,7 @@ pub async fn list_members(
     {
         Ok(rows) => {
             let mut members = Vec::with_capacity(rows.len());
-            for (principal_id, display_name, pubkeys, state) in rows {
+            for (principal_id, display_name, pubkeys, archived_pubkeys, state) in rows {
                 let state = match db_enum("workspace_membership.state", &state) {
                     Ok(s) => s,
                     Err(r) => return r,
@@ -437,6 +441,7 @@ pub async fn list_members(
                     principal_id: principal_id.to_string(),
                     display_name,
                     pubkeys,
+                    archived_pubkeys: (!archived_pubkeys.is_empty()).then_some(archived_pubkeys),
                     state,
                 });
             }

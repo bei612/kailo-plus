@@ -22,6 +22,8 @@ export type AgentAuthorFact = {
   ownerPrincipalId: string | null;
   displayName: string | null;
   respondTo?: "allowlist";
+  /** DD-162: disabled Installation, shown as archived and never offered as a candidate. */
+  archived?: boolean;
 };
 export type AgentAuthorFacts = ReadonlyMap<string, AgentAuthorFact>;
 
@@ -48,6 +50,7 @@ export function agentAuthorFacts(directory: AgentAuthorDirectoryScope | undefine
       ownerPrincipalId: ownerPubkey ? agent.ownerPrincipalId : null,
       displayName: agent.agentDisplayName?.trim() || null,
       ...(allowlisted.has(agent.installationResourceId) ? { respondTo: "allowlist" as const } : {}),
+      ...(agent.archived ? { archived: true } : {}),
     });
   }
   return facts;
@@ -93,7 +96,8 @@ export function withAgentAuthorFacts(message: TimelineMessage, facts: AgentAutho
   if (!fact) return message;
   return { ...message, isAgent: true, ownerLabel: fact.ownerLabel, ownerPubkey: fact.ownerPubkey,
     ownerPrincipalId: fact.ownerPrincipalId,
-    ...(fact.respondTo ? { respondTo: fact.respondTo } : {}) };
+    ...(fact.respondTo ? { respondTo: fact.respondTo } : {}),
+    ...(fact.archived ? { agentArchived: true } : {}) };
 }
 
 /** The same directory as the DD-148 prefix host. */

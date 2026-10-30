@@ -28,6 +28,8 @@ export type TimelineMessage = {
   /** DD-147(1): the owner's Principal, present with `ownerPubkey` so the name opens the member card. */
   ownerPrincipalId?: string | null;
   ownerLabel?: string | null;
+  /** DD-162: the authoring Agent's Installation is disabled — the original NIP-IA archived identity. */
+  agentArchived?: boolean;
   /**
    * DD-147(2): the owner-only respondTo badge. Only `allowlist` exists in Kailo (`anyone` is not
    * offered, DD-125(6)); absent means the default owner-only.

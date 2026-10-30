@@ -80,7 +80,7 @@ export function InboxMessageRowSurface({
           {identity(<span className="block max-w-full truncate rounded text-message font-semibold leading-message-author text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring" data-testid="message-author">{message.author}</span>, "author")}
           {message.isAgent && message.ownerLabel !== undefined ? <>
             <MessageAgentOwner ownerLabel={message.ownerLabel} ownerPubkey={message.ownerPubkey}
-              ownerPrincipalId={message.ownerPrincipalId} renderOwner={agentScope?.renderOwner} />
+              ownerPrincipalId={message.ownerPrincipalId} renderOwner={agentScope?.renderOwner} archived={message.agentArchived} />
             <MessageMetaSeparator />
           </> : null}
           <p className="shrink-0 text-message-timestamp font-normal tabular-nums text-muted-foreground/55" data-testid="inbox-message-timestamp" title={absoluteTimestamp}>

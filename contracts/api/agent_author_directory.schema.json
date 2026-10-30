@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api/agent_author_directory.schema.json",
   "title": "AgentAuthorDirectory",
-  "description": "DD-147(1)：GET /api/v1/workspaces/{workspaceId}/agent-authors。Workspace 成员（与成员名单同一准入）可读的 Agent 作者目录：本 Workspace 中有 ACTIVE ChannelAgentBinding 的未删除 Installation（排空或故障中的也保留，其历史消息仍需 owner 行）的 Agent 公钥、persona 显示名与 owner。只供消息行显示“managed by <owner>”，不含 Installation 其余字段，不授予任何使用、读取或管理权限；作者名仍只读 Relay kind:0（DD-117(6)）。",
+  "description": "DD-147(1)：GET /api/v1/workspaces/{workspaceId}/agent-authors。Workspace 成员（与成员名单同一准入）可读的 Agent 作者目录：本 Workspace 中有 ACTIVE 或已停用（DISABLED）ChannelAgentBinding 的未删除 Installation（排空、故障或停用中的也保留，其历史消息仍需 owner 行；停用者带 archived，DD-162）的 Agent 公钥、persona 显示名与 owner。只供消息行显示“managed by <owner>”，不含 Installation 其余字段，不授予任何使用、读取或管理权限；作者名仍只读 Relay kind:0（DD-117(6)）。",
   "type": "object",
   "additionalProperties": false,
   "required": ["agents"],
@@ -19,7 +19,8 @@
           "agentPubkey": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
           "agentDisplayName": {"type": "string", "minLength": 1, "description": "固定版本 personaIdentity 的显示名；缺省时客户端用公钥简写，不以 Installation 目录合成作者名。"},
           "ownerPrincipalId": {"type": "string", "format": "uuid"},
-          "ownerDisplayName": {"type": "string", "minLength": 1, "description": "owner 在本 Tenant 的显示名；owner 已不是 ACTIVE 成员时省略，客户端显示原版 owner unavailable。"}
+          "ownerDisplayName": {"type": "string", "minLength": 1, "description": "owner 在本 Tenant 的显示名；owner 已不是 ACTIVE 成员时省略，客户端显示原版 owner unavailable。"},
+          "archived": {"type": "boolean", "const": true, "description": "DD-162：Installation 已停用（agent.installation.disable）即原版 NIP-IA 的“已存档身份”：其历史消息保留 owner 行并显示“已存档”，客户端不把它列为提及或选择候选。未存档时省略。"}
         }
       }
     }

@@ -145,3 +145,24 @@ it("shows the owner name right after “managed by” through a host profile pop
   expect(visibleOwnerText(plainChip)).toBe("管理者为Dana");
   expect(plainChip.querySelector('[data-testid="message-agent-owner-name"]')?.className).toContain("min-w-[3ch]");
 });
+
+it("DD-162: a disabled Installation's messages keep their owner line and show the archived flair", async () => {
+  const archivedDirectory = { ...(directory as { principalId: string; agents: object[]; members: object[] }),
+    agents: [{ agentPubkey: AGENT, agentDisplayName: "Builder", installationResourceId: "inst-1",
+      ownerPrincipalId: "owner-principal", ownerDisplayName: "Dana", archived: true }] } as never;
+  const facts = agentAuthorFacts(archivedDirectory);
+  expect(facts.get(AGENT)).toMatchObject({ ownerLabel: "Dana", archived: true });
+  expect(agentAuthorFacts(directory).get(AGENT)?.archived).toBeUndefined();
+  const marked = withAgentAuthorFacts(message, facts);
+  expect(marked).toMatchObject({ isAgent: true, ownerLabel: "Dana", agentArchived: true });
+  expect(withAgentAuthorFacts(message, agentAuthorFacts(directory)).agentArchived).toBeUndefined();
+  for (const [locale, label] of [["en", "Archived"], ["zh-CN", "已存档"]] as const) {
+    await act(async () => setLocale(locale));
+    const view = await render(<TooltipProvider><AgentAuthorFactsProvider facts={facts}>
+      <MessageRowSurface message={marked} renderBody={() => marked.body} />
+    </AgentAuthorFactsProvider></TooltipProvider>);
+    expect(view.querySelector('[data-testid="message-agent-archived"]')?.textContent).toBe(label);
+    expect(view.querySelector('[data-testid="message-agent-owner"]')?.textContent).toContain("Dana");
+  }
+  await act(async () => setLocale("en"));
+});

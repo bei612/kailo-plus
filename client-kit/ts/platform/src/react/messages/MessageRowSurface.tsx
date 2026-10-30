@@ -351,7 +351,8 @@ export function MessageRowSurface({
         {/* Fixed Buzz MessageRow agentOwnerNode (DD-147(1)): only where the host resolved owner facts. */}
         {message.isAgent && message.ownerLabel !== undefined
           ? <MessageAgentOwner ownerLabel={message.ownerLabel} ownerPubkey={message.ownerPubkey}
-              ownerPrincipalId={message.ownerPrincipalId} renderOwner={renderAgentOwner ?? agentScope?.renderOwner} /> : null}
+              ownerPrincipalId={message.ownerPrincipalId} renderOwner={renderAgentOwner ?? agentScope?.renderOwner}
+              archived={message.agentArchived} /> : null}
         {inlineMetadataNode}
       </MessageHeaderRow>
     );

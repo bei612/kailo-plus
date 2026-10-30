@@ -8,7 +8,10 @@
 //! Workspace, only the Agent's public key, its pinned persona display name and the owner's
 //! Principal ID and Tenant display name. It grants nothing and carries no other Installation
 //! field; author names are still read from Relay kind:0 (DD-117(6)). A draining or failed
-//! Installation keeps its line: its past messages still need their owner.
+//! Installation keeps its line: its past messages still need their owner. DD-162: a disabled
+//! Installation (agent.installation.disable, its channel bindings DISABLED) keeps its line too and
+//! is marked `archived` — the original NIP-IA archived identity — so clients show "archived" and
+//! never offer it as a candidate.
 use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
@@ -28,6 +31,7 @@ pub(crate) struct AuthorRow {
     pub persona: Value,
     pub owner_principal_id: Uuid,
     pub owner_display_name: Option<String>,
+    pub archived: bool,
 }
 
 const ROWS: &str = "select i.resource_id as installation_resource_id, agent_identity.pubkey as agent_pubkey,
@@ -36,7 +40,8 @@ const ROWS: &str = "select i.resource_id as installation_resource_id, agent_iden
       join identity.human_identity owner_identity on owner_identity.id=owner_membership.human_identity_id
         and owner_identity.status='ACTIVE'
       where owner_membership.tenant_principal_id=r.owner_principal_id and owner_membership.tenant_id=r.tenant_id
-        and owner_membership.state='ACTIVE' and btrim(owner_identity.display_name)<>'') as owner_display_name
+        and owner_membership.state='ACTIVE' and btrim(owner_identity.display_name)<>'') as owner_display_name,
+    (i.state='DISABLED') as archived
   from catalog.agent_installation i
   join catalog.resource r on r.id=i.resource_id and r.type_key='agent.installation'
     and r.home_workspace_id=i.workspace_id and r.state<>'DELETED'
@@ -49,7 +54,7 @@ const ROWS: &str = "select i.resource_id as installation_resource_id, agent_iden
   join catalog.agent_version v on v.asset_id=i.pinned_version_asset_id
   where r.tenant_id=$1 and i.workspace_id=$2
     and exists(select 1 from catalog.channel_agent_binding cb where cb.installation_resource_id=i.resource_id
-      and cb.workspace_id=i.workspace_id and cb.status='ACTIVE')
+      and cb.workspace_id=i.workspace_id and cb.status in ('ACTIVE','DISABLED'))
   order by i.resource_id";
 
 /// The wire shape of one row (contracts/api/agent_author_directory.schema.json).
@@ -83,6 +88,9 @@ pub(crate) fn author_view(row: &AuthorRow) -> Option<Value> {
         .filter(|n| !n.is_empty())
     {
         view["ownerDisplayName"] = json!(owner);
+    }
+    if row.archived {
+        view["archived"] = json!(true);
     }
     Some(view)
 }
@@ -128,6 +136,7 @@ mod tests {
             persona,
             owner_principal_id: Uuid::nil(),
             owner_display_name: owner.map(str::to_owned),
+            archived: false,
         }
     }
 
@@ -152,5 +161,16 @@ mod tests {
         let mut bad = row(Value::Null, None);
         bad.agent_pubkey = "Z".repeat(64);
         assert!(author_view(&bad).is_none());
+    }
+
+    #[test]
+    fn a_disabled_installation_is_marked_archived_and_others_carry_no_flag() {
+        let active = author_view(&row(json!({"displayName": "Writer"}), Some("Dana"))).unwrap();
+        assert!(active.get("archived").is_none());
+        let mut disabled = row(json!({"displayName": "Writer"}), Some("Dana"));
+        disabled.archived = true;
+        let view = author_view(&disabled).unwrap();
+        assert_eq!(view["archived"], json!(true));
+        assert_eq!(view["ownerDisplayName"], json!("Dana"));
     }
 }

@@ -10,6 +10,7 @@
     "principalId": { "type": "string", "format": "uuid" },
     "displayName": { "type": "string" },
     "pubkeys": { "type": "array", "items": { "type": "string" }, "description": "此人全部 ACTIVE 的 Buzz 协议公钥：Web 一把，另加每台原生设备一把" },
+    "archivedPubkeys": { "type": "array", "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "description": "DD-162：此人已 REVOKED 的公钥（设备公钥轮换或撤销，DD-79）即原版 NIP-IA 的“已存档身份”。客户端只用它把历史消息归到此人并显示“已存档”，从不作为提及、私聊或选择器候选；为空时省略。" },
     "state": { "$ref": "../enums/workspace_membership_state.schema.json" }
   }
 }

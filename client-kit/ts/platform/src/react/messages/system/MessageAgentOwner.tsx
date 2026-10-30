@@ -18,12 +18,15 @@ export function MessageAgentOwner({
   ownerPubkey: ownerKey,
   ownerPrincipalId,
   renderOwner,
+  archived,
 }: {
   ownerLabel?: string | null;
   ownerPubkey?: string | null;
   ownerPrincipalId?: string | null;
   /** DD-147(1): the host's member profile card for the owner (Web MemberHover, Desktop popover). */
   renderOwner?: AgentOwnerRenderer;
+  /** DD-162: the original NIP-IA "archived" flair for a disabled Installation's messages. */
+  archived?: boolean;
 }) {
   const t = useUiT();
   const hasSystemHost = useHasSystemMessageHost();
@@ -89,6 +92,11 @@ export function MessageAgentOwner({
           {t("messages.system.ownerUnavailable")}
         </span>
       )}
+      {archived ? (
+        <span className="shrink-0 rounded-sm bg-muted px-1 text-[var(--k-text-secondary)]" data-testid="message-agent-archived">
+          {t("messages.system.agentArchived")}
+        </span>
+      ) : null}
     </span>
   );
 }
