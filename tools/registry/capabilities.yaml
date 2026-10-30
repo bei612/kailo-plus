@@ -378,6 +378,12 @@ capabilities:
   - capability_contract.deprecate
   tools: []
   workflow_kinds: []
+- id: component.converged_collab_ai
+  exposure: none
+  routes: []
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: component.fused_inbox_search
   exposure: end_user
   routes:

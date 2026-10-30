@@ -921,3 +921,20 @@ func TestComponentConformancePlanAcceptsDeniedReplayInputBindings(t *testing.T) 
 		t.Fatal("EXPECTED binding without a contract key accepted")
 	}
 }
+
+// A protocol execution case (no vector reference) may return the typed
+// reference of its own target Resource (Wren describe); any other Resource or
+// a malformed envelope gives no reference target.
+func TestProtocolExecutionReferenceTargetsTheRequestResource(t *testing.T) {
+	resource := uuid.NewString()
+	request := `{"actionKey":"data_query.describe@v2","arguments":{"input":{"limit":1},"target":{"resourceId":"` + resource + `"}},"idempotencyKey":"k"}`
+	if got := protocolTargetResource(request); got == nil || *got != resource {
+		t.Fatalf("target resource not derived: %v", got)
+	}
+	for _, bad := range []string{`{}`, `{"arguments":{"target":{"assetId":"` + resource + `"}}}`,
+		`{"arguments":{"target":{"resourceId":"` + strings.ToUpper(resource) + `"}}}`, `not json`} {
+		if protocolTargetResource(bad) != nil {
+			t.Fatalf("unexpected target for %s", bad)
+		}
+	}
+}

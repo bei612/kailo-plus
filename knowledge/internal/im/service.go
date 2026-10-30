@@ -288,6 +288,10 @@ type inflightEntry struct {
 // 4. Calls the WeKnora QA pipeline for normal messages
 // 5. Collects the streaming answer and sends it back via the Adapter
 type Service struct {
+	// kailoClosed is set in Kailo mode (Kailo DD-163, design 07 §4.8.8):
+	// collaboration is Kailo channels and DMs, so no IM channel starts.
+	kailoClosed bool
+
 	db             *gorm.DB
 	sessionService interfaces.SessionService
 	messageService interfaces.MessageService
@@ -834,6 +838,9 @@ func resolveIMConfig(appCfg *config.Config) (workers, maxQueue, maxPerUser, glob
 // redisClient may be nil — in that case the service falls back to local
 // in-memory state (Lite / single-instance mode).
 // cfg may be nil — in that case built-in defaults are used.
+// ErrIMClosedByKailo is returned by StartChannel in Kailo mode (Kailo DD-163).
+var ErrIMClosedByKailo = errors.New("im: channels are closed in Kailo mode")
+
 func NewService(
 	db *gorm.DB,
 	sessionService interfaces.SessionService,
@@ -863,6 +870,8 @@ func NewService(
 
 	instanceID := uuid.New().String()
 	s := &Service{
+		kailoClosed: appCfg != nil && appCfg.KailoEnabled(),
+
 		db:               db,
 		sessionService:   sessionService,
 		messageService:   messageService,
@@ -979,6 +988,10 @@ func imImageConfigWarning(activeChannels int, externalURL string) string {
 
 // LoadAndStartChannels loads all enabled channels from the database and starts them.
 func (s *Service) LoadAndStartChannels() error {
+	if s.kailoClosed {
+		logger.Infof(context.Background(), "[IM] Kailo mode: IM channels are closed (Kailo DD-163); none started")
+		return nil
+	}
 	s.startChannelConfigSubscriber()
 
 	ctx := context.Background()
@@ -1096,6 +1109,9 @@ func (s *Service) reloadChannelFromDB(channelID, reason string) {
 // the leader lock and opens the connection; other instances periodically
 // retry so they can take over if the leader dies.
 func (s *Service) StartChannel(channel *IMChannel) error {
+	if s.kailoClosed {
+		return ErrIMClosedByKailo
+	}
 	if err := validateChannelTransport(channel); err != nil {
 		return err
 	}

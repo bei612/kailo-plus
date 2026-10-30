@@ -87,6 +87,19 @@ Kailo display name (`kailo-qa-1`); the avatar URL answers 404 for every
 same-Tenant requester, so the picture is broken (V-SCN-200, Core, see the Cells
 record).
 
+## Native page release version 1.5.0（2026-10-30，验收批次 5 复验）
+
+1.4.0（release `c4a58df5-453c-54c3-8154-f1191dfd2411`，`data-query-ui` `sha256:5b330f5b…`）登记后，发布 `de21965c1`（源 `4009e1c6`，含验收批次 5 修复与 Buzz 第 11 轮）
+重建 `data-query-ui` 为 `sha256:2209746e…` 并已部署。manifest 升到 `1.5.0-native-page`（release id
+`619584f6-e1d6-58ec-8e0a-e864cf0e0c37`），按 `--source-commit de21965c1e202e3bca724dcc4c97c199186d666b` 渲染、登记、审批并换绑。
+
+## Native page release version 1.4.0（2026-10-29，验收批次 5）
+
+`wren@1.3.0-native-page`（release `de63e77e-62de-55e9-9515-af8b917b43d5`）登记的 `data-query-ui` 为
+`sha256:77fae146…`（发布 `166fa3557`）。发布 `1dff0ea54` 的 pin 改为 `sha256:5b330f5b…` 并已部署；1.3.0 已登记，
+不得复用，manifest 升到 `1.4.0-native-page`（release id `c4a58df5-453c-54c3-8154-f1191dfd2411`），按
+`--source-commit 1dff0ea54cd5db49eb94531a47c987d231dc5eb8` 渲染、登记、审批并换绑。
+
 ## Native page release version 1.3.0（2026-10-23，验收批次 3）
 
 `wren@1.2.0-native-page`（release `5a942f6e`）登记于提交 `8b8dfd4e7`，当时 `data-query/fork/upstream.yaml` 的
@@ -272,7 +285,7 @@ registration, and acceptance with real Tenant members.
 
 ## 管理面并入 Kailo 管理区（DD-138(6)，`07` §4.8.5，源码阶段）
 
-native page release 升到 `1.4.0-native-page`：`fork/release/manifest.native-page.json` 的
+native page release 升到 `1.6.0-native-page`（主线已登记到 1.5.0）：`fork/release/manifest.native-page.json` 的
 `frontendPresentationContract.adminSurfaces` 声明三项，与 `wren-ui/src/utils/kailoAdminSurface.ts` 的
 `KAILO_ADMIN_SURFACES` 一致（`kailoAdminSurface.test.ts` 逐字段比对）。尚未构建、登记与换绑。
 

@@ -92,8 +92,11 @@ export function resolveSettingsSection(requested: string, visible: readonly stri
 // An allowlist keeps commands added upstream later out until reviewed; the
 // palette's knowledge/chat/agent search groups are not commands and stay.
 
-/** Command palette commands kept in Kailo mode: knowledge Q&A business only. */
-export const KAILO_PALETTE_COMMANDS: ReadonlySet<string> = new Set(['new-chat', 'open-kb-list', 'open-agents'])
+/**
+ * Command palette commands kept in Kailo mode: knowledge Q&A business only.
+ * Agents are Kailo Agent's (DD-163), so 'open-agents' is not kept.
+ */
+export const KAILO_PALETTE_COMMANDS: ReadonlySet<string> = new Set(['new-chat', 'open-kb-list'])
 
 export function kailoVisibleCommands<T extends { id: string }>(commands: readonly T[], kailoMode: boolean): T[] {
   return kailoMode ? commands.filter((command) => KAILO_PALETTE_COMMANDS.has(command.id)) : [...commands]

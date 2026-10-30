@@ -25,7 +25,7 @@ const FIELD_ORDER = ['key', 'adminCategory', 'path', 'requiredPermission', 'acce
 
 test('the release declares exactly the build table, in contract field order (07 §4.8.5)', () => {
   const declared = manifest.frontendPresentationContract.adminSurfaces
-  assert.equal(manifest.version, '1.4.0-native-page')
+  assert.equal(manifest.version, '1.7.0-native-page')
   assert.deepEqual(declared, JSON.parse(JSON.stringify(ADMIN_SURFACES)))
   for (const item of declared) assert.deepEqual(Object.keys(item), FIELD_ORDER, item.key)
   assert.equal(manifest.frontendPresentationContract.integrationMode, 'KAILO_EMBED')

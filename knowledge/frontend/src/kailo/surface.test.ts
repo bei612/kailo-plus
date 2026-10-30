@@ -93,8 +93,8 @@ test('Kailo mode keeps only the knowledge business commands in the palette (DD-1
     { id: 'open-product-tour' },
     { id: 'some-future-upstream-command' },
   ]
-  assert.deepEqual(kailoVisibleCommands(commands, true).map((c) => c.id), ['new-chat', 'open-kb-list', 'open-agents'])
-  assert.deepEqual([...KAILO_PALETTE_COMMANDS].sort(), ['new-chat', 'open-agents', 'open-kb-list'])
+  assert.deepEqual(kailoVisibleCommands(commands, true).map((c) => c.id), ['new-chat', 'open-kb-list'])
+  assert.deepEqual([...KAILO_PALETTE_COMMANDS].sort(), ['new-chat', 'open-kb-list'])
   assert.deepEqual(kailoVisibleCommands(commands, false).map((c) => c.id), commands.map((c) => c.id))
 })
 

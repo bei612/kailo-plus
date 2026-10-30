@@ -189,6 +189,11 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		return nil, nil, errors.NewNotFoundError("Session not found")
 	}
 
+	// Kailo DD-163: Kailo mode answers only with the built-in quick answer.
+	if err := kailoQuickAnswerOnly(h.config, &request); err != nil {
+		return nil, nil, err
+	}
+
 	// Get custom agent if agent_id is provided. Backend resolves shared agent from share relation (no client-provided tenant).
 	customAgent, effectiveTenantID, sharedAgentReadOnly := h.resolveAgent(ctx, c, request.AgentID, request.AgentSourceTenantID)
 	if request.AgentSourceTenantID != 0 && customAgent == nil {

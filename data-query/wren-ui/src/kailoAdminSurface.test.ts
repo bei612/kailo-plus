@@ -35,7 +35,7 @@ describe('admin surface declaration (07 §4.8.5)', () => {
 
   it('is exactly the table the pages and the middleware use, in a new release version', () => {
     expect(declared).toEqual(KAILO_ADMIN_SURFACES);
-    expect(manifest.version).toBe('1.4.0-native-page');
+    expect(manifest.version).toBe('1.6.0-native-page');
     expect(manifest.frontendDelivery.mode).toBe('NATIVE_PAGE');
     expect(manifest.frontendPresentationContract.integrationMode).toBe(
       'KAILO_EMBED',

@@ -415,6 +415,7 @@ func TestVersionActionRequiresExactNativePersistence(t *testing.T) {
 		claimed bool
 		draft   bool
 		pruned  int
+		ignored bool
 	}{
 		{name: "empty-file", size: 0},
 		{name: "actual-copy-size", size: 7},
@@ -423,6 +424,14 @@ func TestVersionActionRequiresExactNativePersistence(t *testing.T) {
 		{name: "claimed-task-version", size: 7, claimed: true},
 		{name: "claimed-draft-empty", size: 0, claimed: true, draft: true},
 		{name: "claimed-draft-exact-not-live-head", size: 7, claimed: true, draft: true},
+		// A file created by the actor's draft-mode upload has no live content
+		// yet: its index node still carries the temporary upload ETag.
+		{name: "claimed-draft-of-draft-born-node", size: 7, claimed: true, draft: true, change: func(_ *versionActionService, r *versionActionRouter) {
+			r.node.Etag = common.NodeFlagEtagTemporary
+		}},
+		{name: "event-version-of-temporary-node-ignored", size: 7, ignored: true, change: func(_ *versionActionService, r *versionActionRouter) {
+			r.node.Etag = common.NodeFlagEtagTemporary
+		}},
 		{name: "claimed-prune-ack", size: 7, claimed: true, draft: true, pruned: 1, change: func(s *versionActionService, _ *versionActionRouter) {
 			s.confirm = func(v *tree.ContentRevision) *tree.StoreVersionResponse {
 				return &tree.StoreVersionResponse{Success: true, Version: proto.Clone(v).(*tree.ContentRevision),
@@ -576,6 +585,10 @@ func TestVersionActionRequiresExactNativePersistence(t *testing.T) {
 					if entry.Success {
 						t.Error("unconfirmed native write produced a successful action output")
 					}
+				}
+			} else if tc.ignored {
+				if r.copyCount != 0 || len(s.requests) != 0 || len(s.stored) != 0 {
+					t.Errorf("an unfinished live upload was versioned: copies=%d requests=%d stored=%d", r.copyCount, len(s.requests), len(s.stored))
 				}
 			} else {
 				outputs := 1
