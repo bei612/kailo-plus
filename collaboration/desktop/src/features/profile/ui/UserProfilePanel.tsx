@@ -31,6 +31,7 @@ import {
 import { truncateNpub } from "@/shared/lib/pubkey";
 import * as React from "react";
 import { Button } from "@/shared/ui/button";
+import { snapshotExportHost } from "@/features/platform/snapshotExportHost";
 
 export type UserProfilePanelProps = {
   /**
@@ -166,7 +167,7 @@ export function UserProfilePanel({
         pubkey={pubkey}
         reload={agent.reload}
         rows={agent.rows}
-        scope={agentScope}
+        scope={{ ...agentScope, snapshotExportHost }}
         splitPaneClamp={splitPaneClamp}
         tab={tab}
         transparentChrome={transparentChrome}

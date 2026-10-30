@@ -11,6 +11,9 @@
 //   activity is Installation `audit` (DD-125(6)); memory is the owner's governed surface
 //   (DD-68); the instructions are the pinned Version's (Definition `read`, 17 §8).
 // - Every read is re-admitted by Core; a refused or malformed read hides that part only.
+// - desktop/src/features/profile/ui/UserProfileSnapshotExportDialog.tsx: the owner's "Export
+//   snapshot" entry opens the shared r7 export dialog (DD-131(2), owner-approved RESOURCE_EXPORT)
+//   for the Definition's published version; the host saves the READY package (Desktop natively).
 import {
   AgentRespondToMode,
   type AgentInstallationUsePage,
@@ -35,6 +38,8 @@ import {
 import { AuxiliaryPanelBody } from "../../../../../messages/thread/auxiliary";
 import { UserProfilePanelFrame } from "../../../../../pulse/UserProfilePanelFrame";
 import { useLoad } from "../../../../../use-load";
+import { Button } from "../../../shared/ui/button";
+import { AgentSnapshotExportDialog, type SnapshotExportHost, type SnapshotExportTarget } from "../../../../../agent-library/AgentSnapshotExportDialog";
 import { resolveProfileActivityAgent } from "../lib/profileActivityAgent";
 import { AgentConfigurationFocusedView } from "./UserProfilePanelAgentDetails";
 import { useProfileFieldBuckets } from "./UserProfilePanelFields";
@@ -66,6 +71,8 @@ export type UserProfileAgentScope = {
   onOpenChannel?: (channelId: string) => void;
   /** Open another profile in this same panel (owner row, instances). */
   onOpenProfile?: (pubkey: string) => void;
+  /** DD-131(2): how this host saves a READY snapshot package (Desktop: native dialog). */
+  snapshotExportHost?: SnapshotExportHost;
 };
 
 export type ProfileAgentLookup =
@@ -347,14 +354,36 @@ export function UserProfileAgentPanel({
   );
 
   const lifecycle = useLifecycleRequest(reload);
+  // DD-131(2) owner entry: the Definition's published version (Definition `read`; export is
+  // owner-approved in Core, so a non-owner never sees the entry).
+  const [definition] = useLoad(
+    `profile-agent-definition:${viewerIsOwner}:${installation.agentResourceId}`,
+    () => (viewerIsOwner ? client.agentDefinition(installation.agentResourceId) : Promise.resolve(null)),
+  );
+  const exportable: SnapshotExportTarget | null =
+    definition.status === "ok" && definition.data && definition.data.resourceId === installation.agentResourceId
+      && definition.data.ownerPrincipalId === currentPrincipalId && definition.data.currentPublishedVersionAssetId
+      ? { resourceId: definition.data.resourceId, resourceVersion: definition.data.resourceVersion,
+          displayName, versionAssetId: definition.data.currentPublishedVersionAssetId }
+      : null;
+  const [exportTarget, setExportTarget] = React.useState<SnapshotExportTarget | null>(null);
   const canDeleteAgent = viewerIsOwner && installation.canDisable === true;
   const showInstructionBlock = viewerIsOwner && instruction !== null;
 
-  const { headerActions, headerLeftContent } = getUserProfilePanelHeaderContent({
+  const { headerActions: baseHeaderActions, headerLeftContent } = getUserProfilePanelHeaderContent({
     onBack: () => setView("summary"),
     t,
     view,
   });
+  const headerActions = view === "summary" && exportable ? (
+    <>
+      {baseHeaderActions}
+      <Button data-testid="user-profile-export-snapshot" size="sm" type="button" variant="ghost"
+        onClick={() => setExportTarget(exportable)}>
+        {t("agents.export.export")}
+      </Button>
+    </>
+  ) : baseHeaderActions;
 
   const profileBody = (
     <AuxiliaryPanelBody
@@ -423,7 +452,10 @@ export function UserProfileAgentPanel({
       onClose={onClose}
       onResetWidth={onResetWidth}
       onResizeStart={onResizeStart}
-      personaDialogs={lifecycle.dialog}
+      personaDialogs={<>
+        {lifecycle.dialog}
+        <AgentSnapshotExportDialog target={exportTarget} host={scope.snapshotExportHost} onClose={() => setExportTarget(null)} />
+      </>}
       profileBody={profileBody}
       splitPaneClamp={splitPaneClamp}
       stickyChromeActive={view === "summary" && stickyChrome.active}

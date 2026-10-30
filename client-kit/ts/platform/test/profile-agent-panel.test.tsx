@@ -25,6 +25,7 @@ const directoryPath = "/api/v1/agent-installations?workspaceId=workspace&offset=
 const membersPath = "/api/v1/workspaces/workspace/members";
 const usersPath = "/api/v1/agent-installations/installation/users";
 const versionPath = "/api/v1/agent-versions/version";
+const definitionPath = "/api/v1/agent-definitions/definition";
 
 const installation = {
   resourceId: "installation",
@@ -110,6 +111,10 @@ async function setup({
     }
     if (request.path === usersPath) {
       return { status: 200, body: { installationId: "installation", resourceVersion: 3, members: [] } };
+    }
+    if (request.path === definitionPath) {
+      return { status: 200, body: { resourceId: "definition", stableSlug: "scout", displayName: "Scout", status: "PUBLISHED",
+        resourceVersion: 5, ownerPrincipalId: "owner", resourceState: "ACTIVE", currentPublishedVersionAssetId: "version" } };
     }
     if (request.path === versionPath) {
       return { status: 200, body: { assetId: "version", content: { instructions: "Review every release note." } } };
@@ -224,5 +229,14 @@ describe("Agent profile panel over the admitted Installation", () => {
     await click(byTestId(host, "user-profile-delete-agent-row")!);
     expect(byTestId(document, "agent-lifecycle-confirm")?.textContent).toContain("Remove 1 agent from channel?");
     expect(send.mock.calls.every(([request]) => request.method === "GET")).toBe(true);
+  });
+
+  it("offers the owner the original Export entry for the published version only (1672, DD-131(2))", async () => {
+    const { host } = await setup();
+    await click(byTestId(host, "user-profile-export-snapshot")!);
+    expect(byTestId(document, "agent-snapshot-export-dialog")?.textContent).toContain("Export Scout");
+    const { host: member, send } = await setup({ principal: "member" });
+    expect(byTestId(member, "user-profile-export-snapshot")).toBeNull();
+    expect(send.mock.calls.some(([request]) => request.path === definitionPath)).toBe(false);
   });
 });

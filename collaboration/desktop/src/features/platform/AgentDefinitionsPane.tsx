@@ -9,7 +9,8 @@ import { useActiveCommunity } from "@/features/platform/activeCommunity";
 import { uploadProfileAvatar } from "@/shared/api/tauriProfiles";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { performDefaultHaptic } from "@/shared/lib/haptics";
-import { getChannels, invokeTauri, uploadMediaBytes } from "@/shared/api/tauri";
+import { getChannels, uploadMediaBytes } from "@/shared/api/tauri";
+import { snapshotExportHost } from "./snapshotExportHost";
 import { useQueryClient } from "@tanstack/react-query";
 import { buildOutgoingMessage } from "@client-kit/platform/react/composer/features/messages/lib/imetaMediaMarkdown";
 import { channelsQueryKey } from "@/features/channels/hooks";
@@ -18,14 +19,6 @@ import { useIdentityQuery } from "@/shared/api/hooks";
 
 type AgentProps = NonNullable<ComponentProps<typeof AgentDefinitionsPage>>;
 type Props = Pick<AgentProps, "workspaceId" | "onWorkspaceChange">;
-
-// DD-131(2): a READY ExportPackage is saved through the native dialog; the device session
-// fetches only the package's own BFF download route.
-const snapshotExportHost: NonNullable<AgentProps["snapshotExportHost"]> = {
-  save: (view) => invokeTauri<boolean>("platform_export_package_save", { assetId: view.packageAssetId, fileName: view.fileName }),
-  readBytes: async (view) =>
-    new Uint8Array(await invokeTauri<ArrayBuffer>("platform_export_package_read", { assetId: view.packageAssetId })),
-};
 
 export function AgentDefinitionsPane(props: Props) {
   const community = useActiveCommunity();
