@@ -24,6 +24,21 @@
   height: 100vh;
 }
 
+// DD-138(6) (`20` §13.2 管理面页): one admin function, no frame of its own;
+// the root fills the frame and only the content scrolls. Forms: padding 24,
+// at most 720 wide.
+.kailo-admin-surface {
+  height: 100vh;
+  overflow: auto;
+  background: var(--kailo-color-background);
+  color: var(--kailo-color-foreground);
+}
+
+.kailo-admin-surface__form {
+  max-width: 720px;
+  padding: 24px;
+}
+
 .ant-layout,
 .ant-layout-sider,
 .ant-layout-content {

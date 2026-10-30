@@ -1,12 +1,8 @@
-import { useEffect } from 'react';
 import { Layout } from 'antd';
 import styled, { css } from 'styled-components';
 import SimpleLayout from '@/components/layouts/SimpleLayout';
 import Sidebar from '@/components/sidebar';
-import Settings from '@/components/settings';
-import useModalAction from '@/hooks/useModalAction';
 import useKailoSession from '@/hooks/useKailoSession';
-import * as events from '@/utils/events';
 
 const { Sider } = Layout;
 
@@ -39,15 +35,9 @@ type Props = React.ComponentProps<typeof SimpleLayout> & {
 
 export default function SiderLayout(props: Props) {
   const { sidebar, loading, color } = props;
-  const settings = useModalAction();
-  const { hostPage, isAdmin } = useKailoSession();
-
-  // "数据源设置" (Kailo header menu or the top-level header), admins only.
-  useEffect(() => {
-    const open = () => isAdmin && settings.openModal();
-    events.subscribe(events.EVENT_NAME.OPEN_SETTINGS, open);
-    return () => events.unsubscribe(events.EVENT_NAME.OPEN_SETTINGS, open);
-  }, [isAdmin]);
+  // DD-138(6): no settings dialog on business pages; data source and project
+  // settings are Kailo admin surfaces.
+  const { hostPage } = useKailoSession();
 
   return (
     <SimpleLayout loading={loading}>
@@ -59,7 +49,6 @@ export default function SiderLayout(props: Props) {
           {props.children}
         </StyledContentLayout>
       </Layout>
-      <Settings {...settings.state} onClose={settings.closeModal} />
     </SimpleLayout>
   );
 }

@@ -1,10 +1,8 @@
-import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import { DataNode } from 'antd/es/tree';
 import { PlusIcon } from '@/components/kailo/KailoIcons';
 import useKailoText, { useKailoLocale } from '@/utils/kailoI18n';
-import { confirm } from '@/utils/kailoHost';
-import { Path } from '@/utils/enum';
+import { notify } from '@/utils/kailoHost';
 import { DiagramView } from '@/utils/data';
 import { getNodeTypeIcon } from '@/utils/nodeType';
 import {
@@ -22,23 +20,18 @@ interface Props {
 
 export default function ViewTree(props: Props) {
   const { views } = props;
-  const router = useRouter();
   const t = useKailoText();
   // The tree is cached in state: rebuild it when the page locale changes (the
   // embedded page switches its Next locale after the first render).
   const locale = useKailoLocale();
 
-  // Views are saved from answers: explain, and offer to go and ask.
-  const onAddView = async () => {
-    const go = await confirm({
-      tone: 'default',
-      title: t('modeling.howToCreateView'),
-      description: t('modeling.howToCreateViewHint'),
-      confirmLabel: t('modeling.goAsk'),
-      cancelLabel: t('cancel'),
-    });
-    if (go) router.push(Path.Home);
-  };
+  // Views are saved from answers: explain. DD-138(6): this tree is on the
+  // modeling admin surface, which links to no business page.
+  const onAddView = () =>
+    notify.info(
+      t('modeling.howToCreateView'),
+      t('modeling.howToCreateViewHint'),
+    );
 
   const getViewGroupNode = createTreeGroupNode({
     groupName: t('modeling.views'),

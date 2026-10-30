@@ -664,6 +664,7 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/application-bindings/{id}/native-page",
             get(crate::application_page::get),
         )
+        .exposed_route("/api/v1/admin-surfaces", get(crate::admin_surface::list))
         .exposed_route(
             "/api/v1/platform/capability-contracts",
             get(crate::capability_contract::list),

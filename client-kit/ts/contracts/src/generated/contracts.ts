@@ -895,6 +895,99 @@ export enum ComponentSearchResultKind {
 }
 
 /**
+ * DD-138(6)：当前 HUMAN 可管理的组件管理面（07 §4.8.5）。只含当前 Tenant 级与所给 Workspace 级 ACTIVE binding 的 pin
+ * APPROVED release 所声明、且逐项 fresh manage 通过的项；不含 URL、component_type_key、配置或凭据。
+ */
+export interface AdminSurfacePage {
+    items: AdminSurfaceEntry[];
+}
+
+export interface AdminSurfaceEntry {
+    bindingId: string;
+    /**
+     * DD-127(4) presentation category used as the source label (云盘、知识库、问数); grants nothing.
+     */
+    nativePageCategory?: NativePageCategory;
+    surface:             ComponentAdminSurfaceDeclaration;
+    workspaceId?:        string;
+}
+
+/**
+ * DD-127(4) presentation category used as the source label (云盘、知识库、问数); grants nothing.
+ *
+ * DD-127(4)：NATIVE_PAGE 入口的呈现类别，决定侧边栏标签与图标；不授予能力、不参与类别解析或授权。
+ *
+ * DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
+ * labels the entry by capabilityCategories ∪ this value; it grants nothing.
+ */
+export enum NativePageCategory {
+    DataQuery = "data_query",
+    FileStorage = "file_storage",
+    Knowledge = "knowledge",
+}
+
+/**
+ * DD-138(6)：KAILO_EMBED 原生页面 release 向 Kailo 管理区贡献的一项管理面声明（03
+ * FrontendPresentationContract.admin_surface_declarations[]，07 §4.8.5）。值对象，随 APPROVED
+ * release 固定；不授予权限，Core 不保存管理状态。键、路径与文案规则由 Core 登记时校验。
+ *
+ * DD-138(6): present only when the descriptor was requested for a declared admin surface
+ * after a fresh manage check (07 §4.8.5); url is then origin + the declared path and the
+ * host adds kailo_admin_surface=<key>.
+ */
+export interface ComponentAdminSurfaceDeclaration {
+    access:        ComponentAdminAccess;
+    adminCategory: ComponentAdminCategory;
+    description?:  ComponentAdminSurfaceText;
+    /**
+     * 管理面标识，2–4 段以 . 连接，不含组件名；成员、角色、邀请、空间与组织类首段被拒绝。
+     */
+    key: string;
+    /**
+     * 组件 origin 内的固定路径，以单个 / 开头，不含查询与片段。
+     */
+    path:               string;
+    requiredPermission: ComponentAdminPermission;
+    title:              ComponentAdminSurfaceText;
+}
+
+/**
+ * DD-138(6)：管理面的可写性（07 §4.8.5）。EDITABLE 为组件自有、页内可改的设置；READ_ONLY 为由 Kailo
+ * 派生或部署声明、组件内只读展示的设置，组件服务端在 Kailo 模式下拒绝对应写接口。
+ */
+export enum ComponentAdminAccess {
+    Editable = "EDITABLE",
+    ReadOnly = "READ_ONLY",
+}
+
+/**
+ * DD-138(6)：组件管理面所属的 Kailo 管理分类（07 §4.8.5）。MODELS 模型、DATA_SOURCES 数据源、STORAGE 存储、INDEXING
+ * 索引与解析、INTEGRATIONS 集成、SYSTEM 系统；不按组件分类。
+ */
+export enum ComponentAdminCategory {
+    DataSources = "DATA_SOURCES",
+    Indexing = "INDEXING",
+    Integrations = "INTEGRATIONS",
+    Models = "MODELS",
+    Storage = "STORAGE",
+    System = "SYSTEM",
+}
+
+export interface ComponentAdminSurfaceText {
+    EN:    string;
+    ZH_CN: string;
+}
+
+/**
+ * DD-138(6)：打开管理面所需的 Kailo 权限（07 §4.8.5）。BINDING_MANAGE 为 binding 所属 scope（Workspace 或
+ * Tenant）的 manage；TENANT_MANAGE 为 Tenant manage。只决定 Kailo 是否列出与签发 descriptor，组件服务端仍按目录角色判定。
+ */
+export enum ComponentAdminPermission {
+    BindingManage = "BINDING_MANAGE",
+    TenantManage = "TENANT_MANAGE",
+}
+
+/**
  * GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
  * Installation audit 的运行中回合；没有 audit 的 Installation 不出现（成员只见 20002）。每次读取写 ACCESS 审计。
  */
@@ -2319,18 +2412,6 @@ export interface ApplicationHumanActionPolicy {
 }
 
 /**
- * DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
- * labels the entry by capabilityCategories ∪ this value; it grants nothing.
- *
- * DD-127(4)：NATIVE_PAGE 入口的呈现类别，决定侧边栏标签与图标；不授予能力、不参与类别解析或授权。
- */
-export enum NativePageCategory {
-    DataQuery = "data_query",
-    FileStorage = "file_storage",
-    Knowledge = "knowledge",
-}
-
-/**
  * DD-138：KAILO_EMBED release 向 Kailo 设置页贡献的一项偏好声明（03
  * FrontendPresentationContract.preference_declarations[]，07 §4.8.2）。值对象，随 APPROVED release
  * 固定；Core 不保存偏好的值。键规则、选项数量与文案长度由 Core 登记时校验。
@@ -2397,6 +2478,12 @@ export enum ApplicationBindingState {
  * deployment approved; no native credential or page body is returned.
  */
 export interface ApplicationNativePage {
+    /**
+     * DD-138(6): present only when the descriptor was requested for a declared admin surface
+     * after a fresh manage check (07 §4.8.5); url is then origin + the declared path and the
+     * host adds kailo_admin_surface=<key>.
+     */
+    adminSurface?:  ComponentAdminSurfaceDeclaration;
     allowedOrigins: string[];
     bindingId:      string;
     origin:         string;

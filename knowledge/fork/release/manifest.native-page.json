@@ -1,7 +1,7 @@
 {
   "id": "{{releaseId}}",
   "componentTypeKey": "weknora",
-  "version": "1.6.0-native-page",
+  "version": "1.7.0-native-page",
   "class": "APPLICATION",
   "platformPortKey": "NONE",
   "manifestSchemaVersion": 1,
@@ -63,6 +63,68 @@
       "EN": "en-US"
     },
     "themeChangePolicy": "LIVE",
-    "localeResolutionPolicy": "BROWSER_RESOLVED"
+    "localeResolutionPolicy": "BROWSER_RESOLVED",
+    "adminSurfaces": [
+      {
+        "key": "models.catalog",
+        "adminCategory": "MODELS",
+        "path": "/platform/admin/models",
+        "requiredPermission": "TENANT_MANAGE",
+        "access": "READ_ONLY",
+        "title": {
+          "ZH_CN": "模型目录",
+          "EN": "Model catalog"
+        },
+        "description": {
+          "ZH_CN": "知识库与问答可选用的模型，由平台模型路由提供。",
+          "EN": "Models that knowledge bases and answers can use, provided by platform model routing."
+        }
+      },
+      {
+        "key": "storage.backends",
+        "adminCategory": "STORAGE",
+        "path": "/platform/admin/storage",
+        "requiredPermission": "TENANT_MANAGE",
+        "access": "READ_ONLY",
+        "title": {
+          "ZH_CN": "存储与向量库",
+          "EN": "Storage and vector stores"
+        },
+        "description": {
+          "ZH_CN": "文件存储与向量库由部署声明，在此只读查看。",
+          "EN": "File storage and vector stores are set by the deployment and shown here read-only."
+        }
+      },
+      {
+        "key": "indexing.parsers",
+        "adminCategory": "INDEXING",
+        "path": "/platform/admin/parsers",
+        "requiredPermission": "TENANT_MANAGE",
+        "access": "READ_ONLY",
+        "title": {
+          "ZH_CN": "文档解析引擎",
+          "EN": "Document parsers"
+        },
+        "description": {
+          "ZH_CN": "解析文档所用的引擎与可处理的文件类型，由部署声明。",
+          "EN": "Engines that parse documents and the file types they handle, set by the deployment."
+        }
+      },
+      {
+        "key": "answers.webSearch",
+        "adminCategory": "INTEGRATIONS",
+        "path": "/platform/admin/web-search",
+        "requiredPermission": "TENANT_MANAGE",
+        "access": "EDITABLE",
+        "title": {
+          "ZH_CN": "联网搜索",
+          "EN": "Web search"
+        },
+        "description": {
+          "ZH_CN": "配置问答使用的联网搜索服务。",
+          "EN": "Set up the web search services answers use."
+        }
+      }
+    ]
   }
 }

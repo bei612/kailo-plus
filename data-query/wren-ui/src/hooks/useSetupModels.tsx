@@ -1,15 +1,18 @@
 import { useState } from 'react';
-import { Path, SETUP } from '@/utils/enum';
-import { useRouter } from 'next/router';
+import { SETUP } from '@/utils/enum';
 import {
   useListDataSourceTablesQuery,
   useSaveTablesMutation,
 } from '@/apollo/client/graphql/dataSource.generated';
 
-export default function useSetupModels() {
+// DD-138(6): a step of the data source admin surface (no route of its own).
+export default function useSetupModels(
+  callbacks: {
+    onSaved?: () => void;
+    onBack?: () => void;
+  } = {},
+) {
   const [stepKey] = useState(SETUP.SELECT_MODELS);
-
-  const router = useRouter();
 
   const { data, loading: fetching } = useListDataSourceTablesQuery({
     fetchPolicy: 'no-cache',
@@ -26,14 +29,14 @@ export default function useSetupModels() {
           data: { tables },
         },
       });
-      router.push(Path.OnboardingRelationships);
+      callbacks.onSaved?.();
     } catch (error) {
       console.error(error);
     }
   };
 
   const onBack = () => {
-    router.push(Path.OnboardingConnection);
+    callbacks.onBack?.();
   };
 
   const onNext = (data: { selectedTables: string[] }) => {

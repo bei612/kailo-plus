@@ -37,6 +37,11 @@
  *                       when the request carried one and confirmed is true
  *   Kailo -> component  presentation carries features:[...] the host draws/handles;
  *                       <html data-kailo-host-features> mirrors it once known
+ * DD-138(6) admin surfaces (design 07 §4.8.5): Kailo loads one declared admin
+ * function with the launch parameter kailo_admin_surface=<key>; KailoEmbed.adminSurface()
+ * returns that key (kept for this path across OIDC redirects) or null. It only selects
+ * which admin function to render; the component server still decides authority.
+ *
  * Text in page/toast/confirm is display text for this user's own browser
  * only: Kailo renders it as plain text, never stores, logs or sends it on.
  */
@@ -50,6 +55,7 @@
   var LOCALES = ["zh-CN", "en"];
   var STORE_KEY = "kailo-embed-presentation";
   var PREFERENCES_KEY = "kailo-embed-preferences";
+  var ADMIN_SURFACE_KEY = "kailo-embed-admin-surface";
   var PREFERENCE_KEY = /^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*){1,3}$/;
   var PREFERENCE_OPTION = /^[A-Za-z0-9._-]{1,32}$/;
   var MAX_PREFERENCES = 16;
@@ -129,6 +135,35 @@
 
   var params;
   try { params = new URLSearchParams(global.location.search); } catch (e) { params = null; }
+
+  // DD-138(6): the admin surface Kailo launched this document for. Same key shape as a
+  // preference key. sessionStorage is shared by every same-origin frame of the tab, so the
+  // value is bound to the launched path: it survives an OIDC redirect back to that path, and a
+  // fresh Kailo launch (kailo_theme present) without the parameter clears it.
+  function readAdminSurface() {
+    var path = global.location.pathname;
+    var launched = params ? params.getAll("kailo_admin_surface") : [];
+    if (launched.length) {
+      // Exactly one well-formed key; a repeated parameter is as invalid as a malformed one.
+      var valid = launched.length === 1 && launched[0].length <= 64 && PREFERENCE_KEY.test(launched[0]) ? launched[0] : null;
+      try {
+        if (valid) global.sessionStorage.setItem(ADMIN_SURFACE_KEY, JSON.stringify({ key: valid, path: path }));
+        else global.sessionStorage.removeItem(ADMIN_SURFACE_KEY);
+      } catch (e) { /* storage denied */ }
+      return valid;
+    }
+    if (params && params.get("kailo_theme") !== null) {
+      try { global.sessionStorage.removeItem(ADMIN_SURFACE_KEY); } catch (e) { /* storage denied */ }
+      return null;
+    }
+    try {
+      var stored = JSON.parse(global.sessionStorage.getItem(ADMIN_SURFACE_KEY) || "null");
+      return stored && typeof stored.key === "string" && stored.path === path && stored.key.length <= 64
+        && PREFERENCE_KEY.test(stored.key) ? stored.key : null;
+    } catch (e) { return null; }
+  }
+  var adminSurface = readAdminSurface();
+  if (adminSurface) root.setAttribute("data-kailo-admin-surface", adminSurface);
   var stored = readStore();
   var urlTheme = params ? member(params.get("kailo_theme"), THEMES) : null;
   var urlLocale = params ? member(params.get("kailo_locale"), LOCALES) : null;
@@ -471,6 +506,8 @@
      * re-authenticate at the top level. Never show a login form in the frame.
      */
     requestTopLevelSignIn: function () { return post("auth-required"); },
+    /** DD-138(6): the declared admin surface key Kailo launched this page for, or null. */
+    adminSurface: function () { return adminSurface; },
     /** DD-138: values of the component's declared Kailo settings items that Kailo supplied. */
     getPreferences: function () { return copy(preferences); },
     /** listener(values, changedKeys); returns unsubscribe. */

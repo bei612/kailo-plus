@@ -1,7 +1,5 @@
 import { Button, Select, Row, Col, Form, Typography } from 'antd';
 import { confirm, notify } from '@/utils/kailoHost';
-import { useRouter } from 'next/router';
-import { Path } from '@/utils/enum';
 import {
   useResetCurrentProjectMutation,
   useUpdateCurrentProjectMutation,
@@ -13,11 +11,13 @@ import { SECTION_TITLE } from './utils';
 
 interface Props {
   data: { language: string };
+  // DD-138(6): after a reset the project surface shows that the data source
+  // must be connected again (in the Kailo admin area).
+  onReset?: () => void;
 }
 
 export default function ProjectSettings(props: Props) {
-  const { data } = props;
-  const router = useRouter();
+  const { data, onReset } = props;
   const t = useKailoText();
   const [form] = Form.useForm();
   const [resetCurrentProject, { client }] = useResetCurrentProjectMutation({
@@ -45,9 +45,10 @@ export default function ProjectSettings(props: Props) {
       cancelLabel: t('cancel'),
     });
     if (!confirmed) return;
-    await resetCurrentProject();
-    client.clearStore();
-    router.push(Path.OnboardingConnection);
+    const result = await resetCurrentProject();
+    if (result.errors?.length || !result.data) return;
+    await client.clearStore();
+    onReset?.();
   };
 
   const submit = () => {

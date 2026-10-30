@@ -32,6 +32,7 @@ import {
   assertStandaloneAdmin,
   assertStandaloneOwnerOrAdmin,
   isKailoAdmin,
+  kailoAdminRead,
 } from './services/kailoUserService';
 import { kailoUserLabel } from '@/utils/kailoUser';
 
@@ -256,7 +257,7 @@ const resolvers = {
     settings: projectResolver.getSettings,
     getMDL: modelResolver.getMDL,
 
-    // Learning
+    // Learning — DD-138(7): closed, guidance is Kailo's (refused).
     learningRecord: learningResolver.getLearningRecord,
 
     // Recommendation questions
@@ -274,8 +275,8 @@ const resolvers = {
     // Instructions
     instructions: instructionResolver.getInstructions,
 
-    // API History
-    apiHistory: apiHistoryResolver.getApiHistory,
+    // API History — DD-138(7): administration data, managers only.
+    apiHistory: kailoAdminRead(apiHistoryResolver.getApiHistory),
   },
   Mutation: {
     deploy: nativeProjectResolver(modelResolver.deploy, 'manage'),

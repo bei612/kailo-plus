@@ -1,12 +1,10 @@
 import { Layout } from 'antd';
 import KailoEmpty from '@/components/kailo/KailoEmpty';
-import { SettingsIcon } from '@/components/kailo/KailoIcons';
-import { useRouter } from 'next/router';
+import { DatabaseIcon } from '@/components/kailo/KailoIcons';
 import HeaderBar from '@/components/HeaderBar';
 import PageLoading from '@/components/PageLoading';
 import { useWithOnboarding } from '@/hooks/useCheckOnboarding';
 import clsx from 'clsx';
-import { Path } from '@/utils/enum';
 import useKailoSession from '@/hooks/useKailoSession';
 import useKailoText from '@/utils/kailoI18n';
 
@@ -17,18 +15,14 @@ interface Props {
   loading?: boolean;
 }
 
+// The business page frame (asking, knowledge, API). Admin functions are Kailo
+// admin surfaces (DD-138(6)) and never use this frame.
 export default function SimpleLayout(props: Props) {
-  const { loading: fetching } = useWithOnboarding();
+  const { loading: fetching, dataSourceMissing } = useWithOnboarding();
   const { children, loading } = props;
-  const { pathname } = useRouter();
   const t = useKailoText();
-  const { isAdmin, loaded, hostPage } = useKailoSession();
-  // DD-133 §3: connection, onboarding and modeling are Kailo Tenant admin
-  // pages (the server enforces the same rule on every write).
-  const adminOnly =
-    pathname.startsWith(Path.Onboarding) || pathname.startsWith(Path.Modeling);
-  const blocked = adminOnly && loaded && !isAdmin;
-  const pageLoading = fetching || loading || (adminOnly && !loaded);
+  const { hostPage } = useKailoSession();
+  const pageLoading = fetching || (!dataSourceMissing && loading);
   return (
     <Layout
       className={clsx('adm-main bg-gray-3', {
@@ -38,17 +32,14 @@ export default function SimpleLayout(props: Props) {
       {/* DD-157: inside Kailo the header (tabs, actions) is Kailo's. */}
       {!hostPage && <HeaderBar />}
       <Content className="adm-content">
-        {blocked ? (
-          // DD-157 (20 §13 空态): Kailo state, no upstream illustration.
+        {dataSourceMissing ? (
+          // DD-138(6) first use (`07` §4.8.5 obligation 4): the connection is
+          // made in the Kailo admin area, never from a business page.
           <KailoEmpty
             className="h-100"
-            icon={SettingsIcon}
-            title={t('adminRequiredTitle')}
-            description={
-              pathname.startsWith(Path.Onboarding)
-                ? t('adminRequiredOnboarding')
-                : t('adminOnly')
-            }
+            icon={DatabaseIcon}
+            title={t('dataSourceMissingTitle')}
+            description={t('dataSourceMissingHint')}
           />
         ) : (
           children

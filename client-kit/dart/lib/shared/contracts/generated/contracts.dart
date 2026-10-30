@@ -49,6 +49,7 @@
 //     final adapterSourceResource = adapterSourceResourceFromJson(jsonString);
 //     final actionCommand = actionCommandFromJson(jsonString);
 //     final actionSubmission = actionSubmissionFromJson(jsonString);
+//     final adminSurfacePage = adminSurfacePageFromJson(jsonString);
 //     final agentActiveTurnPage = agentActiveTurnPageFromJson(jsonString);
 //     final agentActiveTurnView = agentActiveTurnViewFromJson(jsonString);
 //     final agentAuthorDirectory = agentAuthorDirectoryFromJson(jsonString);
@@ -314,6 +315,7 @@
 //     final capabilityVectorBinding = capabilityVectorBindingFromJson(jsonString);
 //     final capabilityVectorCapture = capabilityVectorCaptureFromJson(jsonString);
 //     final componentActionInput = componentActionInputFromJson(jsonString);
+//     final componentAdminSurfaceDeclaration = componentAdminSurfaceDeclarationFromJson(jsonString);
 //     final componentConformanceCaptureValue = componentConformanceCaptureValueFromJson(jsonString);
 //     final componentConformanceEnvironment = componentConformanceEnvironmentFromJson(jsonString);
 //     final componentConformanceFixture = componentConformanceFixtureFromJson(jsonString);
@@ -719,6 +721,12 @@ ActionSubmission actionSubmissionFromJson(String str) =>
     ActionSubmission.fromJson(json.decode(str));
 
 String actionSubmissionToJson(ActionSubmission data) =>
+    json.encode(data.toJson());
+
+AdminSurfacePage adminSurfacePageFromJson(String str) =>
+    AdminSurfacePage.fromJson(json.decode(str));
+
+String adminSurfacePageToJson(AdminSurfacePage data) =>
     json.encode(data.toJson());
 
 AgentActiveTurnPage agentActiveTurnPageFromJson(String str) =>
@@ -2320,6 +2328,14 @@ ComponentActionInput componentActionInputFromJson(String str) =>
 
 String componentActionInputToJson(ComponentActionInput data) =>
     json.encode(data.toJson());
+
+ComponentAdminSurfaceDeclaration componentAdminSurfaceDeclarationFromJson(
+  String str,
+) => ComponentAdminSurfaceDeclaration.fromJson(json.decode(str));
+
+String componentAdminSurfaceDeclarationToJson(
+  ComponentAdminSurfaceDeclaration data,
+) => json.encode(data.toJson());
 
 ComponentConformanceCaptureValue componentConformanceCaptureValueFromJson(
   String str,
@@ -5174,6 +5190,178 @@ final componentSearchResultKindValues = EnumValues({
   "FOLDER": ComponentSearchResultKind.FOLDER,
   "KNOWLEDGE_BASE": ComponentSearchResultKind.KNOWLEDGE_BASE,
   "QUESTION": ComponentSearchResultKind.QUESTION,
+});
+
+///DD-138(6)：当前 HUMAN 可管理的组件管理面（07 §4.8.5）。只含当前 Tenant 级与所给 Workspace 级 ACTIVE binding 的 pin
+///APPROVED release 所声明、且逐项 fresh manage 通过的项；不含 URL、component_type_key、配置或凭据。
+class AdminSurfacePage {
+  final List<AdminSurfaceEntry> items;
+
+  AdminSurfacePage({required this.items});
+
+  factory AdminSurfacePage.fromJson(Map<String, dynamic> json) =>
+      AdminSurfacePage(
+        items: List<AdminSurfaceEntry>.from(
+          json["items"].map((x) => AdminSurfaceEntry.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"items": List<dynamic>.from(items.map((x) => x.toJson()))});
+}
+
+class AdminSurfaceEntry {
+  final String bindingId;
+
+  ///DD-127(4) presentation category used as the source label (云盘、知识库、问数); grants nothing.
+  final NativePageCategory? nativePageCategory;
+  final ComponentAdminSurfaceDeclaration surface;
+  final String? workspaceId;
+
+  AdminSurfaceEntry({
+    required this.bindingId,
+    this.nativePageCategory,
+    required this.surface,
+    this.workspaceId,
+  });
+
+  factory AdminSurfaceEntry.fromJson(Map<String, dynamic> json) =>
+      AdminSurfaceEntry(
+        bindingId: json["bindingId"],
+        nativePageCategory: json["nativePageCategory"] == null
+            ? null
+            : nativePageCategoryValues.map[json["nativePageCategory"]]!,
+        surface: ComponentAdminSurfaceDeclaration.fromJson(json["surface"]),
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingId": bindingId,
+    "nativePageCategory": nativePageCategoryValues.reverse[nativePageCategory],
+    "surface": surface.toJson(),
+    "workspaceId": workspaceId,
+  });
+}
+
+///DD-127(4) presentation category used as the source label (云盘、知识库、问数); grants nothing.
+///
+///DD-127(4)：NATIVE_PAGE 入口的呈现类别，决定侧边栏标签与图标；不授予能力、不参与类别解析或授权。
+///
+///DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
+///labels the entry by capabilityCategories ∪ this value; it grants nothing.
+enum NativePageCategory { DATA_QUERY, FILE_STORAGE, KNOWLEDGE }
+
+final nativePageCategoryValues = EnumValues({
+  "data_query": NativePageCategory.DATA_QUERY,
+  "file_storage": NativePageCategory.FILE_STORAGE,
+  "knowledge": NativePageCategory.KNOWLEDGE,
+});
+
+///DD-138(6)：KAILO_EMBED 原生页面 release 向 Kailo 管理区贡献的一项管理面声明（03
+///FrontendPresentationContract.admin_surface_declarations[]，07 §4.8.5）。值对象，随 APPROVED
+///release 固定；不授予权限，Core 不保存管理状态。键、路径与文案规则由 Core 登记时校验。
+///
+///DD-138(6): present only when the descriptor was requested for a declared admin surface
+///after a fresh manage check (07 §4.8.5); url is then origin + the declared path and the
+///host adds kailo_admin_surface=<key>.
+class ComponentAdminSurfaceDeclaration {
+  final ComponentAdminAccess access;
+  final ComponentAdminCategory adminCategory;
+  final ComponentAdminSurfaceText? description;
+
+  ///管理面标识，2–4 段以 . 连接，不含组件名；成员、角色、邀请、空间与组织类首段被拒绝。
+  final String key;
+
+  ///组件 origin 内的固定路径，以单个 / 开头，不含查询与片段。
+  final String path;
+  final ComponentAdminPermission requiredPermission;
+  final ComponentAdminSurfaceText title;
+
+  ComponentAdminSurfaceDeclaration({
+    required this.access,
+    required this.adminCategory,
+    this.description,
+    required this.key,
+    required this.path,
+    required this.requiredPermission,
+    required this.title,
+  });
+
+  factory ComponentAdminSurfaceDeclaration.fromJson(
+    Map<String, dynamic> json,
+  ) => ComponentAdminSurfaceDeclaration(
+    access: componentAdminAccessValues.map[json["access"]]!,
+    adminCategory: componentAdminCategoryValues.map[json["adminCategory"]]!,
+    description: json["description"] == null
+        ? null
+        : ComponentAdminSurfaceText.fromJson(json["description"]),
+    key: json["key"],
+    path: json["path"],
+    requiredPermission:
+        componentAdminPermissionValues.map[json["requiredPermission"]]!,
+    title: ComponentAdminSurfaceText.fromJson(json["title"]),
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "access": componentAdminAccessValues.reverse[access],
+    "adminCategory": componentAdminCategoryValues.reverse[adminCategory],
+    "description": description?.toJson(),
+    "key": key,
+    "path": path,
+    "requiredPermission":
+        componentAdminPermissionValues.reverse[requiredPermission],
+    "title": title.toJson(),
+  });
+}
+
+///DD-138(6)：管理面的可写性（07 §4.8.5）。EDITABLE 为组件自有、页内可改的设置；READ_ONLY 为由 Kailo
+///派生或部署声明、组件内只读展示的设置，组件服务端在 Kailo 模式下拒绝对应写接口。
+enum ComponentAdminAccess { EDITABLE, READ_ONLY }
+
+final componentAdminAccessValues = EnumValues({
+  "EDITABLE": ComponentAdminAccess.EDITABLE,
+  "READ_ONLY": ComponentAdminAccess.READ_ONLY,
+});
+
+///DD-138(6)：组件管理面所属的 Kailo 管理分类（07 §4.8.5）。MODELS 模型、DATA_SOURCES 数据源、STORAGE 存储、INDEXING
+///索引与解析、INTEGRATIONS 集成、SYSTEM 系统；不按组件分类。
+enum ComponentAdminCategory {
+  DATA_SOURCES,
+  INDEXING,
+  INTEGRATIONS,
+  MODELS,
+  STORAGE,
+  SYSTEM,
+}
+
+final componentAdminCategoryValues = EnumValues({
+  "DATA_SOURCES": ComponentAdminCategory.DATA_SOURCES,
+  "INDEXING": ComponentAdminCategory.INDEXING,
+  "INTEGRATIONS": ComponentAdminCategory.INTEGRATIONS,
+  "MODELS": ComponentAdminCategory.MODELS,
+  "STORAGE": ComponentAdminCategory.STORAGE,
+  "SYSTEM": ComponentAdminCategory.SYSTEM,
+});
+
+class ComponentAdminSurfaceText {
+  final String en;
+  final String zhCn;
+
+  ComponentAdminSurfaceText({required this.en, required this.zhCn});
+
+  factory ComponentAdminSurfaceText.fromJson(Map<String, dynamic> json) =>
+      ComponentAdminSurfaceText(en: json["EN"], zhCn: json["ZH_CN"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"EN": en, "ZH_CN": zhCn});
+}
+
+///DD-138(6)：打开管理面所需的 Kailo 权限（07 §4.8.5）。BINDING_MANAGE 为 binding 所属 scope（Workspace 或
+///Tenant）的 manage；TENANT_MANAGE 为 Tenant manage。只决定 Kailo 是否列出与签发 descriptor，组件服务端仍按目录角色判定。
+enum ComponentAdminPermission { BINDING_MANAGE, TENANT_MANAGE }
+
+final componentAdminPermissionValues = EnumValues({
+  "BINDING_MANAGE": ComponentAdminPermission.BINDING_MANAGE,
+  "TENANT_MANAGE": ComponentAdminPermission.TENANT_MANAGE,
 });
 
 ///GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
@@ -8643,18 +8831,6 @@ class ApplicationHumanActionPolicy {
   });
 }
 
-///DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
-///labels the entry by capabilityCategories ∪ this value; it grants nothing.
-///
-///DD-127(4)：NATIVE_PAGE 入口的呈现类别，决定侧边栏标签与图标；不授予能力、不参与类别解析或授权。
-enum NativePageCategory { DATA_QUERY, FILE_STORAGE, KNOWLEDGE }
-
-final nativePageCategoryValues = EnumValues({
-  "data_query": NativePageCategory.DATA_QUERY,
-  "file_storage": NativePageCategory.FILE_STORAGE,
-  "knowledge": NativePageCategory.KNOWLEDGE,
-});
-
 ///DD-138：KAILO_EMBED release 向 Kailo 设置页贡献的一项偏好声明（03
 ///FrontendPresentationContract.preference_declarations[]，07 §4.8.2）。值对象，随 APPROVED release
 ///固定；Core 不保存偏好的值。键规则、选项数量与文案长度由 Core 登记时校验。
@@ -8783,6 +8959,10 @@ final applicationBindingStateValues = EnumValues({
 ///Authorized ACTIVE binding's independent native page. Exact origin is release and
 ///deployment approved; no native credential or page body is returned.
 class ApplicationNativePage {
+  ///DD-138(6): present only when the descriptor was requested for a declared admin surface
+  ///after a fresh manage check (07 §4.8.5); url is then origin + the declared path and the
+  ///host adds kailo_admin_surface=<key>.
+  final ComponentAdminSurfaceDeclaration? adminSurface;
   final List<String> allowedOrigins;
   final String bindingId;
   final String origin;
@@ -8794,6 +8974,7 @@ class ApplicationNativePage {
   final String url;
 
   ApplicationNativePage({
+    this.adminSurface,
     required this.allowedOrigins,
     required this.bindingId,
     required this.origin,
@@ -8804,6 +8985,9 @@ class ApplicationNativePage {
 
   factory ApplicationNativePage.fromJson(Map<String, dynamic> json) =>
       ApplicationNativePage(
+        adminSurface: json["adminSurface"] == null
+            ? null
+            : ComponentAdminSurfaceDeclaration.fromJson(json["adminSurface"]),
         allowedOrigins: List<String>.from(json["allowedOrigins"].map((x) => x)),
         bindingId: json["bindingId"],
         origin: json["origin"],
@@ -8819,6 +9003,7 @@ class ApplicationNativePage {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "adminSurface": adminSurface?.toJson(),
     "allowedOrigins": List<dynamic>.from(allowedOrigins.map((x) => x)),
     "bindingId": bindingId,
     "origin": origin,

@@ -40,7 +40,8 @@
           </div>
 
           <!-- 集成渠道状态（编辑模式，配置在集成中心） -->
-          <div v-if="editorMode === 'edit' && editorAgent?.id" class="setting-row">
+          <!-- Kailo mode (DD-138(6)): channel integrations are not offered. -->
+          <div v-if="editorMode === 'edit' && editorAgent?.id && settingsLinks" class="setting-row">
             <div class="setting-info">
               <label>{{ $t('integrations.agentEditor.label') }}</label>
               <p class="desc">{{ isPostCreateSession ? $t('agent.editor.postCreateHint.integrationDesc') : $t('integrations.agentEditor.desc') }}</p>
@@ -782,7 +783,7 @@
                   </span>
                 </t-option>
               </t-select>
-              <a href="javascript:void(0)" class="go-settings-link"
+              <a v-if="settingsLinks" href="javascript:void(0)" class="go-settings-link"
                 @click.prevent="uiStore.openSettings('storage')">
                 {{ $t('agentEditor.imageUpload.goStorageSettings') }}
               </a>
@@ -1284,11 +1285,11 @@
               </t-select>
               <p v-if="selectedSandboxSummary" class="sandbox-selected-meta">{{ selectedSandboxSummary }}</p>
               <div class="sandbox-select-links">
-                <a href="javascript:void(0)" class="go-settings-link"
+                <a v-if="settingsLinks" href="javascript:void(0)" class="go-settings-link"
                   @click.prevent="uiStore.openSettings('sandbox')">
                   {{ $t('agent.editor.goSandboxSettings') }}
                 </a>
-                <template v-if="hasSandboxSelected && canInstallSkills">
+                <template v-if="hasSandboxSelected && canInstallSkills && settingsLinks">
                   <span class="sandbox-select-links__sep" aria-hidden="true">·</span>
                   <a
                     href="javascript:void(0)"
@@ -1322,7 +1323,7 @@
               <p v-else-if="hasSandboxSelected && skillCatalog.length === 0" class="desc empty-hint">
                 <span>{{ $t('agent.editor.noSkillsAvailable') }}</span>
                 <a
-                  v-if="canInstallSkills"
+                  v-if="canInstallSkills && settingsLinks"
                   href="javascript:void(0)"
                   class="go-settings-link"
                   @click.prevent="openSkillSettings"
@@ -1836,6 +1837,8 @@ import { SKILL_ICON } from '@/types/mention';
 import { listEmbedChannels } from '@/api/embed';
 import { getRootZoom, rectToCssPx } from '@/utils/zoom';
 import { integrationSectionKey } from '@/config/settingsRoute';
+import { isKailoMode } from '@/kailo/runtime';
+import { nativeSettingsLinks } from '@/kailo/surface';
 import {
   evaluateToolRequirement,
   deriveKbFilterFromTools,
@@ -1853,6 +1856,8 @@ const CHAT_PARSER_EXTENSIONS = [
 const uiStore = useUIStore();
 const authStore = useAuthStore();
 const router = useRouter();
+// DD-138(6): no links into native settings or integrations in Kailo mode (admin surfaces live in Kailo).
+const settingsLinks = nativeSettingsLinks(isKailoMode());
 const orgStore = useOrganizationStore();
 const chatResources = useChatResourcesStore();
 const editorResources = useEditorResourcesStore();
@@ -2042,7 +2047,8 @@ const hasSandboxSelected = computed(() => !!formData.value.config.sandbox_config
 const canEnableSkills = computed(() =>
   hasSandboxSelected.value || namedSandboxConfigs().length === 1,
 );
-const canInstallSkills = computed(() => authStore.hasRole('admin'));
+// Kailo mode (DD-163): skill installation is closed server-side; no install entries.
+const canInstallSkills = computed(() => authStore.hasRole('admin') && settingsLinks);
 
 type CatalogSkillRow = SkillCatalogItem & {
   installed: boolean
