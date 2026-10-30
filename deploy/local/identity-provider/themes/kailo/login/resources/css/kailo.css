@@ -124,3 +124,29 @@ body#keycloak-bg {
 a, .pf-v5-c-button.pf-m-link { color: var(--kailo-color-brand-600); }
 
 .pf-v5-c-login__main-footer-band { border-top-color: var(--kailo-color-border); }
+
+.pf-v5-c-login__main-header-utilities .pf-v5-c-form-control {
+  width: auto;
+  min-width: 7.5rem;
+  border-radius: var(--kailo-radius-lg);
+  border: 1px solid var(--kailo-color-border);
+  overflow: hidden;
+}
+
+.pf-v5-c-login__main-header-utilities select { padding-inline-end: 1.75rem; }
+
+.pf-v5-c-input-group > .pf-v5-c-input-group__item:first-child .pf-v5-c-form-control {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.pf-v5-c-input-group > .pf-v5-c-input-group__item:last-child .pf-v5-c-button {
+  border-start-end-radius: var(--kailo-radius-lg);
+  border-end-end-radius: var(--kailo-radius-lg);
+  border: 1px solid var(--kailo-color-input);
+  border-inline-start: 0;
+  background: var(--kailo-color-muted);
+}
+
+.pf-v5-c-form-control > input:focus,
+.pf-v5-c-form-control > select:focus { outline: none; }
