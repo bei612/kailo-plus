@@ -1,6 +1,6 @@
 package auth
 
-// Kailo unified metering (DD-163, .design/07 §4.8.8). In Kailo mode this
+// Kailo unified metering (DD-165, .design/07 §4.8.9). In Kailo mode this
 // instance reports its stored user content as an hourly `file_storage_bytes`
 // snapshot:
 //

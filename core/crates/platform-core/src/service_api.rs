@@ -262,7 +262,7 @@ pub fn router(state: ServiceState) -> Router {
             "/service/v1/component-notifications/bindings/{binding}/notifications",
             post(crate::component_notification::deliver),
         )
-        // DD-163, 07 §4.8.8: component usage reports and quota admission with
+        // DD-165, 07 §4.8.9: component usage reports and quota admission with
         // the same directory-client service identity.
         .route(
             "/service/v1/component-usage/bindings/{binding}/reports",

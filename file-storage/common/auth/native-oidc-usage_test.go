@@ -1,6 +1,6 @@
 package auth_test
 
-// DD-163, .design/07 §4.8.8: the hourly Kailo storage snapshot report.
+// DD-165, .design/07 §4.8.9: the hourly Kailo storage snapshot report.
 
 import (
 	"context"

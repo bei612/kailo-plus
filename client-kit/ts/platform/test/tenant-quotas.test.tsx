@@ -210,7 +210,7 @@ describe("TenantQuotaSection", () => {
   });
 });
 
-// DD-163(3)(4): component quota items, the per-member limit and the two usage views.
+// DD-165(3)(4): component quota items, the per-member limit and the two usage views.
 const componentQuotas = {
   setActionKey: "tenant.quota.set",
   quotas: [
@@ -228,7 +228,7 @@ const memberInput = () => {
   return input;
 };
 
-describe("TenantQuotaSection with component items (DD-163)", () => {
+describe("TenantQuotaSection with component items (DD-165)", () => {
   it("orders component items after platform items, shows member limits, bytes and banners", async () => {
     const host = await mount(componentRoutes(() => recorded));
     await settle();
@@ -330,7 +330,7 @@ function usagePage(route: Route, locale: "en" | "zh-CN" = "en") {
   );
 }
 
-describe("usage page views (DD-163(4))", () => {
+describe("usage page views (DD-165(4))", () => {
   it("a member sees only their own usage: no organization numbers, no component split", async () => {
     const page = await usagePage((r) => r.path === "/api/v1/usage/me" ? { status: 200, body: myUsage } : forbidden);
     await settle();

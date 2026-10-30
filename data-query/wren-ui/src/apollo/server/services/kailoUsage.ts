@@ -5,7 +5,7 @@ import type { KailoUserProfile } from '@/utils/kailoUser';
 import { KailoDirectoryConfig, kailoServiceToken } from './kailoMemberDirectory';
 import type { KailoIdentityRef } from './kailoNotifications';
 
-// DD-163, `.design/07` §4.8.8: in Kailo mode a data query (one question asked
+// DD-165, `.design/07` §4.8.9: in Kailo mode a data query (one question asked
 // in Data Q&A) is a Kailo quota item. Before a member's question starts an
 // asking task the instance asks Core for admission; once the native asking
 // task exists it reports one `data_query_count` usage keyed by the native
@@ -83,7 +83,7 @@ const identityValid = (value: KailoIdentityRef | null | undefined) =>
   typeof value.subject === 'string' &&
   !!value.subject;
 
-// The Kailo wording in place of a refused question (07 §4.8.8).
+// The Kailo wording in place of a refused question (07 §4.8.9).
 export function usageRefusalText(
   decision: KailoUsageDecision,
   locale: string | null | undefined,

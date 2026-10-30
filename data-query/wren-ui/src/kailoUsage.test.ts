@@ -13,7 +13,7 @@ import {
 import { KailoDirectoryConfig } from './apollo/server/services/kailoMemberDirectory';
 import { KailoUserProfile } from './utils/kailoUser';
 
-// DD-163, `.design/07` §4.8.8: Data Q&A questions are admitted by the Kailo
+// DD-165, `.design/07` §4.8.9: Data Q&A questions are admitted by the Kailo
 // quota before an asking task exists and reported once per native query.
 
 const ISSUER = 'https://idp.example.test/realms/kailo';

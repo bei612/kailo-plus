@@ -124,7 +124,7 @@ export const initComponents = () => {
     kailoUserRepository,
     kailoMemberDirectory,
   );
-  // DD-163, `07` §4.8.8: Kailo quota admission and usage reports with the
+  // DD-165, `07` §4.8.9: Kailo quota admission and usage reports with the
   // same directory client; a no-op without the directory configuration.
   const kailoUsage = new KailoUsage(kailoDirectoryConfiguration);
   const kailoShareService = new KailoShareService(

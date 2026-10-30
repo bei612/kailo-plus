@@ -12803,7 +12803,7 @@ class ComponentSearchQuery {
       _stripNulls({"limit": limit, "locale": locale, "q": q});
 }
 
-///DD-163(3)：额度准入结论。OpenMeter 不可读时 Core 以 503 回应而不给出结论，组件不得放行。组件可把 ALLOWED 缓存至多 60 秒。
+///DD-165(3)：额度准入结论。OpenMeter 不可读时 Core 以 503 回应而不给出结论，组件不得放行。组件可把 ALLOWED 缓存至多 60 秒。
 class ComponentUsageAdmission {
   final ComponentUsageDecision decision;
 
@@ -12824,7 +12824,7 @@ class ComponentUsageAdmission {
   });
 }
 
-///DD-163(3)：组件额度准入结论（CHECK，不预留）。TENANT_QUOTA_EXHAUSTED：该 Tenant
+///DD-165(3)：组件额度准入结论（CHECK，不预留）。TENANT_QUOTA_EXHAUSTED：该 Tenant
 ///的额度项无访问；MEMBER_QUOTA_EXHAUSTED：设置了成员上限且本人本期已用不小于它。两者组件都拒绝该动作且不产生原生副作用。
 enum ComponentUsageDecision {
   ALLOWED,
@@ -12838,7 +12838,7 @@ final componentUsageDecisionValues = EnumValues({
   "TENANT_QUOTA_EXHAUSTED": ComponentUsageDecision.TENANT_QUOTA_EXHAUSTED,
 });
 
-///DD-163、07 §4.8.8：组件在动作开始前向 POST
+///DD-165、07 §4.8.9：组件在动作开始前向 POST
 ////service/v1/component-usage/bindings/{bindingId}/admission 询问额度。身份、前提与 meter
 ///类别规则同上报；未知字段整体拒绝。
 class ComponentUsageAdmissionRequest {
@@ -12862,7 +12862,7 @@ class ComponentUsageAdmissionRequest {
   });
 }
 
-///DD-163、07 §4.8.8：组件可上报或询问准入的平台 meter，随 Core 固定。knowledge_answer_count 只属 knowledge
+///DD-165、07 §4.8.9：组件可上报或询问准入的平台 meter，随 Core 固定。knowledge_answer_count 只属 knowledge
 ///呈现类别、data_query_count 只属 data_query、file_storage_bytes 只属
 ///file_storage；component_model_tokens 只来自 Gateway durable usage，不可上报。
 enum ComponentUsageMeter {
@@ -12877,7 +12877,7 @@ final componentUsageMeterValues = EnumValues({
   "knowledge_answer_count": ComponentUsageMeter.KNOWLEDGE_ANSWER_COUNT,
 });
 
-///DD-163(4)：GET /api/v1/usage/components?from=&to=，Tenant 在区间内按组件（binding）拆分的 committed
+///DD-165(4)：GET /api/v1/usage/components?from=&to=，Tenant 在区间内按组件（binding）拆分的 committed
 ///usage。调用方须持有 Tenant audit permission，每次 fresh Check。数值直接读 OpenMeter（group_by
 ///component_binding_id），不复制成账本；缺失事实以确定状态表达。
 class ComponentUsagePage {
@@ -13000,7 +13000,7 @@ final meterUsageStateValues = EnumValues({
       MeterUsageState.WORKSPACE_DIMENSION_UNAVAILABLE,
 });
 
-///DD-163：上报回执。新建 201、同键同内容重复 200（duplicate=true）。usageEventId 是 Core UsageEvent 与 OpenMeter
+///DD-165：上报回执。新建 201、同键同内容重复 200（duplicate=true）。usageEventId 是 Core UsageEvent 与 OpenMeter
 ///event 的同一 ID；回执不表示 OpenMeter 已存储。
 class ComponentUsageReceipt {
   final bool duplicate;
@@ -13018,7 +13018,7 @@ class ComponentUsageReceipt {
       _stripNulls({"duplicate": duplicate, "usageEventId": usageEventId});
 }
 
-///DD-163、07 §4.8.8：组件以其成员目录 client 的 client-credentials 令牌向 Core 服务监听面 POST
+///DD-165、07 §4.8.9：组件以其成员目录 client 的 client-credentials 令牌向 Core 服务监听面 POST
 ////service/v1/component-usage/bindings/{bindingId}/reports 上报的一条已发生用量。Core 写
 ///COMPONENT_REPORT UsageEvent；不建立 ActionExecution、不授予权限；未知字段整体拒绝。
 class ComponentUsageReport {
@@ -16788,7 +16788,7 @@ class McpOauthStartRequest {
   });
 }
 
-///DD-163(4)：GET /api/v1/usage/me，当前会话成员本人的用量（「我的用量」）。只列带成员维度的额度项；数值直接读 OpenMeter（按 Customer
+///DD-165(4)：GET /api/v1/usage/me，当前会话成员本人的用量（「我的用量」）。只列带成员维度的额度项；数值直接读 OpenMeter（按 Customer
 ///与本人 member_principal_id 过滤），不含组织上限与组织已用。
 class MemberUsagePage {
   final List<MemberUsageView> items;
@@ -16864,7 +16864,7 @@ final tenantQuotaFeatureValues = EnumValues({
 });
 
 ///
-///DD-163(4)：成员本人在一个额度项上的当前状态。AVAILABLE：可用；MEMBER_LIMIT_REACHED：本人已达成员上限；TENANT_EXHAUSTED：组织额度已用完（不显示组织数字）；UNAVAILABLE：OpenMeter
+///DD-165(4)：成员本人在一个额度项上的当前状态。AVAILABLE：可用；MEMBER_LIMIT_REACHED：本人已达成员上限；TENANT_EXHAUSTED：组织额度已用完（不显示组织数字）；UNAVAILABLE：OpenMeter
 ///不可读或映射不唯一，不显示数值。
 enum MemberUsageState {
   AVAILABLE,
@@ -19149,7 +19149,7 @@ class TenantProfileInput {
 
 ///仅 tenant.quota.set（DD-123）
 ///
-///DD-123/DD-163: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
+///DD-123/DD-165: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
 ///OpenMeter entitlement for the platform feature, resetting monthly; memberLimitPerPeriod
 ///(only knowledge_answers and data_queries) is the per-member cap kept in the same
 ///entitlement's metadata. A setting without it removes the member cap.
@@ -19157,7 +19157,7 @@ class TenantQuotaSetting {
   final TenantQuotaFeature feature;
   final int limitPerPeriod;
 
-  ///DD-163(3): per-member cap per period; only for quota items with a member dimension
+  ///DD-165(3): per-member cap per period; only for quota items with a member dimension
   ///(knowledge_answers, data_queries).
   final int? memberLimitPerPeriod;
 
@@ -22695,7 +22695,7 @@ class TenantProfileView {
   });
 }
 
-///DD-123/DD-163: platform quota items of the Tenant read from OpenMeter (the only
+///DD-123/DD-165: platform quota items of the Tenant read from OpenMeter (the only
 ///authority). Tenant admin and auditor only.
 class TenantQuotaPage {
   final List<TenantQuotaView> quotas;
@@ -22727,7 +22727,7 @@ class TenantQuotaView {
   final bool hasAccess;
   final int? limitPerPeriod;
 
-  ///DD-163(3): per-member cap kept in the entitlement metadata; absent when no member cap is
+  ///DD-165(3): per-member cap kept in the entitlement metadata; absent when no member cap is
   ///set.
   final int? memberLimitPerPeriod;
   final String? periodResetAt;

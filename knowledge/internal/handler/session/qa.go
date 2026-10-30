@@ -898,7 +898,7 @@ func (h *Handler) KnowledgeQA(c *gin.Context) {
 		c.Error(err)
 		return
 	}
-	// DD-163: the Kailo quota admits the question before any native work.
+	// DD-165: the Kailo quota admits the question before any native work.
 	if err := h.admitKailoAnswer(reqCtx.ctx, c); err != nil {
 		_ = c.Error(err)
 		return
@@ -933,7 +933,7 @@ func (h *Handler) AgentQA(c *gin.Context) {
 		c.Error(err)
 		return
 	}
-	// DD-163: the Kailo quota admits the question before any native work.
+	// DD-165: the Kailo quota admits the question before any native work.
 	if err := h.admitKailoAnswer(reqCtx.ctx, c); err != nil {
 		_ = c.Error(err)
 		return
@@ -1735,7 +1735,7 @@ func (h *Handler) completeAssistantMessage(
 	}
 	// DD-138(4), 07 §4.8.3: long answers are announced through Kailo.
 	h.notifyKailoAnswerCompleted(bgCtx, assistantMessage, userQuery)
-	// DD-163, 07 §4.8.8: one completed answer is one Kailo knowledge answer.
+	// DD-165, 07 §4.8.9: one completed answer is one Kailo knowledge answer.
 	h.reportKailoAnswer(bgCtx, assistantMessage, userQuery)
 }
 

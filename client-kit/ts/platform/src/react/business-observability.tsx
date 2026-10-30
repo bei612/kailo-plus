@@ -6,7 +6,7 @@
 // DD-123：「组织额度」一节只对 Tenant admin 与 auditor 出现（其余 403 整节不渲染）；
 // 设置走受治理动作 tenant.quota.set（显式确认、无审批），与其他治理写入共用同一
 // 提交、结果不明同键重查的路径。
-// DD-163：同一页面另有对每名成员可见的「我的用量」（只读本人），以及只对 Tenant admin 与
+// DD-165：同一页面另有对每名成员可见的「我的用量」（只读本人），以及只对 Tenant admin 与
 // auditor 出现的「按组件用量」；组织额度增加组件额度项与成员上限。
 
 import {
@@ -370,7 +370,7 @@ const quotaExhaustedLabel: Record<TenantQuotaFeature, PlatformMessageKey> = {
   [TenantQuotaFeature.FileStorage]: "quota.exhausted.fileStorage",
 };
 
-/** DD-163(3)：只有带成员维度的额度项可设成员上限。 */
+/** DD-165(3)：只有带成员维度的额度项可设成员上限。 */
 const MEMBER_QUOTA_FEATURES: ReadonlySet<TenantQuotaFeature> = new Set([
   TenantQuotaFeature.KnowledgeAnswers,
   TenantQuotaFeature.DataQueries,
@@ -687,7 +687,7 @@ function validMyUsage(page: MemberUsagePage | null | undefined): MemberUsagePage
 }
 
 /**
- * DD-163(4)「我的用量」：每名成员都看到本人本期已用、本人上限与是否可用；不显示组织上限与
+ * DD-165(4)「我的用量」：每名成员都看到本人本期已用、本人上限与是否可用；不显示组织上限与
  * 组织已用。组织额度用完只以状态提示，请成员联系管理员。
  */
 export function MyUsageSection() {
@@ -747,7 +747,7 @@ const componentCategoryLabel: Record<NativePageCategory, PlatformMessageKey> = {
 };
 
 /**
- * DD-163(4) 按组件用量：Tenant admin 与 auditor 看到所选区间内各组件 meter 按组件拆分的已入账
+ * DD-165(4) 按组件用量：Tenant admin 与 auditor 看到所选区间内各组件 meter 按组件拆分的已入账
  * 用量，组件以呈现类别名（云盘、知识库、问数）标注；成员（403）整节不出现。
  */
 export function ComponentUsageSection({ from, to, workspaces }: { from: string; to: string; workspaces: WorkspaceView[] }) {

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api/member_usage_page.schema.json",
   "title": "MemberUsagePage",
-  "description": "DD-163(4)：GET /api/v1/usage/me，当前会话成员本人的用量（「我的用量」）。只列带成员维度的额度项；数值直接读 OpenMeter（按 Customer 与本人 member_principal_id 过滤），不含组织上限与组织已用。",
+  "description": "DD-165(4)：GET /api/v1/usage/me，当前会话成员本人的用量（「我的用量」）。只列带成员维度的额度项；数值直接读 OpenMeter（按 Customer 与本人 member_principal_id 过滤），不含组织上限与组织已用。",
   "type": "object",
   "additionalProperties": false,
   "required": ["items"],

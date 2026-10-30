@@ -16,7 +16,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/config"
 )
 
-// DD-163, 07 §4.8.8: Kailo usage admission and reports of knowledge answers.
+// DD-165, 07 §4.8.9: Kailo usage admission and reports of knowledge answers.
 
 const usageBase = "/service/v1/component-usage/bindings/" + dirBinding
 

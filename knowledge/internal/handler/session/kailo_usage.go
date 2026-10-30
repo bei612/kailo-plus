@@ -10,7 +10,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// DD-163, 07 §4.8.8: in Kailo mode a knowledge answer is a Kailo quota item.
+// DD-165, 07 §4.8.9: in Kailo mode a knowledge answer is a Kailo quota item.
 // A new question is admitted by Core before anything is retrieved or a model
 // is called; a refused question gets the Kailo wording in place of the answer
 // and no native side effect. A completed answer is reported once; a turn the

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api/component_usage_admission_request.schema.json",
   "title": "ComponentUsageAdmissionRequest",
-  "description": "DD-163、07 §4.8.8：组件在动作开始前向 POST /service/v1/component-usage/bindings/{bindingId}/admission 询问额度。身份、前提与 meter 类别规则同上报；未知字段整体拒绝。",
+  "description": "DD-165、07 §4.8.9：组件在动作开始前向 POST /service/v1/component-usage/bindings/{bindingId}/admission 询问额度。身份、前提与 meter 类别规则同上报；未知字段整体拒绝。",
   "type": "object",
   "additionalProperties": false,
   "required": ["meterKey"],

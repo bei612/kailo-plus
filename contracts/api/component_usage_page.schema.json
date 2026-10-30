@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api/component_usage_page.schema.json",
   "title": "ComponentUsagePage",
-  "description": "DD-163(4)：GET /api/v1/usage/components?from=&to=，Tenant 在区间内按组件（binding）拆分的 committed usage。调用方须持有 Tenant audit permission，每次 fresh Check。数值直接读 OpenMeter（group_by component_binding_id），不复制成账本；缺失事实以确定状态表达。",
+  "description": "DD-165(4)：GET /api/v1/usage/components?from=&to=，Tenant 在区间内按组件（binding）拆分的 committed usage。调用方须持有 Tenant audit permission，每次 fresh Check。数值直接读 OpenMeter（group_by component_binding_id），不复制成账本；缺失事实以确定状态表达。",
   "type": "object",
   "additionalProperties": false,
   "required": [

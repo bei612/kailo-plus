@@ -547,7 +547,7 @@ export class AskingResolver {
         await this.authorizeNativeAskingTask(previous.queryId, ctx);
       }
     }
-    // DD-163, `07` §4.8.8: the Kailo quota admits the question first.
+    // DD-165, `07` §4.8.9: the Kailo quota admits the question first.
     await admitKailoDataQuery(ctx);
     const task = await askingService.createAskingTask(data, {
       threadId,
@@ -966,7 +966,7 @@ export class AskingResolver {
         return { id: previous.queryId };
       }
     }
-    // DD-163: a re-run is a new question for the Kailo quota.
+    // DD-165: a re-run is a new question for the Kailo quota.
     await admitKailoDataQuery(ctx);
     const task = await askingService.rerunAskingTask(responseId, {
       language: WrenAILanguage[project.language] || WrenAILanguage.EN,

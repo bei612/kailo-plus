@@ -1,10 +1,10 @@
--- DD-163 / V-SCN-271–276：组件计量、额度与用量视图并入 Kailo 统一体系。
+-- DD-165 / V-SCN-282–276：组件计量、额度与用量视图并入 Kailo 统一体系。
 --
 -- 1. tenant.quota.set 的额度项由三项扩为七项（component_tokens、knowledge_answers、
 --    data_queries、file_storage），并可带只对 knowledge_answers、data_queries 有效的成员
 --    上限。成员上限只是写前意图的冻结参数：权威在同一 OpenMeter entitlement 的 metadata，
 --    Core 不保存成员用量或余额。
--- 2. outbox.usage_event 增加来源 COMPONENT_REPORT：原生页面组件经 07 §4.8.8 以目录 client
+-- 2. outbox.usage_event 增加来源 COMPONENT_REPORT：原生页面组件经 07 §4.8.9 以目录 client
 --    上报的已发生用量。归属该 binding 当前 generation 的用量归集 operation（attribution
 --    BINDING），Customer 为 Tenant，subject 为 Customer key（Tenant ID），binding/release/
 --    generation 与 count meter 的成员 Principal 只作维度。冻结后除投递状态外不可改，

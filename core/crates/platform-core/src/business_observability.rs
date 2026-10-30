@@ -502,7 +502,7 @@ pub async fn usage_billing(
         Ok(k) => k,
         Err(e) => return Refusal::from(e).respond(None),
     };
-    // DD-163(4)：组件 meter 不由 ActionDefinition 登记，随 Core 固定；Tenant 总量同表呈现，
+    // DD-165(4)：组件 meter 不由 ActionDefinition 登记，随 Core 固定；Tenant 总量同表呈现，
     // 按组件拆分见 /api/v1/usage/components。
     for meter in crate::component_usage::VIEW_METERS {
         if !meter_keys.iter().any(|key| key == meter) {

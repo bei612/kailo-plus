@@ -1,4 +1,4 @@
-//! DD-163, `.design/07` §4.8.8: component usage enters the one Kailo metering,
+//! DD-165, `.design/07` §4.8.9: component usage enters the one Kailo metering,
 //! quota and usage view.
 //!
 //! - Reports: an embedded component (native page entry) reports usage that has
@@ -69,7 +69,7 @@ fn unavailable(what: &str) -> Refusal {
 }
 
 /// The service listener's closed answers: malformed input is a plain 400
-/// (07 §4.8.8), everything else keeps the governance error body.
+/// (07 §4.8.9), everything else keeps the governance error body.
 fn respond(error: &Refusal) -> Response {
     let mut response = error.respond(None);
     if matches!(error, Refusal::Precondition(ReasonCode::InvalidParameters)) {
@@ -82,7 +82,7 @@ fn respond(error: &Refusal) -> Response {
 }
 
 // ---------------------------------------------------------------------------
-// The meter catalog (DD-163(1))
+// The meter catalog (DD-165(1))
 // ---------------------------------------------------------------------------
 
 /// One reportable component meter: the platform meter key, the quota item it
@@ -372,7 +372,7 @@ struct Caller {
 }
 
 impl Caller {
-    /// Only the presentation category a meter belongs to may use it (DD-163(2)).
+    /// Only the presentation category a meter belongs to may use it (DD-165(2)).
     fn reports(&self, meter: &ComponentMeter) -> Result<(), Refusal> {
         if self.category.as_deref() == Some(meter.category) {
             Ok(())
@@ -796,7 +796,7 @@ pub(crate) fn sum_rows(
 }
 
 // ---------------------------------------------------------------------------
-// ExtAuthz: component model calls (DD-163(3), DD-128(3))
+// ExtAuthz: component model calls (DD-165(3), DD-128(3))
 // ---------------------------------------------------------------------------
 
 /// The CHECK of a component model call against the Tenant quota item
@@ -829,7 +829,7 @@ pub(crate) fn model_check_result(result: Result<bool, openmeter::Error>) -> Resu
 // BFF: GET /api/v1/usage/me
 // ---------------------------------------------------------------------------
 
-/// DD-163(4)「我的用量」: every member reads their own usage of the quota items
+/// DD-165(4)「我的用量」: every member reads their own usage of the quota items
 /// with a member dimension. No Tenant limit or Tenant usage is shown.
 pub(crate) async fn my_usage(State(state): State<BffState>, headers: HeaderMap) -> Response {
     let ctx = match resolve_execution_context(&state, &headers).await {
@@ -903,7 +903,7 @@ pub(crate) const VIEW_METERS: [&str; 4] = [
     tenant_quota::FILE_STORAGE_BYTES_METER,
 ];
 
-/// DD-163(4): Tenant admins and auditors (Tenant `audit`, fresh) read the
+/// DD-165(4): Tenant admins and auditors (Tenant `audit`, fresh) read the
 /// committed usage of each component meter split by binding.
 pub(crate) async fn component_usage(
     State(state): State<BffState>,

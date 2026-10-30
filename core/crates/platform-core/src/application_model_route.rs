@@ -1002,7 +1002,7 @@ async fn admit(
                 caller_audits.push((ae, definition));
             }
         }
-        // DD-163(3), DD-128(3): `component_model_tokens` is metered under the
+        // DD-165(3), DD-128(3): `component_model_tokens` is metered under the
         // Tenant quota item `component_tokens`; every call is a CHECK against
         // the Tenant Customer's hard-limit entitlement. Exhausted is 429 and the
         // call is not forwarded, so no usage arises from it.

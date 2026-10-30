@@ -856,7 +856,7 @@ pub fn router(state: BffState) -> Router {
         // DD-123 (5)：平台额度只对 Tenant admin 与 auditor 可见（tenant audit，fresh Check），
         // 数值直接读 OpenMeter；设置走受治理动作 tenant.quota.set
         .exposed_route("/api/v1/tenant/quotas", get(crate::tenant_quota::quotas))
-        // DD-163(4)：「我的用量」对每名成员只读本人；按组件用量只对 Tenant admin 与
+        // DD-165(4)：「我的用量」对每名成员只读本人；按组件用量只对 Tenant admin 与
         // auditor（tenant audit，fresh Check）。数值直接读 OpenMeter。
         .exposed_route("/api/v1/usage/me", get(crate::component_usage::my_usage))
         .exposed_route(

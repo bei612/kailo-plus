@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api/tenant_quota_page.schema.json",
   "title": "TenantQuotaPage",
-  "description": "DD-123/DD-163: platform quota items of the Tenant read from OpenMeter (the only authority). Tenant admin and auditor only.",
+  "description": "DD-123/DD-165: platform quota items of the Tenant read from OpenMeter (the only authority). Tenant admin and auditor only.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -41,7 +41,7 @@
           "memberLimitPerPeriod": {
             "type": "integer",
             "minimum": 0,
-            "description": "DD-163(3): per-member cap kept in the entitlement metadata; absent when no member cap is set."
+            "description": "DD-165(3): per-member cap kept in the entitlement metadata; absent when no member cap is set."
           },
           "usage": {
             "type": "number",

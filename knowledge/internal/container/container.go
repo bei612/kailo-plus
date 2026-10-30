@@ -1955,7 +1955,7 @@ func startKailoDirectorySync(
 		notifier.Stop()
 		return nil
 	})
-	// DD-163, 07 §4.8.8: Kailo usage reports with the same directory client.
+	// DD-165, 07 §4.8.9: Kailo usage reports with the same directory client.
 	cleaner.RegisterWithName("KailoUsage", func() error {
 		usage.Stop()
 		return nil

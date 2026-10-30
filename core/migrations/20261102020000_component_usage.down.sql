@@ -1,4 +1,4 @@
--- DD-163(5)：回滚条件。尚未 COMMITTED 的组件上报是还没在 OpenMeter 落库的已发生用量，
+-- DD-165(5)：回滚条件。尚未 COMMITTED 的组件上报是还没在 OpenMeter 落库的已发生用量，
 -- 删除它会丢失计量：存在任一这样的行即停止回滚，不改数据。已 COMMITTED 的行已在 OpenMeter
 -- 落库，删除其 Core outbox 行不改变账本。管理员对新额度项或带成员上限的设置意图在旧 Core
 -- 下不可解析、不可对账，存在即停止回滚；部署引导为新额度项建立的默认额度意图未结论时同样
@@ -13,7 +13,7 @@ DO $$ BEGIN
              WHERE member_limit_per_period IS NOT NULL
                 OR (feature_key NOT IN ('agent_tokens', 'automation_runs', 'agent_memory_writes')
                     AND (origin = 'SET' OR outcome IS NULL))) THEN
-    RAISE EXCEPTION 'DD-163 quota intents exist; the previous Core cannot reconcile them';
+    RAISE EXCEPTION 'DD-165 quota intents exist; the previous Core cannot reconcile them';
   END IF;
 END $$;
 DELETE FROM admission.tenant_quota_intent

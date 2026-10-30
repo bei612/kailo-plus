@@ -1,6 +1,6 @@
 package service
 
-// DD-163, .design/07 §4.8.8: the native source of the Kailo storage snapshot
+// DD-165, .design/07 §4.8.9: the native source of the Kailo storage snapshot
 // (transport and rules: common/auth/native-oidc-usage.go). In Kailo mode,
 // with the member directory client delivered, the stored bytes of this
 // instance are reported every hour: the sum of the index-aggregated sizes of

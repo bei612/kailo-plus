@@ -68,8 +68,8 @@ type Handler struct {
 	// kailoNotifier announces long-running answers through Kailo
 	// notifications (DD-138(4), 07 §4.8.3). Nil or disabled outside Kailo mode.
 	kailoNotifier *service.KailoNotifier
-	// kailoUsage admits and meters knowledge answers through Kailo (DD-163,
-	// 07 §4.8.8). Nil or disabled outside Kailo mode.
+	// kailoUsage admits and meters knowledge answers through Kailo (DD-165,
+	// 07 §4.8.9). Nil or disabled outside Kailo mode.
 	kailoUsage *service.KailoUsage
 }
 

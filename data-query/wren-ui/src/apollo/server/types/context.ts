@@ -48,7 +48,7 @@ export interface IContext {
   // DD-133 §3: the verified Kailo user of this request (display claims only).
   kailoUser?: KailoUserProfile | null;
   kailoUsers?: KailoUserLoader;
-  // DD-163: Kailo quota admission and usage reports (directory client).
+  // DD-165: Kailo quota admission and usage reports (directory client).
   kailoUsage?: KailoUsage;
   // A verified native service-audience token (the instance's AI service).
   kailoNativeService?: boolean;

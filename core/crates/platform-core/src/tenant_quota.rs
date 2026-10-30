@@ -45,7 +45,7 @@ pub(crate) const ACTION: &str = "tenant.quota.set";
 pub(crate) const MAX_LIMIT: i64 = 1_000_000_000_000;
 /// entitlement metadata 中的意图键：回读与对账只按它确认「这一次」写入。
 pub(crate) const INTENT_METADATA_KEY: &str = "kailo_action_execution_id";
-/// DD-163(3)：成员上限写在同一 Tenant entitlement 的 metadata，与上限同一次写入、
+/// DD-165(3)：成员上限写在同一 Tenant entitlement 的 metadata，与上限同一次写入、
 /// 同一意图回读核对；没有这个键即没有成员上限。
 pub(crate) const MEMBER_LIMIT_METADATA_KEY: &str = "kailo_member_limit";
 const ORIGIN_METADATA_KEY: &str = "kailo_quota_origin";
@@ -66,7 +66,7 @@ pub(crate) const MEMORY_BYTES_METER: &str = "agent_memory_plaintext_bytes";
 /// binding 的 meter 引用只能是它。它一期不是额度项：没有 feature，`tenant.quota.set`
 /// 的封闭额度项集合不含它。组件专属 meter 一期不登记。
 pub(crate) const COMPONENT_MODEL_TOKENS_METER: &str = "component_model_tokens";
-/// DD-163(1)：随 Core 固定、经 `07` §4.8.8 组件上报入账的组件 meter。meter 只由部署
+/// DD-165(1)：随 Core 固定、经 `07` §4.8.9 组件上报入账的组件 meter。meter 只由部署
 /// 引导登记，不由 release manifest 声明。
 pub(crate) const KNOWLEDGE_ANSWER_METER: &str = "knowledge_answer_count";
 pub(crate) const DATA_QUERY_METER: &str = "data_query_count";
@@ -81,7 +81,7 @@ const COMPONENT_DIMENSIONS: [(&str, &str); 4] = [
         "$.component_projection_generation",
     ),
 ];
-/// DD-163(1)：count meter 的成员维度——Core 在目录范围内解析出的 HUMAN Principal。
+/// DD-165(1)：count meter 的成员维度——Core 在目录范围内解析出的 HUMAN Principal。
 pub(crate) const MEMBER_DIMENSION: &str = "member_principal_id";
 const COMPONENT_MEMBER_DIMENSIONS: [(&str, &str); 5] = [
     COMPONENT_DIMENSIONS[0],
@@ -209,7 +209,7 @@ pub(crate) struct PlatformFeature {
     pub name: &'static str,
     pub meter: &'static str,
     pub default_limit: i64,
-    /// DD-163(3)：可设成员上限（meter 带成员维度）的额度项。
+    /// DD-165(3)：可设成员上限（meter 带成员维度）的额度项。
     pub member_limit: bool,
 }
 
@@ -298,7 +298,7 @@ fn invalid() -> Refusal {
 // ---------------------------------------------------------------------------
 
 /// 规范化 `tenantQuotaSetting`：额度项属封闭集合，上限是 0..=MAX_LIMIT 的整数；成员上限
-/// 只对带成员维度的额度项有效（DD-163(3)），其余额度项给出即 `INVALID_PARAMETERS`。
+/// 只对带成员维度的额度项有效（DD-165(3)），其余额度项给出即 `INVALID_PARAMETERS`。
 /// 没有成员上限的设置与 DD-123 原规范形状逐字相同。
 pub(crate) fn normalize(setting: &contracts::TenantQuotaSetting) -> Result<Value, Refusal> {
     if !(0..=MAX_LIMIT).contains(&setting.limit_per_period) {
@@ -403,7 +403,7 @@ pub(crate) fn entitlement_request(
     body
 }
 
-/// DD-163(3)：entitlement metadata 中的成员上限；不是本平台写入的整数即视为不可核验。
+/// DD-165(3)：entitlement metadata 中的成员上限；不是本平台写入的整数即视为不可核验。
 pub(crate) fn member_limit(entitlement: &NativeEntitlement) -> Result<Option<i64>, ()> {
     let Some(raw) = entitlement
         .metadata
@@ -1704,7 +1704,7 @@ mod tests {
         ] {
             assert_eq!(body["dimensions"][dimension], format!("$.{dimension}"));
         }
-        // DD-163(3)：模型 token 计入额度项 component_tokens；meter 键本身仍不是额度项。
+        // DD-165(3)：模型 token 计入额度项 component_tokens；meter 键本身仍不是额度项。
         let quota: Vec<&str> = PLATFORM_FEATURES
             .iter()
             .filter(|feature| feature.meter == COMPONENT_MODEL_TOKENS_METER)

@@ -16,7 +16,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
-// Kailo unified metering (DD-163, 07 §4.8.8). In Kailo mode a knowledge
+// Kailo unified metering (DD-165, 07 §4.8.9). In Kailo mode a knowledge
 // answer is a Kailo quota item: before a member starts a question the
 // instance asks Core for admission, and when an answer has been completed it
 // reports one `knowledge_answer_count` usage. Both calls use the member
@@ -350,7 +350,7 @@ func (u *KailoUsage) post(ctx context.Context, target string, body []byte) (int,
 }
 
 // KailoUsageRefusalText is the Kailo wording shown in place of a refused
-// question (07 §4.8.8 component behaviour), in the requested language.
+// question (07 §4.8.9 component behaviour), in the requested language.
 func KailoUsageRefusalText(decision, acceptLanguage string) string {
 	english := strings.HasPrefix(strings.ToLower(strings.TrimSpace(acceptLanguage)), "en")
 	switch decision {

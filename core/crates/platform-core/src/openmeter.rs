@@ -538,7 +538,7 @@ pub(crate) enum MeterUsage {
     NotRegistered,
 }
 
-/// DD-163(4)：一个已登记 meter 在区间内按一个维度分行的原生 committed usage。
+/// DD-165(4)：一个已登记 meter 在区间内按一个维度分行的原生 committed usage。
 /// 行值保持 OpenMeter 十进制原文；缺该维度的行（事件未带该维度）单独不计入任何分组。
 pub(crate) enum GroupedUsage {
     Committed {
@@ -616,7 +616,7 @@ pub(crate) struct NativeUsagePeriod {
     pub anchor: Option<DateTime<Utc>>,
 }
 
-/// 当前周期：结束时刻是下一次按月重置；开始时刻供 DD-163 成员用量按同一周期查询。
+/// 当前周期：结束时刻是下一次按月重置；开始时刻供 DD-165 成员用量按同一周期查询。
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 pub(crate) struct EntitlementPeriod {
     #[serde(default)]
@@ -1776,7 +1776,7 @@ impl OpenMeter {
         }
     }
 
-    /// DD-163(4)：该 Tenant 唯一 Customer 在区间内按 `group_by` 维度分行的原生
+    /// DD-165(4)：该 Tenant 唯一 Customer 在区间内按 `group_by` 维度分行的原生
     /// committed usage，可再按一个受控维度等值过滤（成员视图按 `member_principal_id`）。
     /// 维度名只取 Core 固定的平台 meter 维度；结果每行都必须属于该 Customer。
     pub(crate) async fn grouped_meter_usage(
