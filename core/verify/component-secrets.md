@@ -1,7 +1,7 @@
-# DD-168(5)：组件凭据托管（验证记录）
+# DD-169(5)：组件凭据托管（验证记录）
 
-设计依据：`.design/07` §4.8.11 组件凭据托管合同、`03` ComponentSecret 实体、`02` DD-168(5)(7)、`16`
-V-SCN-305–308（V-SCN-307 为本服务的反证）。能力记录：`tools/traceability/component.secret_custody.yaml`。
+设计依据：`.design/07` §4.8.11 组件凭据托管合同、`03` ComponentSecret 实体、`02` DD-169(5)(7)、`16`
+V-SCN-312–315（V-SCN-314 为本服务的反证）。能力记录：`tools/traceability/component.secret_custody.yaml`。
 
 ## 源码范围（平台）
 

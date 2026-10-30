@@ -790,7 +790,7 @@ impl SecretStore {
         self.destroy_version_one(&reference.locator, unbound).await
     }
 
-    /// DD-168(5)、`07` §4.8.11：组件凭据托管的每个 secret 独占一个 CAS=0 locator
+    /// DD-169(5)、`07` §4.8.11：组件凭据托管的每个 secret 独占一个 CAS=0 locator
     /// （`component-secret/<binding-id>/<secret-id>`）。撤销与登记失败后的收敛只销毁这一
     /// 形状的 version 1；不扩大其他前缀的删除权。`unbound` 为 true 时允许销毁从未写成的
     /// 意图（写入结果不明后的收敛）。

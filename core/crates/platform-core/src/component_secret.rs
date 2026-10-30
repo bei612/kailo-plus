@@ -1,4 +1,4 @@
-//! DD-168(5), `.design/07` §4.8.11: component secret custody. A component's own
+//! DD-169(5), `.design/07` §4.8.11: component secret custody. A component's own
 //! business configuration (first: the data query component's data source
 //! connections) keeps its sensitive values in the Tenant's OpenBao; the component
 //! stores only the `secretId` Core returns. Core neither interprets nor copies the
@@ -37,7 +37,7 @@ use uuid::Uuid;
 
 use crate::{governance::Refusal, service_api::ServiceState};
 
-/// The one purpose of the first stage (DD-168(5)).
+/// The one purpose of the first stage (DD-169(5)).
 const PURPOSE_DATA_SOURCE_CONNECTION: &str = "DATA_SOURCE_CONNECTION";
 /// Upper bound of the canonical JSON of one secret value object.
 pub(crate) const MAX_VALUE_BYTES: usize = 64 * 1024;

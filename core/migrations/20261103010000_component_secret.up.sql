@@ -1,4 +1,4 @@
--- DD-168(5)：ComponentSecret（.design/03 §3，07 §4.8.11）。组件自有业务配置中的凭据（一期
+-- DD-169(5)：ComponentSecret（.design/03 §3，07 §4.8.11）。组件自有业务配置中的凭据（一期
 -- 为问数数据源连接的口令与密钥）经 Core 写入该 Tenant 的 OpenBao，组件只持有本表的 id。
 --
 -- 归 catalog：与 mcp_connection 的凭据引用同理，它按 binding 归属、Core 即权威。它不是

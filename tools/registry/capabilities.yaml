@@ -422,6 +422,12 @@ capabilities:
   tools: []
   workflow_kinds:
   - COMPONENT_RELEASE
+- id: component.secret_custody
+  exposure: none
+  routes: []
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: component.unified_metering
   exposure: end_user
   routes:
