@@ -377,10 +377,10 @@ func (s *kailoOrgService) adoptNativeShares(
 	}
 	var rows []nativeRow
 	if err := db.Table("kb_shares").
-		Select("kb_shares.id, kb_shares.knowledge_base_id, kb_shares.organization_id, kb_shares.shared_by_user_id, "+
+		Select("kb_shares.id, kb_shares.knowledge_base_id, kb_shares.organization_id, kb_shares.shared_by_user_id, " +
 			"kb_shares.permission, organizations.kailo_tenant_ref AS tenant_ref, organizations.kailo_share_ref AS share_ref").
 		Joins("JOIN organizations ON organizations.id = kb_shares.organization_id").
-		Where("kb_shares.deleted_at IS NULL AND kb_shares.kailo_resource_ref IS NULL AND "+
+		Where("kb_shares.deleted_at IS NULL AND kb_shares.kailo_resource_ref IS NULL AND " +
 			"(organizations.kailo_tenant_ref IS NOT NULL OR organizations.kailo_share_ref IS NOT NULL)").
 		Order("kb_shares.knowledge_base_id, kb_shares.id").Scan(&rows).Error; err != nil {
 		return nil, nil, fmt.Errorf("list native knowledge base shares: %w", err)

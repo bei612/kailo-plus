@@ -302,7 +302,9 @@ func TestKailoDirectoryKeepsTheAcceptanceKnowledgeBaseShare(t *testing.T) {
 	wsNames := map[string]string{dirWsA: "Alpha"}
 
 	// Core answers indefinitely: nothing is converged or recorded.
-	core.adopt = func(map[string]interface{}) (int, interface{}) { return http.StatusServiceUnavailable, map[string]string{} }
+	core.adopt = func(map[string]interface{}) (int, interface{}) {
+		return http.StatusServiceUnavailable, map[string]string{}
+	}
 	core.answer(http.StatusOK, directoryJSON(t, "schema2-first", dirBinding, dirTenant, wsNames, members...))
 	before := f.recordedVersion(t)
 	if runner.SyncOnce(context.Background()) || f.recordedVersion(t) != before {

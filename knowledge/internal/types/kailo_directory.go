@@ -520,12 +520,12 @@ func (d *KailoMemberDirectory) WorkspaceDisplayName(id string) string { return d
 // KailoShareAdoptionRequest registers one existing native share as a Kailo
 // share (DD-164(4)⑧, contracts/api/component_share_adoption_request.schema.json).
 type KailoShareAdoptionRequest struct {
-	NativeType  string                 `json:"nativeType"`
-	NativeID    string                 `json:"nativeId"`
-	Name        string                 `json:"name"`
+	NativeType  string                  `json:"nativeType"`
+	NativeID    string                  `json:"nativeId"`
+	Name        string                  `json:"name"`
 	Owner       KailoShareAdoptionOwner `json:"owner"`
-	WorkspaceID string                 `json:"workspaceId,omitempty"`
-	Grants      []KailoShareGrant      `json:"grants"`
+	WorkspaceID string                  `json:"workspaceId,omitempty"`
+	Grants      []KailoShareGrant       `json:"grants"`
 }
 
 // KailoShareAdoptionOwner is the native owner's Kailo identity.
