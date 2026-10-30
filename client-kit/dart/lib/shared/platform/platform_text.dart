@@ -3740,6 +3740,18 @@ enum PlatformMessageKey {
   platformMembersKeyCountOne,
   platformMembersKeyCountOther,
   rolesTitle,
+  memberPermissionsTitle,
+  memberPermissionsDescription,
+  memberPermissionsMembersCreate,
+  memberPermissionsMembersCreateHint,
+  memberPermissionsAdminsOnly,
+  memberPermissionsAdminsOnlyHint,
+  memberPermissionsOwnersKeep,
+  memberPermissionsSave,
+  memberPermissionsRetry,
+  memberPermissionsConfirmTitle,
+  memberPermissionsConfirmAdminsOnly,
+  memberPermissionsConfirmMembersCreate,
   rolesNone,
   rolesTenant,
   rolesWorkspace,
@@ -14437,6 +14449,48 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '{count} 把密钥',
   ),
   PlatformMessageKey.rolesTitle: ('Administrator roles', '管理员角色'),
+  PlatformMessageKey.memberPermissionsTitle: ('Member permissions', '成员权限'),
+  PlatformMessageKey.memberPermissionsDescription: (
+    'Choose who can create content in this organization: channels, agents and automations in Kailo, and folders, knowledge bases and other content in Files, Knowledge and Data Q&A.',
+    '选择本组织中谁可以创建内容：Kailo 中的频道、Agent 与自动化，以及云盘、知识库和问数中的文件夹、知识库等内容。',
+  ),
+  PlatformMessageKey.memberPermissionsMembersCreate: (
+    'Members can create content (default)',
+    '成员可以创建内容（默认）',
+  ),
+  PlatformMessageKey.memberPermissionsMembersCreateHint: (
+    'Every member can create; members edit what they own and what is shared with them.',
+    '每位成员都可以创建；成员可编辑自己拥有的内容和分享给自己的内容。',
+  ),
+  PlatformMessageKey.memberPermissionsAdminsOnly: (
+    'Only administrators can create',
+    '仅管理员可以创建',
+  ),
+  PlatformMessageKey.memberPermissionsAdminsOnlyHint: (
+    'Members view and use content; administrators create, or share write access with specific people.',
+    '成员查看和使用内容；由管理员创建，或把编辑权限分享给特定的人。',
+  ),
+  PlatformMessageKey.memberPermissionsOwnersKeep: (
+    'Owners always keep their own resources: changing this never removes what a member already owns or what was shared with them.',
+    '所有者始终保有自己的资源：修改此设置不会移除成员已拥有的内容或已分享给他们的内容。',
+  ),
+  PlatformMessageKey.memberPermissionsSave: ('Save', '保存'),
+  PlatformMessageKey.memberPermissionsRetry: (
+    'Retry the same change',
+    '重试同一修改',
+  ),
+  PlatformMessageKey.memberPermissionsConfirmTitle: (
+    'Change member permissions?',
+    '修改成员权限？',
+  ),
+  PlatformMessageKey.memberPermissionsConfirmAdminsOnly: (
+    'From now on only administrators can create content in Kailo and in Files, Knowledge and Data Q&A. Components apply it within a minute.',
+    '此后只有管理员可以在 Kailo 及云盘、知识库、问数中创建内容。组件将在一分钟内生效。',
+  ),
+  PlatformMessageKey.memberPermissionsConfirmMembersCreate: (
+    'From now on every member can create content in Kailo and in Files, Knowledge and Data Q&A. Components apply it within a minute.',
+    '此后每位成员都可以在 Kailo 及云盘、知识库、问数中创建内容。组件将在一分钟内生效。',
+  ),
   PlatformMessageKey.rolesNone: (
     'No eligible members on this page.',
     '本页没有符合条件的成员。',

@@ -28,14 +28,13 @@ function subjectKey(grant: ComponentShareGrant): string {
     : subject.kind === ComponentShareSubjectKind.Workspace ? `w:${subject.workspaceId}` : "t";
 }
 
-/** The grant list Core accepts: one per subject, TENANT only READ, nothing for the owner. */
+/** The grant list Core accepts: one per subject, nothing for the owner (DD-164(4)③: TENANT may be READ or WRITE). */
 export function normalizedGrants(grants: readonly ComponentShareGrant[], owner?: string): ComponentShareGrant[] {
   const seen = new Map<string, ComponentShareGrant>();
   for (const grant of grants) {
     if (grant.subject.kind === ComponentShareSubjectKind.Principal && (!grant.subject.principalId || grant.subject.principalId === owner)) continue;
     if (grant.subject.kind === ComponentShareSubjectKind.Workspace && !grant.subject.workspaceId) continue;
-    const access = grant.subject.kind === ComponentShareSubjectKind.Tenant ? ComponentShareAccess.Read : grant.access;
-    seen.set(subjectKey(grant), { subject: grant.subject, access });
+    seen.set(subjectKey(grant), { subject: grant.subject, access: grant.access });
   }
   return [...seen.values()];
 }
@@ -109,7 +108,7 @@ function ShareEditor({ intent, people, peopleFailed, onClose }: { intent: Compon
     if (!canAdd) return;
     const subject = kind === ComponentShareSubjectKind.Principal ? { kind, principalId: target }
       : kind === ComponentShareSubjectKind.Workspace ? { kind, workspaceId: target } : { kind };
-    setGrants((current) => normalizedGrants([...current, { subject, access: kind === ComponentShareSubjectKind.Tenant ? ComponentShareAccess.Read : access }], intent.ownerPrincipalId));
+    setGrants((current) => normalizedGrants([...current, { subject, access }], intent.ownerPrincipalId));
     setTarget("");
     if (state.kind === "rejected") setState({ kind: "idle" });
   };
@@ -149,9 +148,7 @@ function ShareEditor({ intent, people, peopleFailed, onClose }: { intent: Compon
         {grants.map((grant) => <li key={subjectKey(grant)} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
           <span className="min-w-0 truncate text-foreground">{label(grant)}<span className="ml-2 text-xs text-muted-foreground">{kindLabel(grant.subject.kind)}</span></span>
           <span className="flex shrink-0 items-center gap-2">
-            {grant.subject.kind === ComponentShareSubjectKind.Tenant
-              ? <span className="text-xs text-muted-foreground">{t("componentShare.access.read")}</span>
-              : <select aria-label={t("componentShare.access")} disabled={!editable} value={grant.access}
+            {<select aria-label={t("componentShare.access")} disabled={!editable} value={grant.access}
                 className="h-7 rounded-md border border-input bg-background px-2 text-xs text-foreground"
                 onChange={(event) => setGrants((current) => current.map((item) => subjectKey(item) === subjectKey(grant) ? { ...item, access: event.target.value as ComponentShareAccess } : item))}>
                 <option value={ComponentShareAccess.Read}>{t("componentShare.access.read")}</option>
@@ -174,7 +171,7 @@ function ShareEditor({ intent, people, peopleFailed, onClose }: { intent: Compon
             <option value="">{t("componentShare.choose")}</option>
             {candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
           </select></label>}
-        {kind === ComponentShareSubjectKind.Tenant ? null : <label className="flex flex-col gap-1 text-xs text-muted-foreground">{t("componentShare.access")}
+        {<label className="flex flex-col gap-1 text-xs text-muted-foreground">{t("componentShare.access")}
           <select value={access} disabled={!editable} className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground"
             onChange={(event) => setAccess(event.target.value as ComponentShareAccess)}>
             <option value={ComponentShareAccess.Read}>{t("componentShare.access.read")}</option>
