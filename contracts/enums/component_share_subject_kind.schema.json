@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "enums/component_share_subject_kind.schema.json",
   "title": "ComponentShareSubjectKind",
-  "description": "DD-164(4): who a component shared object is granted to: one Tenant HUMAN member, every member of a Workspace (workspace#member), or every Tenant member (tenant#member, READ only).",
+  "description": "DD-164(4): who a component shared object is granted to: one Tenant HUMAN member, every member of a Workspace (workspace#member), or every Tenant member (tenant#member, READ or WRITE).",
   "type": "string",
   "enum": [
     "PRINCIPAL",
