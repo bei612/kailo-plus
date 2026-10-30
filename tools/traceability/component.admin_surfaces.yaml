@@ -40,6 +40,10 @@ validation:
       ref: data-query/wren-ui/src/kailoAdminSurface.test.ts
     - dimension: 单元测试
       ref: data-query/wren-ui/src/middleware.test.ts
+    - dimension: 单元测试
+      ref: data-query/wren-ui/src/kailoAdminRead.test.ts
+    - dimension: 呈现
+      ref: core/verify/admin-surfaces.md
 
 implementation:
   owners: [team-platform, team-capabilities]
