@@ -2,7 +2,10 @@ import { createHash } from 'crypto';
 import { GraphQLError } from 'graphql';
 import { getLogger } from '@server/utils';
 import type { KailoUserProfile } from '@/utils/kailoUser';
-import { KailoDirectoryConfig, kailoServiceToken } from './kailoMemberDirectory';
+import {
+  KailoDirectoryConfig,
+  kailoServiceToken,
+} from './kailoMemberDirectory';
 import type { KailoIdentityRef } from './kailoNotifications';
 
 // DD-165, `.design/07` §4.8.9: in Kailo mode a data query (one question asked
@@ -183,9 +186,9 @@ export class KailoUsage {
       idempotencyKey: dataQueryKey(queryId),
       meterKey: DATA_QUERY_METER,
       quantity: 1,
-      occurredAt: new Date(
-        Math.floor(occurredAt.getTime() / 1000) * 1000,
-      ).toISOString().replace(/\.000Z$/, 'Z'),
+      occurredAt: new Date(Math.floor(occurredAt.getTime() / 1000) * 1000)
+        .toISOString()
+        .replace(/\.000Z$/, 'Z'),
       member: { issuer: member.issuer, subject: member.subject },
     };
     if (this.queue.length >= this.capacity) {

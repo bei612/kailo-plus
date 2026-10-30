@@ -778,7 +778,8 @@ export function ComponentUsageSection({ from, to, workspaces }: { from: string; 
       ) : (
         <Table head={[t("usage.meter"), t("usage.components.component"), t("usage.components.scope"), t("platform.state"), t("usage.quantity")]}>
           {page.meters.flatMap((meter) => {
-            const label = Object.hasOwn(componentMeterLabel, meter.meterKey) ? t(componentMeterLabel[meter.meterKey]) : meter.meterKey;
+            const labelKey = componentMeterLabel[meter.meterKey];
+            const label = labelKey === undefined ? meter.meterKey : t(labelKey);
             if (meter.bindings.length === 0) {
               return [(
                 <tr key={meter.meterKey} data-testid="component-usage-row" data-meter={meter.meterKey}>

@@ -97,7 +97,7 @@ pub(crate) struct ComponentMeter {
     pub event_type: &'static str,
 }
 
-pub(crate) const COMPONENT_METERS: [ComponentMeter; 3] = [
+pub(crate) static COMPONENT_METERS: [ComponentMeter; 3] = [
     ComponentMeter {
         meter: tenant_quota::KNOWLEDGE_ANSWER_METER,
         feature: "knowledge_answers",
@@ -253,7 +253,6 @@ pub(crate) struct Attribution {
     pub release_id: Uuid,
     pub generation: i64,
     pub operation_id: Uuid,
-    pub namespace: String,
     pub customer_id: String,
 }
 
@@ -551,7 +550,6 @@ async fn store(
         release_id: release,
         generation,
         operation_id: operation,
-        namespace: namespace.clone(),
         customer_id,
     };
     let id = event_id(tenant, source, report.meter.meter);
@@ -1054,7 +1052,9 @@ mod tests {
         two["quantity"] = 2.into();
         assert!(parse_report(&body(two), now).is_err());
         let mut anonymous = answer.clone();
-        anonymous.as_object_mut().map(|o| o.remove("member"));
+        if let Some(object) = anonymous.as_object_mut() {
+            object.remove("member");
+        }
         assert!(parse_report(&body(anonymous), now).is_err());
         // storage: bytes, never a member
         let storage = json!({"idempotencyKey": "cells.storage.2026103010", "meterKey": "file_storage_bytes",
@@ -1121,7 +1121,6 @@ mod tests {
             release_id: Uuid::new_v4(),
             generation: 3,
             operation_id: Uuid::new_v4(),
-            namespace: "default".into(),
             customer_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".into(),
         };
         let id = Uuid::new_v4();

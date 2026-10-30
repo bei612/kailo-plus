@@ -404,7 +404,7 @@ pub(crate) fn entitlement_request(
 }
 
 /// DD-165(3)：entitlement metadata 中的成员上限；不是本平台写入的整数即视为不可核验。
-pub(crate) fn member_limit(entitlement: &NativeEntitlement) -> Result<Option<i64>, ()> {
+pub(crate) fn member_limit(entitlement: &NativeEntitlement) -> Result<Option<i64>, &'static str> {
     let Some(raw) = entitlement
         .metadata
         .as_ref()
@@ -416,7 +416,7 @@ pub(crate) fn member_limit(entitlement: &NativeEntitlement) -> Result<Option<i64
         Ok(value) if (0..=MAX_LIMIT).contains(&value) && value.to_string() == *raw => {
             Ok(Some(value))
         }
-        _ => Err(()),
+        _ => Err("成员上限不是本平台写入的整数"),
     }
 }
 
@@ -1773,7 +1773,7 @@ mod tests {
             .metadata
             .get_or_insert_with(BTreeMap::new)
             .insert(MEMBER_LIMIT_METADATA_KEY.into(), "02".into());
-        assert_eq!(member_limit(&native), Err(()));
+        assert!(member_limit(&native).is_err());
         assert!(!matches_intent(&native, intent, 100, Some(2)));
     }
 

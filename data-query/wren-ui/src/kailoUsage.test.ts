@@ -180,7 +180,10 @@ describe('KailoUsage reports', () => {
     await usage.whenIdle();
     expect(platform.posts).toHaveLength(1);
     reportKailoDataQuery({ kailoUsage: usage, kailoUser: null }, 'q-3');
-    reportKailoDataQuery({ kailoUsage: usage, kailoUser: profile() }, undefined);
+    reportKailoDataQuery(
+      { kailoUsage: usage, kailoUser: profile() },
+      undefined,
+    );
     await usage.whenIdle();
     expect(platform.posts).toHaveLength(1);
   });
