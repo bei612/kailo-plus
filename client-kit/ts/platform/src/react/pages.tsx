@@ -138,7 +138,9 @@ export function WorkspaceManagementPanels({children}:{children?:ReactNode}) {
   const surfaceEntries=surfaces.status==="ok"?surfaces.data.entries:[];
   const [openedSurfaces,setOpenedSurfaces]=useState<string[]>([]);
   const selectedSurface=selected.startsWith("surface:")?selected.slice("surface:".length):null;
-  return <div className="flex min-h-0 w-full flex-1 flex-col bg-sidebar sm:flex-row" data-testid="member-management-context">
+  // Bounded by the host's content area on wide screens, so the navigation and the open section
+  // each scroll on their own and an admin surface keeps its Kailo header in view.
+  return <div className="flex min-h-0 w-full flex-1 flex-col bg-sidebar sm:h-full sm:flex-row" data-testid="member-management-context">
     <nav aria-label={t("platform.tab.members")} className="shrink-0 text-sidebar-foreground sm:min-h-0 sm:w-(--sidebar-width) sm:overflow-y-auto">
       <SidebarGroup><SidebarGroupLabel>{t("platform.tab.members")}</SidebarGroupLabel><SidebarGroupContent><SidebarMenu>
         {(Object.keys(sections) as Section[]).map(section=><SidebarMenuItem key={section}><SidebarMenuButton type="button"
