@@ -38,8 +38,9 @@ class Policy(unittest.TestCase):
     def test_repository_policy_is_valid(self):
         policy = hr.load_policy(os.path.join(os.path.dirname(__file__), "policy.json"))
         paths = [r["path"] for r in policy["roots"]]
-        self.assertEqual(paths, ["/home/ubuntu/scratch", "/home/ubuntu/branch-core", "/var/lib/kailo-ci/tmp",
-                                 "/var/lib/kailo-ci/branch", "/volumes/data/kailo/check-cache"])
+        self.assertEqual(paths, ["/home/ubuntu/scratch", "/home/ubuntu/branch-core", "/home/ubuntu/branch-nvme",
+                                 "/var/lib/kailo-ci/tmp", "/var/lib/kailo-ci/branch", "/var/lib/kailo-ci/slots/work",
+                                 "/volumes/data/kailo/check-cache"])
         self.assertEqual(policy["grace_seconds"], 2 * HOUR)
 
     def test_invalid_policies_are_refused(self):

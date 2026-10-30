@@ -3,10 +3,33 @@
   "grace_seconds": 7200,
   "ci_config": "/volumes/kailo/ci/config.json",
   "roots": [
-    {"path": "/home/ubuntu/scratch", "max_idle_seconds": 86400},
-    {"path": "/home/ubuntu/branch-core", "max_idle_seconds": 86400},
-    {"path": "/var/lib/kailo-ci/tmp", "max_idle_seconds": 86400},
-    {"path": "/var/lib/kailo-ci/branch", "max_idle_seconds": 86400},
-    {"path": "/volumes/data/kailo/check-cache", "max_idle_seconds": 1209600}
+    {
+      "path": "/home/ubuntu/scratch",
+      "max_idle_seconds": 86400
+    },
+    {
+      "path": "/home/ubuntu/branch-core",
+      "max_idle_seconds": 86400
+    },
+    {
+      "path": "/home/ubuntu/branch-nvme",
+      "max_idle_seconds": 86400
+    },
+    {
+      "path": "/var/lib/kailo-ci/tmp",
+      "max_idle_seconds": 86400
+    },
+    {
+      "path": "/var/lib/kailo-ci/branch",
+      "max_idle_seconds": 86400
+    },
+    {
+      "path": "/var/lib/kailo-ci/slots/work",
+      "max_idle_seconds": 86400
+    },
+    {
+      "path": "/volumes/data/kailo/check-cache",
+      "max_idle_seconds": 1209600
+    }
   ]
 }
