@@ -11,10 +11,10 @@ import (
 
 // fakeIdP serves the client-credentials token endpoint and the user logout endpoint.
 type fakeIdP struct {
-	mu          sync.Mutex
-	tokens      int
-	logouts     []string
-	statuses    map[string][]int // subject -> successive logout statuses
+	mu       sync.Mutex
+	tokens   int
+	logouts  []string
+	statuses map[string][]int // subject -> successive logout statuses
 }
 
 func (f *fakeIdP) handler(t *testing.T) http.Handler {
