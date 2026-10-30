@@ -1229,7 +1229,9 @@ mod tests {
             adapter_client: None,
             manifest: json!({"frontendDelivery": {"mode": "NATIVE_PAGE"}}),
         };
-        let all = facts(&mut tx, &entry(None)).await.unwrap();
+        let all = facts(&mut tx, &entry(None), Uuid::new_v4(), 1)
+            .await
+            .unwrap();
         let mut members: Vec<Uuid> = all.members.iter().map(|m| m.principal_id).collect();
         members.sort();
         let mut expected = vec![listed, principals[4].0];
@@ -1259,7 +1261,9 @@ mod tests {
             !all.memberships.contains_key(&principals[4].0),
             "REVOKED membership listed"
         );
-        let scoped = facts(&mut tx, &entry(Some(active_ws))).await.unwrap();
+        let scoped = facts(&mut tx, &entry(Some(active_ws)), Uuid::new_v4(), 1)
+            .await
+            .unwrap();
         assert_eq!(scoped.scope_workspace, Some(active_ws));
         assert_eq!(scoped.workspaces.len(), 1);
         tx.rollback().await.unwrap();
