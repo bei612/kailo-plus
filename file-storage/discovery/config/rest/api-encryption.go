@@ -24,6 +24,7 @@ import (
 	restful "github.com/emicklei/go-restful/v3"
 
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/client/grpc"
 	"github.com/pydio/cells/v5/common/proto/encryption"
 )
@@ -51,6 +52,10 @@ func (s *Handler) ListEncryptionKeys(req *restful.Request, resp *restful.Respons
 
 // CreateEncryptionKey simply forwards to underlying key service
 func (s *Handler) CreateEncryptionKey(req *restful.Request, resp *restful.Response) error {
+	// DD-138(6), 07 §4.8.5: deployment-declared storage, read-only for people Kailo manages.
+	if e := auth.NativeKailoRefuseManagedWrite(req.Request.Context()); e != nil {
+		return e
+	}
 	var request encryption.AdminCreateKeyRequest
 	if e := req.ReadEntity(&request); e != nil {
 		return e
@@ -68,6 +73,10 @@ func (s *Handler) CreateEncryptionKey(req *restful.Request, resp *restful.Respon
 
 // DeleteEncryptionKey simply forwards to underlying key service
 func (s *Handler) DeleteEncryptionKey(req *restful.Request, resp *restful.Response) error {
+	// DD-138(6), 07 §4.8.5: deployment-declared storage, read-only for people Kailo manages.
+	if e := auth.NativeKailoRefuseManagedWrite(req.Request.Context()); e != nil {
+		return e
+	}
 	var request encryption.AdminDeleteKeyRequest
 	if e := req.ReadEntity(&request); e != nil {
 		return e
@@ -85,6 +94,10 @@ func (s *Handler) DeleteEncryptionKey(req *restful.Request, resp *restful.Respon
 
 // ExportEncryptionKey simply forwards to underlying key service
 func (s *Handler) ExportEncryptionKey(req *restful.Request, resp *restful.Response) error {
+	// DD-138(6), 07 §4.8.5: deployment-declared storage, read-only for people Kailo manages.
+	if e := auth.NativeKailoRefuseManagedWrite(req.Request.Context()); e != nil {
+		return e
+	}
 	var request encryption.AdminExportKeyRequest
 	if e := req.ReadEntity(&request); e != nil {
 		return e
@@ -102,6 +115,10 @@ func (s *Handler) ExportEncryptionKey(req *restful.Request, resp *restful.Respon
 
 // ImportEncryptionKey forwards call to underlying key service
 func (s *Handler) ImportEncryptionKey(req *restful.Request, resp *restful.Response) error {
+	// DD-138(6), 07 §4.8.5: deployment-declared storage, read-only for people Kailo manages.
+	if e := auth.NativeKailoRefuseManagedWrite(req.Request.Context()); e != nil {
+		return e
+	}
 	var request encryption.AdminImportKeyRequest
 	if e := req.ReadEntity(&request); e != nil {
 		return e

@@ -79,6 +79,14 @@ export default class Registry{
             params.ws = repositoryId
         }
 
+        // Kailo (DD-138(6), 07 §4.8.5): an admin surface page starts in the
+        // console workspace so the business page never paints in it; the
+        // server keeps its default for a user without that workspace.
+        const kailo = typeof window !== 'undefined' && window.KailoCells;
+        if (!params.ws && kailo && kailo.adminSurface && kailo.adminSurface()) {
+            params.ws = 'settings'
+        }
+
         const url = Parameters.get('ENDPOINT_REST_API') + '/frontend/state';
 
         this._pydioObject.fire("registry_loading")

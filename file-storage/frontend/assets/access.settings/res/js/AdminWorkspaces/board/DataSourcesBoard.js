@@ -40,6 +40,7 @@ import EncryptionKeys from './EncryptionKeys'
 import {muiThemeable} from 'material-ui/styles'
 const {JobsStore, moment} = Pydio.requireLib("boot");
 import CreateDSDialog from "../editor/CreateDSDialog";
+import DataSourceFacts from "../editor/DataSourceFacts";
 
 class DataSourcesBoard extends React.Component {
 
@@ -87,6 +88,34 @@ class DataSourcesBoard extends React.Component {
     componentWillUnmount(){
         clearInterval(this.statusPoller);
         clearInterval(this.syncPoller);
+    }
+
+    componentDidUpdate(){
+        // Kailo admin surface (DD-138(6)): the page is shown once the lists are loaded.
+        const kailo = window.KailoCells;
+        if(this.props.kailoSurface && kailo && kailo.setAdminSurfaceState){
+            const ready = this.state.dsLoaded && this.state.versionsLoaded;
+            if(ready !== this._kailoReady){
+                this._kailoReady = ready;
+                kailo.setAdminSurfaceState({ready});
+            }
+        }
+    }
+
+    // Kailo READ_ONLY storage surface: the data source as a definition list.
+    openDataSourceFacts(dataSources){
+        if(!dataSources.length){
+            return;
+        }
+        const {openRightPane} = this.props;
+        openRightPane({
+            COMPONENT:DataSourceFacts,
+            PROPS:{
+                dataSource:dataSources[0],
+                policies:this.state.versioningPolicies,
+                closeEditor:this.closeEditor.bind(this),
+            }
+        });
     }
 
     load(newDsName = null){
@@ -390,7 +419,7 @@ class DataSourcesBoard extends React.Component {
         const blockProps = body.block.props;
         const blockStyle = body.block.container;
 
-        const {currentNode, pydio, versioningReadonly, accessByName} = this.props;
+        const {currentNode, pydio, versioningReadonly, accessByName, kailoReadOnly} = this.props;
         let dsColumns = [
             {name:'Name', label:m('name'), style:{fontSize: 15, width: '15%'}, headerStyle:{width: '15%'}, sorter:{type:'string', default:true}},
             {name:'StorageType', label:m('storage'), style:{width:'15%'}, headerStyle:{width:'15%'}, renderCell:(row)=>{
@@ -508,6 +537,65 @@ class DataSourcesBoard extends React.Component {
                 destructive:true,
                 onClick:row => this.deleteVersionPolicy(row)
             })
+        }
+
+        if(kailoReadOnly){
+            // Deployment-declared storage (07 §4.8.5): lists and a read-only
+            // detail only; no create, edit, delete, re-sync, workspace creation
+            // or encryption key entry (the server refuses those writes too).
+            const openFacts = this.openDataSourceFacts.bind(this);
+            return (
+                <div className="main-layout-nav-to-stack workspaces-board kailo-admin-readonly">
+                    <div className="vertical-layout" style={{width:'100%'}}>
+                        <div className="layout-fill">
+                            <AdminComponents.SubHeader title={m('board.ds.title')}/>
+                            <Paper {...blockProps} style={{...blockStyle}}>
+                                <MaterialTable
+                                    data={splitSources}
+                                    columns={dsColumns}
+                                    actions={[]}
+                                    onSelectRows={openFacts}
+                                    deselectOnClickAway={true}
+                                    showCheckboxes={false}
+                                    emptyStateString={m('emptyState')}
+                                    masterStyles={tableMaster}
+                                    storageKey={'console.datasources.list'}
+                                />
+                            </Paper>
+                            {internalSources.length > 0 &&
+                                <Fragment>
+                                    <AdminComponents.SubHeader title={m('board.ds.internal.legend')}/>
+                                    <Paper {...blockProps} style={{...blockStyle}}>
+                                        <MaterialTable
+                                            data={internalSources}
+                                            columns={internalColumns}
+                                            actions={[]}
+                                            onSelectRows={openFacts}
+                                            deselectOnClickAway={true}
+                                            showCheckboxes={false}
+                                            emptyStateString={m('emptyState')}
+                                            masterStyles={tableMaster}
+                                            storageKey={'console.internalsources.list'}
+                                        />
+                                    </Paper>
+                                </Fragment>
+                            }
+                            <AdminComponents.SubHeader title={m('board.versioning.title')}/>
+                            <Paper {...blockProps} style={{...blockStyle}}>
+                                <MaterialTable
+                                    data={versioningPolicies}
+                                    columns={policiesColumns}
+                                    actions={[]}
+                                    deselectOnClickAway={true}
+                                    showCheckboxes={false}
+                                    masterStyles={tableMaster}
+                                    storageKey={'console.versioning.policies.list'}
+                                />
+                            </Paper>
+                        </div>
+                    </div>
+                </div>
+            );
         }
 
         return (

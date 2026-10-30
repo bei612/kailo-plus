@@ -1,8 +1,7 @@
+import originalResolvers from './apollo/server/resolvers';
 import { LearningResolver } from './apollo/server/resolvers/learningResolver';
-import {
-  loadQueryDelivery,
-  NativeQueryRefusal,
-} from './apollo/server/services/nativeQueryAdmission';
+import { GeneralErrorCodes } from './apollo/server/utils/error';
+import { loadQueryDelivery } from './apollo/server/services/nativeQueryAdmission';
 import { authorizeNativeScope } from './apollo/server/services/nativeHumanQuery';
 
 jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
@@ -13,138 +12,87 @@ jest.mock('./apollo/server/services/nativeHumanQuery', () => ({
   ...jest.requireActual('./apollo/server/services/nativeHumanQuery'),
   authorizeNativeScope: jest.fn(),
 }));
+jest.mock('./common', () => ({ components: { apiHistoryRepository: {} } }));
 
-describe('original learning records consume the verified native person', () => {
-  const resolver = new LearningResolver();
+// DD-138(7): help and learning guidance come only from Kailo; the original
+// learning record is closed on the server in both query modes.
+describe('the original learning record is closed', () => {
+  const forbidden = {
+    extensions: { code: GeneralErrorCodes.KAILO_FEATURE_UNAVAILABLE },
+  };
   let previous: string | undefined;
   let ctx: any;
-  let epoch: number;
-  let config: any;
+  const untouched = () => {
+    for (const method of Object.values(ctx.learningRepository))
+      expect(method).not.toHaveBeenCalled();
+    expect(ctx.projectService.getCurrentProject).not.toHaveBeenCalled();
+  };
+
   beforeEach(() => {
     previous = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
-      'controlled-learning-delivery';
-    config = {
-      projectId: 3,
-      bindingId: 'binding',
-      nativeInstanceRef: 'instance',
-      nativeScopeRef: 'project',
-    };
-    epoch = 1;
     ctx = {
+      kailoUser: { key: 'a'.repeat(64), admin: true },
       nativeIdentityScope: 'a'.repeat(64),
       nativeHumanToken: 'verified-human',
       projectService: { getCurrentProject: jest.fn(async () => ({ id: 3 })) },
       learningRepository: {
-        findAll: jest.fn(() => {
-          throw new Error('global read forbidden');
-        }),
-        findAllBy: jest.fn(async ({ userId }) => [
-          { userId, paths: ['start'] },
-        ]),
-        saveNativePath: jest.fn(async (_project, userId, path, beforeWrite) => {
-          await beforeWrite();
-          return { userId, paths: [path] };
-        }),
+        findAll: jest.fn(async () => [{ paths: ['start'] }]),
+        findAllBy: jest.fn(async () => [{ paths: ['start'] }]),
+        createOne: jest.fn(),
+        updateOne: jest.fn(),
+        saveNativePath: jest.fn(),
       },
     };
     jest
       .mocked(loadQueryDelivery)
       .mockReset()
-      .mockImplementation(async () => structuredClone(config));
+      .mockResolvedValue({
+        projectId: 3,
+        bindingId: 'binding',
+        nativeInstanceRef: 'instance',
+        nativeScopeRef: '3',
+      } as any);
     jest
       .mocked(authorizeNativeScope)
       .mockReset()
-      .mockImplementation(async () => ({ generation: epoch }) as any);
+      .mockResolvedValue({ generation: 1 } as any);
   });
   afterEach(() => {
     if (previous === undefined)
       delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
     else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = previous;
   });
-  test('two verified people never select the global first row', async () => {
-    await resolver.getLearningRecord(null, null, ctx);
-    const first = ctx.learningRepository.findAllBy.mock.calls[0][0].userId;
-    ctx.nativeIdentityScope = 'b'.repeat(64);
-    await resolver.getLearningRecord(null, null, ctx);
-    expect(ctx.learningRepository.findAllBy.mock.calls[1][0].userId).not.toBe(
-      first,
-    );
-    expect(ctx.learningRepository.findAll).not.toHaveBeenCalled();
-  });
-  test('read refuses a generation switch after repository read', async () => {
-    ctx.learningRepository.findAllBy.mockImplementation(async () => {
-      epoch++;
-      return [];
-    });
-    await expect(resolver.getLearningRecord(null, null, ctx)).rejects.toThrow();
-  });
-  test('missing verified identity cannot fall back to standalone data', async () => {
-    delete ctx.nativeIdentityScope;
-    await expect(resolver.getLearningRecord(null, null, ctx)).rejects.toThrow();
-    expect(ctx.learningRepository.findAllBy).not.toHaveBeenCalled();
-  });
-  test('project mismatch is refused before accessing learning rows', async () => {
-    config.projectId = 9;
+
+  test.each(['STANDALONE', 'GOVERNED'])(
+    'the resolver refuses read and write without a learning row (%s)',
+    async (mode) => {
+      if (mode === 'GOVERNED')
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '/fixture/query.json';
+      else delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      const resolver = new LearningResolver();
+      await expect(
+        resolver.getLearningRecord(null, null, ctx),
+      ).rejects.toMatchObject(forbidden);
+      await expect(
+        resolver.saveLearningRecord(null, { data: { path: 'start' } }, ctx),
+      ).rejects.toMatchObject(forbidden);
+      untouched();
+    },
+  );
+
+  test('the GraphQL operations are refused, an admin included', async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
     await expect(
-      resolver.saveLearningRecord(null, { data: { path: 'start' } }, ctx),
-    ).rejects.toThrow();
-    expect(ctx.learningRepository.saveNativePath).not.toHaveBeenCalled();
-  });
-  test('revocation while waiting for native transaction prevents its write', async () => {
-    let wrote = false;
-    ctx.learningRepository.saveNativePath.mockImplementation(
-      async (_project, _user, _path, beforeWrite) => {
-        jest
-          .mocked(authorizeNativeScope)
-          .mockRejectedValue(new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'));
-        await beforeWrite();
-        wrote = true;
-      },
-    );
+      (originalResolvers.Query as any).learningRecord(undefined, {}, ctx),
+    ).rejects.toMatchObject(forbidden);
     await expect(
-      resolver.saveLearningRecord(null, { data: { path: 'start' } }, ctx),
-    ).rejects.toThrow();
-    expect(wrote).toBe(false);
-  });
-  test('write uses the original project, personal partition and path', async () => {
-    const result = await resolver.saveLearningRecord(
-      null,
-      { data: { path: 'start' } },
-      ctx,
-    );
-    expect(result.paths).toEqual(['start']);
-    expect(ctx.learningRepository.saveNativePath.mock.calls[0][0]).toBe(3);
-    expect(ctx.learningRepository.saveNativePath.mock.calls[0][1]).toMatch(
-      /^[a-f0-9]{64}$/,
-    );
-    expect(
-      jest
-        .mocked(authorizeNativeScope)
-        .mock.calls.every((call) => call[2] === 'discover'),
-    ).toBe(true);
-  });
-  test('a committed write followed by revocation is not labeled unstarted or successful', async () => {
-    let committed: any;
-    ctx.learningRepository.saveNativePath.mockImplementation(
-      async (_project, userId, path, beforeWrite) => {
-        await beforeWrite();
-        epoch++;
-        committed = { userId, paths: [path, path] };
-        return committed;
-      },
-    );
-    await expect(
-      resolver.saveLearningRecord(null, { data: { path: 'start' } }, ctx),
-    ).rejects.toMatchObject({
-      extensions: { other: { nativeWrite: { outcome: 'UNKNOWN' } } },
-    });
-    ctx.learningRepository.findAllBy.mockImplementation(async ({ userId }) =>
-      committed.userId === userId ? [committed] : [],
-    );
-    expect(await resolver.getLearningRecord(null, null, ctx)).toEqual({
-      paths: ['start'],
-    });
-    expect(ctx.learningRepository.saveNativePath).toHaveBeenCalledTimes(1);
+      (originalResolvers.Mutation as any).saveLearningRecord(
+        undefined,
+        { data: { path: 'start' } },
+        ctx,
+      ),
+    ).rejects.toMatchObject(forbidden);
+    untouched();
   });
 });

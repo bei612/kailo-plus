@@ -1,17 +1,14 @@
-import { useRouter } from 'next/router';
 import { useCallback } from 'react';
-import { Path } from '@/utils/enum';
 import { ONBOARDING_STATUS } from '@/apollo/client/graphql/onboarding';
 import { useStartSampleDatasetMutation } from '@/apollo/client/graphql/dataSource.generated';
 import { SampleDatasetName } from '@/apollo/client/graphql/__types__';
 
-export default function useSetupConnectionSampleDataset() {
-  const router = useRouter();
-
+// DD-138(6): the data source admin surface shows its settings afterwards.
+export default function useSetupConnectionSampleDataset(onDone?: () => void) {
   const [startSampleDatasetMutation, { loading, error }] =
     useStartSampleDatasetMutation({
       onError: (error) => console.error(error),
-      onCompleted: () => router.push(Path.Modeling),
+      onCompleted: () => onDone?.(),
       refetchQueries: [{ query: ONBOARDING_STATUS }],
       awaitRefetchQueries: true,
     });

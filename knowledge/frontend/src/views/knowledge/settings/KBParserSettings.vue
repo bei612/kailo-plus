@@ -56,7 +56,7 @@
               {{ $t('kbSettings.parser.xlsxFirstRowAsHeader') }}
             </t-checkbox>
             <div v-if="!hasAvailableEngine(group.extensions)" class="no-engine-warning">
-              <a class="go-settings" @click.prevent="goToParserSettings">{{ $t('kbSettings.parser.goConfig') }}</a>
+              <a v-if="settingsLinks" class="go-settings" @click.prevent="goToParserSettings">{{ $t('kbSettings.parser.goConfig') }}</a>
             </div>
           </div>
         </div>
@@ -71,6 +71,8 @@ import { useI18n } from 'vue-i18n'
 import { type ParserEngineInfo } from '@/api/system'
 import { useEditorResourcesStore } from '@/stores/editorResources'
 import { useUIStore } from '@/stores/ui'
+import { isKailoMode } from '@/kailo/runtime'
+import { nativeSettingsLinks } from '@/kailo/surface'
 import { storeToRefs } from 'pinia'
 
 const { t } = useI18n()
@@ -297,6 +299,8 @@ function buildCompleteRules(): ParserEngineRule[] {
   return rules
 }
 
+// DD-138(6): no links into native settings in Kailo mode (admin surfaces live in Kailo).
+const settingsLinks = nativeSettingsLinks(isKailoMode())
 function goToParserSettings() {
   uiStore.openSettings('parser')
 }

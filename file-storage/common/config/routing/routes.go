@@ -138,6 +138,22 @@ func WithoutSubPathSupport() RouteOption {
 	}
 }
 
+type ctxCatchAllRequestedPath struct{}
+
+// WithCatchAllRequestedPath records the request path a catch-all handler was
+// rewritten from (Kailo DD-138(6): the index handler closes the native admin
+// console by the path the browser asked for).
+func WithCatchAllRequestedPath(ctx context.Context, requested string) context.Context {
+	return context.WithValue(ctx, ctxCatchAllRequestedPath{}, requested)
+}
+
+// CatchAllRequestedPath returns the request path before a catch-all rewrite,
+// or "" when the request reached its handler without one.
+func CatchAllRequestedPath(ctx context.Context) string {
+	p, _ := ctx.Value(ctxCatchAllRequestedPath{}).(string)
+	return p
+}
+
 // ResolvedURIFromContext reads resolved URI from context
 func ResolvedURIFromContext(ctx context.Context) string {
 	return ctx.Value(ctxResolvedRouteURI{}).(string)

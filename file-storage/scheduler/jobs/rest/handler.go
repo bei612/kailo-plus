@@ -308,6 +308,12 @@ func (s *JobsHandler) UserCreateJob(req *restful.Request, rsp *restful.Response)
 		}
 		job, err = userspace.CopyMoveTask(ctx, router, nn, target, targetIsParent, move, ll...)
 	case "datasource-resync":
+		// DD-138(6), 07 §4.8.5: data sources are deployment-declared and shown
+		// read-only in the Kailo admin area; re-indexing one is an operational
+		// action of the deployment, refused for people Kailo manages.
+		if err = auth.NativeKailoRefuseManagedWrite(ctx); err != nil {
+			break
+		}
 		dsName := jsonParams["dsName"].(string)
 		job, err = userspace.SyncDatasourceTask(ctx, dsName, ll...)
 	case "import-p8":

@@ -1,0 +1,98 @@
+capability_id: component.admin_surfaces
+title: 产品一体化呈现第三阶段：组件管理面并入 Kailo 管理区，组件原生管理控制台在服务端关闭
+stage: EXT-BASE
+status: in_progress
+# 本批源码尚未构建进任何产物，也未部署；组件 1.4.0-native-page release 需在构建后登记、批准并换绑。
+exposure: none
+
+design:
+  requirements: [V-REQ-17]
+  decisions: [DD-138]
+  facts: []
+  seams: []
+  blockers: []
+  entities: [FrontendPresentationContract, ComponentAdminSurfaceDeclaration, ComponentRelease, ApplicationBinding]
+
+validation:
+  scenarios: [V-SCN-229, V-SCN-269, V-SCN-270]
+  evidence:
+    - dimension: 合同一致
+      ref: contracts/domain/component_admin_surface_declaration.schema.json
+    - dimension: 单元测试
+      ref: core/crates/platform-core/src/component_release.rs
+    - dimension: 单元测试
+      ref: core/crates/platform-core/src/admin_surface.rs
+    - dimension: 单元测试
+      ref: client-kit/ts/platform/test/admin-surfaces.test.tsx
+    - dimension: 单元测试
+      ref: client-kit/ts/platform/test/kailo-embed-runtime.test.ts
+    - dimension: 单元测试
+      ref: file-storage/frontend/web/kailo-admin_test.go
+    - dimension: 单元测试
+      ref: file-storage/discovery/config/rest/kailo-storage_test.go
+    - dimension: 单元测试
+      ref: file-storage/frontend/assets/kailo.embed/kailo-cells.test.js
+    - dimension: 单元测试
+      ref: knowledge/internal/middleware/kailo_managed_test.go
+    - dimension: 单元测试
+      ref: knowledge/frontend/src/kailo/adminSurface.test.ts
+    - dimension: 单元测试
+      ref: data-query/wren-ui/src/kailoAdminSurface.test.ts
+    - dimension: 单元测试
+      ref: data-query/wren-ui/src/middleware.test.ts
+    - dimension: 单元测试
+      ref: data-query/wren-ui/src/kailoAdminRead.test.ts
+    - dimension: 呈现
+      ref: core/verify/admin-surfaces.md
+
+implementation:
+  owners: [team-platform, team-capabilities]
+  paths:
+    - contracts/domain/component_admin_surface_declaration.schema.json
+    - contracts/enums/component_admin_category.schema.json
+    - contracts/enums/component_admin_permission.schema.json
+    - contracts/enums/component_admin_access.schema.json
+    - contracts/api/admin_surface_page.schema.json
+    - contracts/api/application_native_page.schema.json
+    - core/crates/platform-core/src/component_release.rs
+    - core/crates/platform-core/src/admin_surface.rs
+    - core/crates/platform-core/src/application_page.rs
+    - client-kit/embed/kailo-embed.js
+    - client-kit/embed/kailo-embed.d.ts
+    - client-kit/ts/platform/src/admin-surfaces.ts
+    - client-kit/ts/platform/src/react/admin-surfaces.tsx
+    - client-kit/ts/platform/src/react/native-application-page.tsx
+    - client-kit/ts/platform/src/react/native-page-shell.tsx
+    - client-kit/ts/platform/src/react/pages.tsx
+    - client-kit/ts/platform/src/i18n.ts
+    - file-storage/fork/release/manifest.native-page.json
+    - file-storage/frontend/web/kailo-admin.go
+    - file-storage/common/auth/native-kailo-admin.go
+    - file-storage/frontend/assets/kailo.embed/kailo-cells.js
+    - file-storage/frontend/assets/access.settings/res/js/AdminComponents/board/KailoAdminSurface.js
+    - knowledge/fork/release/manifest.native-page.json
+    - knowledge/frontend/src/kailo/adminSurface.ts
+    - knowledge/frontend/src/kailo/AdminSurface.vue
+    - knowledge/frontend/docker-entrypoint.sh
+    - knowledge/internal/middleware/kailo_managed.go
+    - data-query/fork/release/manifest.native-page.json
+    - data-query/wren-ui/src/utils/kailoAdminSurface.ts
+    - data-query/wren-ui/src/components/kailo/KailoAdminSurface.tsx
+    - data-query/wren-ui/src/middleware.ts
+  surfaces: [web, desktop]
+  schemas:
+    - contracts/domain/component_admin_surface_declaration.schema.json
+    - contracts/enums/component_admin_category.schema.json
+    - contracts/enums/component_admin_permission.schema.json
+    - contracts/enums/component_admin_access.schema.json
+    - contracts/api/admin_surface_page.schema.json
+  migrations: []
+
+runtime:
+  routes: []
+  actions: []
+  workflow_kinds: []
+
+release:
+  artifacts: []
+  gate: blocked_until_seams_closed

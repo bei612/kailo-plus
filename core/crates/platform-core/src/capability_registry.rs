@@ -115,6 +115,7 @@ mod tests {
         assert!(route_exposed(
             "/api/v1/application-bindings/{id}/native-page"
         ));
+        assert!(route_exposed("/api/v1/admin-surfaces"));
         assert!(action_exposed("application_binding.create"));
         assert!(action_exposed("application_binding.disable"));
         assert!(action_exposed("resource.create"));

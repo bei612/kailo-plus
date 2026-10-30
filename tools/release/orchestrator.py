@@ -459,7 +459,7 @@ def component_entries(instances, facts, rebuilt):
 
 
 COMPONENT_ACTIONS = {
-    "deploy": "将部署：备份实例 env → 改写声明键 → component-deploy.sh → 回读",
+    "deploy": "将部署：（受计量约束的组件先通过 verify-metering）备份实例 env → 改写声明键 → component-deploy.sh → 回读",
     "current": "实例 env 与运行镜像已等于 pin 且健康，跳过",
     "not_installed": "实例 env 不存在（未安装），只报告",
     "refuse": "声明键不可改写或项目无法确定，deploy 将拒绝该实例（不影响平台服务）",

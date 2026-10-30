@@ -427,6 +427,8 @@ COMPONENT_PROJECT_REF = re.compile(r"\$\{(?P<key>[A-Z][A-Z0-9_]*)\}")
 COMPONENT_REFUSED = ("missing", "duplicate", "invalid", "repository")
 COMPONENT_ENV_JOURNAL = "component-env-journal.jsonl"
 COMPONENT_SCRIPT = "deploy/components/component-deploy.sh"
+# 与 component-deploy.sh 的前置条件同一范围（DD-165(5)）：这些组件依赖 Core 的组件用量合同与已登记额度项
+COMPONENT_METERING_GATED = ("file-storage", "knowledge", "data-query")
 
 
 def component_registry(cfg):
@@ -690,6 +692,45 @@ class IdpStep:
         native = next((r.get("nativeClientProfiles") for r in results if "nativeClientProfiles" in r), None)
         directory = next((r.get("directoryClients") for r in results if "directoryClients" in r), None)
         return dict(commands=results, native_client_profiles=native, directory_clients=directory, problems=problems)
+
+
+class MeteringStep:
+    """DD-165(5) 发布对齐：在 Core 容器内执行 platform-core 的对齐（apply）与只读回读（verify）。run(mode) 返回
+    (退出码, 标准输出)；标准输出最后一行是 Core 输出的计数与缺口 JSON（只含 meter/feature 键与 Tenant ID）。"""
+
+    KEEP = ("mode", "meters", "features", "tenants", "entitlements")
+
+    def __init__(self, spec, run):
+        self.spec, self.run = spec, run
+        self.service = spec["service"]
+
+    def _one(self, mode):
+        code, stdout = self.run(mode)
+        lines = (stdout or "").strip().splitlines()
+        try:
+            value = json.loads(lines[-1]) if lines else {}
+        except ValueError:
+            value = {}
+        if not isinstance(value, dict):
+            value = {}
+        gaps = [str(p)[:300] for p in (value.get("problems") or []) if isinstance(p, str)]
+        result = {k: value[k] for k in self.KEEP if k in value}
+        result.update(command=mode, exit_code=code, problems=gaps)
+        return result
+
+    def apply(self):
+        result = self._one(self.spec["apply"])
+        if result["exit_code"] != 0:
+            # 发布就此中止：其后的服务不被替换；命令幂等，下一次 deploy 从头重跑
+            raise NodeError(f"计量对齐 {result['command']} 退出 {result['exit_code']}："
+                            + "；".join(result["problems"][:10]))
+        return result
+
+    def verify(self):
+        result = self._one(self.spec["verify"])
+        problems = [] if result["exit_code"] == 0 else (
+            [f"计量回读：{p}" for p in result["problems"]] or [f"计量回读 {result['command']} 退出 {result['exit_code']}"])
+        return dict(result, problems=problems)
 
 
 # ---- inspect：只读探针 ---------------------------------------------------------
@@ -1349,6 +1390,18 @@ class Release:
 
         return IdpStep(spec, idp_digest(files, values, keys), values,
                        os.path.join(self.decl["node"]["journal"], IDP_STATE), execute)
+
+    def metering_step(self):
+        """DD-165(5) 的计量对齐；release.yaml 没有 metering 段（旧发布树）时为 None。"""
+        if "metering" not in self.decl:
+            return None
+        spec = self.model.metering_declaration(self.decl)
+
+        def execute(mode):
+            r = self.compose("exec", "-T", spec["service"], "/usr/local/bin/platform-core", mode, check=False)
+            return r.returncode, (r.stdout or b"").decode(errors="replace")
+
+        return MeteringStep(spec, execute)
 
     def _preflight(self, need_receipt):
         root = os.path.dirname(self.tree)
@@ -2165,6 +2218,20 @@ class Release:
             + ("" if journal["idp"].get("directory_clients_declared") else "；成员目录 client 未声明（COMPONENT_DIRECTORY_CLIENTS 为空）"))
         self.write_journal("deploy.json", journal)
         extra = self.ci_env
+        metering = self.metering_step()
+
+        def align_metering():
+            # DD-165(5)：Core 就绪后、其他服务之前；失败即中止 deploy（MeteringStep 抛出）
+            say(f"== 计量对齐（{metering.service} 内 platform-core {metering.spec['apply']}）")
+            journal["metering"] = metering.apply()
+            say("   meter {meters}、feature {features}、Tenant {tenants}、额度 {entitlements}".format(
+                **{k: journal["metering"].get(k, "?") for k in ("meters", "features", "tenants", "entitlements")}))
+            self.write_journal("deploy.json", journal)
+
+        if metering and metering.service not in targets:
+            # 运行中的 Core 已是本次 pin：在替换任何其他服务之前对齐
+            self.wait_ready(metering.service)
+            align_metering()
         # 同一启动入口（例如 start-core.sh 同时建 core-bff 与带叠加的 Worker）在一次 deploy 中只执行一次。
         commands_run = set()
         for svc in targets:
@@ -2191,10 +2258,21 @@ class Release:
                 self.record_delivery()
                 journal["delivery"]["pending"] = False
             self.write_journal("deploy.json", journal)
+            if metering and svc == metering.service:
+                align_metering()
         self.recreate_drifted(converge["after"], rendered, hashes, journal)
         # 组件实例（ADR-20 §12）：平台服务全部就位之后逐个部署。一个实例失败不影响其余实例，也不回滚已部署的
         # 平台服务（AGENTS 21：业务能力的缺口只阻断它自己）；失败在附带损伤比较之后统一报告，重跑 deploy 时按现场重算。
         failed_components = []
+        # DD-165(5) 前置：组件部署在计量对齐之后（上面 Core 就绪时已 align-metering），并且 Core 的只读回读
+        # verify-metering 必须通过；不通过即拒绝部署受计量约束的组件（component-deploy.sh 自身也核对同一条件）。
+        metering_gate = None
+        if metering and any(c["action"] in ("deploy", "refuse") and c["name"] in COMPONENT_METERING_GATED
+                            for c in components):
+            say(f"== 组件部署前置：{metering.service} 内 platform-core {metering.spec['verify']}")
+            metering_gate = metering.verify()
+            journal["component_metering_gate"] = metering_gate
+            say("   " + ("通过" if not metering_gate["problems"] else "未通过：" + "；".join(metering_gate["problems"][:5])))
         for entry, inst in zip(journal["components"], components):
             if inst["action"] == "not_installed":
                 say(f"== 组件实例 {inst['name']}：实例 env 不存在（未安装），只报告")
@@ -2203,6 +2281,9 @@ class Release:
                 say(f"== 组件实例 {inst['name']}：实例 env 与运行镜像已等于 pin 且健康，跳过")
                 continue
             try:
+                if metering_gate and metering_gate["problems"] and inst["name"] in COMPONENT_METERING_GATED:
+                    raise NodeError(f"组件实例 {inst['name']} 拒绝部署：平台 Core 的计量回读未通过（DD-165(5)）："
+                                    + "；".join(metering_gate["problems"][:5]))
                 if inst["action"] == "refuse":
                     raise NodeError(f"组件实例 {inst['name']} 拒绝部署：" + (inst.get("error") or "，".join(
                         f"{k} {s}" for k, s in sorted(inst["env"].items()) if s in COMPONENT_REFUSED)))
@@ -2265,6 +2346,10 @@ class Release:
         bad += self.delivery_problems()
         idp = self.idp_step().verify()
         bad += idp["problems"]
+        metering_step = self.metering_step()
+        metering = metering_step.verify() if metering_step else None
+        if metering:
+            bad += metering["problems"]
         found = containers(self.cfg["compose_project"])
         rendered, hashes = self.desired()
         drift = self.drift(rendered, hashes, found)
@@ -2293,7 +2378,7 @@ class Release:
         if os.path.isfile(journal_path):
             with open(journal_path, encoding="utf-8") as stream:
                 deploy = json.load(stream)
-        value = dict(commit=self.commit, services=results, problems=bad, idp=idp, components=components,
+        value = dict(commit=self.commit, services=results, problems=bad, idp=idp, metering=metering, components=components,
                      config_drift_reported=[d for d in drift["drift"] if d["service"] in reported],
                      not_running=drift["absent"],
                      deploy_state=(deploy or {}).get("state"),

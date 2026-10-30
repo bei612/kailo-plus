@@ -71,6 +71,9 @@ export enum GeneralErrorCodes {
   // recipient outside the current directory.
   KAILO_SHARE_UNAVAILABLE = 'KAILO_SHARE_UNAVAILABLE',
   KAILO_SHARE_INVALID = 'KAILO_SHARE_INVALID',
+  // DD-138(7): a feature Kailo provides instead (help and learning guidance);
+  // the fork is always the Kailo presentation, so it is refused (forbidden).
+  KAILO_FEATURE_UNAVAILABLE = 'KAILO_FEATURE_UNAVAILABLE',
 }
 
 export const errorMessages = {
@@ -147,6 +150,8 @@ export const errorMessages = {
     'Sharing with Kailo members is not available on this instance.',
   [GeneralErrorCodes.KAILO_SHARE_INVALID]:
     'The shared object or a recipient is not valid.',
+  [GeneralErrorCodes.KAILO_FEATURE_UNAVAILABLE]:
+    'This feature is provided by Kailo and is not available here.',
 };
 
 export const shortMessages = {
@@ -184,6 +189,7 @@ export const shortMessages = {
   [GeneralErrorCodes.KAILO_NOT_MEMBER]: 'Not a member',
   [GeneralErrorCodes.KAILO_SHARE_UNAVAILABLE]: 'Sharing unavailable',
   [GeneralErrorCodes.KAILO_SHARE_INVALID]: 'Invalid share',
+  [GeneralErrorCodes.KAILO_FEATURE_UNAVAILABLE]: 'Not available',
 };
 
 export const create = (

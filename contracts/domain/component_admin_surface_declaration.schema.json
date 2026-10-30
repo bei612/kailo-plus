@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/component_admin_surface_declaration.schema.json",
+  "title": "ComponentAdminSurfaceDeclaration",
+  "description": "DD-138(6)：KAILO_EMBED 原生页面 release 向 Kailo 管理区贡献的一项管理面声明（03 FrontendPresentationContract.admin_surface_declarations[]，07 §4.8.5）。值对象，随 APPROVED release 固定；不授予权限，Core 不保存管理状态。键、路径与文案规则由 Core 登记时校验。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["key", "adminCategory", "path", "requiredPermission", "access", "title"],
+  "properties": {
+    "key": {"type": "string", "description": "管理面标识，2–4 段以 . 连接，不含组件名；成员、角色、邀请、空间与组织类首段被拒绝。"},
+    "adminCategory": {"$ref": "../enums/component_admin_category.schema.json"},
+    "path": {"type": "string", "description": "组件 origin 内的固定路径，以单个 / 开头，不含查询与片段。"},
+    "requiredPermission": {"$ref": "../enums/component_admin_permission.schema.json"},
+    "access": {"$ref": "../enums/component_admin_access.schema.json"},
+    "title": {"$ref": "#/$defs/text"},
+    "description": {"$ref": "#/$defs/text"}
+  },
+  "$defs": {
+    "text": {
+      "title": "ComponentAdminSurfaceText",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ZH_CN", "EN"],
+      "properties": {
+        "ZH_CN": {"type": "string"},
+        "EN": {"type": "string"}
+      }
+    }
+  }
+}

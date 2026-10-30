@@ -34,7 +34,14 @@ const WorkspaceRouterWrapper = (pydio) => {
             }
 
             let switchRepo = false;
+            // Kailo (DD-138(6), 07 §4.8.5): no business URL opens the native
+            // console; it exists only behind a declared admin surface path.
+            const kailo = window.KailoCells;
+            const consoleClosed = !!(kailo && kailo.kailoMode && kailo.kailoMode());
             repositories.forEach((repository) => {
+                if(consoleClosed && repository.getId() === 'settings') {
+                    return;
+                }
                 if(repository.slug === slug && active !== repository.getId()) {
                     pydio._initLoadRep = "/" + splat;
                     pydio.triggerRepositoryChange(repository.getId());

@@ -42,11 +42,14 @@ import {
 import { ISqlPairService } from '../services/sqlPairService';
 import { KailoUserProfile } from '@/utils/kailoUser';
 import { KailoUserLoader } from '../services/kailoUserService';
+import type { KailoUsage } from '../services/kailoUsage';
 
 export interface IContext {
   // DD-133 §3: the verified Kailo user of this request (display claims only).
   kailoUser?: KailoUserProfile | null;
   kailoUsers?: KailoUserLoader;
+  // DD-165: Kailo quota admission and usage reports (directory client).
+  kailoUsage?: KailoUsage;
   // A verified native service-audience token (the instance's AI service).
   kailoNativeService?: boolean;
   nativeHumanToken?: string;

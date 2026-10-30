@@ -362,8 +362,12 @@ CI worker 每次 fetch、检查、构建与发布都在 `<sources>/<commit>` 留
   `REGISTRY` 取 CI 配置 `environment.REGISTRY`，与构建推送同一来源。目标 digest 是 pin commit 的 `*/fork/upstream.yaml`
   `artifact_digest`，因此「上次 pin 了但实例没换」也会被补上，与 §2 中平台服务的部署对象同一规则。`model.component_instances` 在 plan 即校验声明：
   组件名、路径、产物必须是来源记录中已有 digest 的镜像，同一实例中产物不重复。
-- **顺序**：deploy 先完成全部平台服务（迁移 → Core/Worker → 其余 → Web → 「替换后」组漂移收敛），再按声明顺序处理组件实例，最后做附带损伤
-  比较与发布树保留。组件依赖平台（IdP 声明的组件 client、成员目录 client 凭据、交付目录、模型入口），反之不成立，因此组件在后。
+- **顺序**：deploy 先完成全部平台服务（迁移 → Core/Worker → Core 就绪后的计量对齐 `align-metering`（DD-165(5)）→ 其余 → Web →
+  「替换后」组漂移收敛），再按声明顺序处理组件实例，最后做附带损伤比较与发布树保留。组件依赖平台（IdP 声明的组件 client、成员目录 client
+  凭据、交付目录、模型入口、Core 的组件用量合同与额度项），反之不成立，因此组件在后。
+- **计量前置**（DD-165(5)、`.design/07` §4.8.9）：有受计量约束的组件（`file-storage`、`knowledge`、`data-query`，与 `component-deploy.sh`
+  的前置条件同一范围）需要部署时，先在 Core 内执行只读回读 `verify-metering`；不通过即拒绝部署这些组件（记为 FAILED，原因列出缺口），
+  `document-editor` 不受此约束。`component-deploy.sh` 自身仍核对同一条件，两处不互相替代。
 - **每个实例**：
   1. 现场判定（`node.component_facts`/`component_action`）：实例 env 不存在为 `not_installed`，只报告，不创建实例；声明键缺失、重复、
      是占位值或仓库与产物不符为 `refuse`（发布不创建键、不换仓库）；键已等于 pin 且实例项目中运行该产物的容器都是该 digest、
