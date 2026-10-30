@@ -11,13 +11,23 @@ import type { BffClient } from "../client";
 import type { PlatformMessageKey } from "../i18n";
 import { TransportError } from "../transport";
 
+// DD-170 (.design/20 §16.5): an installation's state reads in plain words (Running, Stopped …),
+// never as the record's enum value; the tone is the §9 status tone of the same state.
 export const installationLabels = {
-  [AgentInstallationState.Provisioning]: "agents.installation.state.provisioning",
-  [AgentInstallationState.Active]: "agents.installation.state.active",
-  [AgentInstallationState.Draining]: "agents.installation.state.draining",
-  [AgentInstallationState.Disabled]: "agents.installation.state.disabled",
-  [AgentInstallationState.Error]: "agents.installation.state.error",
+  [AgentInstallationState.Provisioning]: "agents.ui.installState.provisioning",
+  [AgentInstallationState.Active]: "agents.ui.installState.active",
+  [AgentInstallationState.Draining]: "agents.ui.installState.draining",
+  [AgentInstallationState.Disabled]: "agents.ui.installState.disabled",
+  [AgentInstallationState.Error]: "agents.ui.installState.error",
 } as const satisfies Record<AgentInstallationState, PlatformMessageKey>;
+
+export const installationTones = {
+  [AgentInstallationState.Provisioning]: "info",
+  [AgentInstallationState.Active]: "positive",
+  [AgentInstallationState.Draining]: "warning",
+  [AgentInstallationState.Disabled]: "neutral",
+  [AgentInstallationState.Error]: "negative",
+} as const satisfies Record<AgentInstallationState, "info" | "positive" | "warning" | "neutral" | "negative">;
 
 export function validInstallation(row: AgentInstallationView): boolean {
   if (!row || ![row.resourceId, row.workspaceId, row.agentResourceId, row.pinnedVersionAssetId,

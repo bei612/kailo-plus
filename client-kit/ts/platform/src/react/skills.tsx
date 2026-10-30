@@ -2,6 +2,8 @@
 // 原版 Buzz 779af8886caae1317b4de962082429867ab61503 没有 Skills 管理界面（persona `skills`
 // 只解析不执行，SF-BUZ-12）；本区沿用原 Agents 页的分区标题、身份卡片网格、虚线新建卡与
 // 管理对话框（UnifiedAgentsSection / TeamsSection / CreateIdentityCard / AgentDefinitionDialogShell）。
+// DD-170（.design/20 §16）：分区标题带计数与主操作、卡片网格分页、详情为页头 + 键值 + 版本表 + 技术信息，
+// 停用、取消分享与退役走确认对话框；所有者显示为成员名，不平铺 UUID 或摘要。
 // 所有写入都是 Governed Action：本地只冻结意图与幂等键，结果不明保留原键重试，权限由 Core 重做。
 import {
   ActionDispatchState,
@@ -25,25 +27,27 @@ import { newIdempotencyKey } from "../governance";
 import type { PlatformMessageKey } from "../i18n";
 import { TransportError, type WriteFailure, writeFailure } from "../transport";
 import { useBffClient, useFailureText, useReasonText, useT } from "./context";
-import { Badge, Button, Notice, ReadFailure } from "./ui";
+import { Badge, Button, Cell, ConfirmDialog, DetailSkeleton, DetailHeader, EmptyState, ErrorState, IdText, KeyValueList, PageSection, Pagination,
+  CardGridSkeleton, RefreshButton, Table, TableSkeleton, TagList, usePaged, CARD_PAGE_SIZES } from "./ui";
+import { ListSearch } from "./data-table";
+import { NoMatchState } from "./state-views";
+import { useOffsetCollection } from "./use-offset-collection";
+import { MoreMenu, PrincipalName, TechnicalDetails } from "./agents/detail-kit";
+import { AgentCard, CARD_GRID_CLASS } from "./agents/agent-card";
+import { Button as WorkflowButton } from "./profile/buzz/shared/ui/button";
 import { useLoad } from "./use-load";
-import { AgentIdentityCard } from "./agent-library/AgentIdentityCard";
-import { Sparkles } from "lucide-react";
-import { CreateIdentityCard } from "./agent-library/CreateIdentityCard";
+import { Plus, Sparkles, Upload } from "lucide-react";
 import { AgentManagementDialog } from "./agent-library/AgentManagementDialog";
-import { IdentityCardSkeleton } from "./agent-library/identity-card-skeleton";
 
 /** DD-141 §7: a Skill's identity tile is a single-colour Lucide glyph on the
  * same brand-soft squircle the Agent identity cards use, never a text sigil. */
 function SkillGlyph() {
   return <span aria-hidden="true" data-testid="skill-identity-glyph"
-    className="flex h-full w-full items-center justify-center rounded-squircle border-[3px] border-background bg-brand-soft text-brand-soft-foreground shadow-sm ring-1 ring-border">
-    <Sparkles className="h-9 w-9" strokeWidth={1.75} />
+    className="flex h-full w-full items-center justify-center rounded-[0.875rem] bg-brand-soft text-brand-soft-foreground">
+    <Sparkles className="h-5 w-5" strokeWidth={1.75} />
   </span>;
 }
 
-// Original UnifiedAgentsSection grid at Buzz 779af8886caae1317b4de962082429867ab61503.
-const GRID_CLASS = "w-full grid-cols-1 [@container(min-width:21rem)]:grid-cols-2 [@container(min-width:32rem)]:grid-cols-3 [@container(min-width:43rem)]:grid-cols-4 [@container(min-width:54rem)]:grid-cols-5 grid gap-3";
 const INPUT_CLASS = "h-8 rounded-md border border-input bg-transparent px-2 text-sm";
 
 /** DD-135(1)：slug 即 Codex skill 名——小写字母、数字与连字符，首尾为字母或数字，至多 64 字符。 */
@@ -148,9 +152,13 @@ type SkillAction = {
   submission: ActionSubmission | null;
   failure: WriteFailure | null;
   unknown: boolean;
-  prepare: (command: Omit<ActionCommand, "idempotencyKey">) => void;
+  /** Freezes a new intent with a new idempotency key; returns it, or null while another is held. */
+  prepare: (command: Omit<ActionCommand, "idempotencyKey">) => ActionCommand | null;
   cancel: () => void;
-  submit: () => Promise<void>;
+  /** Clears a settled or refused outcome; never an in-flight or UNKNOWN intent. */
+  reset: () => void;
+  /** Submits `frozen` (default: the held intent) — the same command and key on every re-check. */
+  submit: (frozen?: ActionCommand | null) => Promise<void>;
 };
 
 function useSkillAction(onSettled: () => void): SkillAction {
@@ -167,17 +175,20 @@ function useSkillAction(onSettled: () => void): SkillAction {
   return {
     intent, busy, submission, failure, unknown,
     prepare: (command) => {
-      if (busy || intent) return;
-      setIntent({ ...command, idempotencyKey: newIdempotencyKey() } as ActionCommand);
+      if (busy || intent) return null;
+      const frozen = { ...command, idempotencyKey: newIdempotencyKey() } as ActionCommand;
+      setIntent(frozen);
       setSubmission(null); setFailure(null);
+      return frozen;
     },
     cancel: () => { if (!busy && !unknown) { setIntent(null); setFailure(null); } },
-    submit: async () => {
-      if (!intent || inFlight.current) return;
+    reset: () => { if (!busy && !unknown) { setIntent(null); setSubmission(null); setFailure(null); } },
+    submit: async (frozen: ActionCommand | null = intent) => {
+      if (!frozen || inFlight.current) return;
       inFlight.current = true; setBusy(true);
       try {
-        const result = await client.submitAction(intent);
-        if (!result || result.actionKey !== intent.actionKey || typeof result.actionExecutionId !== "string" || !result.actionExecutionId
+        const result = await client.submitAction(frozen);
+        if (!result || result.actionKey !== frozen.actionKey || typeof result.actionExecutionId !== "string" || !result.actionExecutionId
           || typeof result.operationId !== "string" || !result.operationId
           || !Object.values(ActionGateState).includes(result.gateState)
           || !Object.values(ActionDispatchState).includes(result.dispatchState)
@@ -304,47 +315,47 @@ export const installationSkillLabels = {
 export function SkillsSection({ locked = false, refreshRevision = 0 }: { locked?: boolean; refreshRevision?: number }) {
   const client = useBffClient();
   const t = useT();
-  const [offsets, setOffsets] = useState<number[]>([0]);
-  const [pageIndex, setPageIndex] = useState(0);
   const [revision, setRevision] = useState(0);
-  const offset = offsets[pageIndex] ?? 0;
-  const [state, reload] = useLoad(`skill-definitions:${offset}:${revision}:${refreshRevision}`, () => client.skillDefinitions(offset));
+  // DD-170 §16.2(3): the offset-paged Skill directory is read to its end (bounded) and paged locally.
+  const { state, reload, loadMore } = useOffsetCollection<SkillDefinitionView>(`skill-definitions:${revision}:${refreshRevision}`, async (offset) => {
+    const data: SkillDefinitionPage = await client.skillDefinitions(offset);
+    if (!data || !Array.isArray(data.definitions) || !data.definitions.every(validSkillDefinition)) throw new TransportError(t("platform.loadFailed"));
+    return { items: data.definitions, nextOffset: data.nextOffset ?? undefined };
+  });
   const [selected, setSelected] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const data: SkillDefinitionPage | null = state.status === "ok" ? state.data : null;
-  const page = data && Array.isArray(data.definitions) && data.definitions.every(validSkillDefinition)
-    && (data.nextOffset === undefined || (Number.isSafeInteger(data.nextOffset) && data.nextOffset > offset)) ? data : null;
+  const [query, setQuery] = useState("");
+  const collection = state.status === "ok" ? state.data : null;
+  const rows = collection?.items ?? [];
+  const q = query.trim().toLocaleLowerCase();
+  const filtered = q ? rows.filter((row) => `${row.displayName} ${row.stableSlug}`.toLocaleLowerCase().includes(q)) : rows;
+  const paged = usePaged(filtered, { pageSize: CARD_PAGE_SIZES[0], resetKey: q });
   const blocked = locked || busy;
-  return <section className="flex flex-col gap-3" data-testid="skills-section" aria-labelledby="skills-section-title">
-    <div className="min-w-0">
-      <h2 id="skills-section-title" className="text-lg font-semibold">{t("skills.title")}</h2>
-      <p className="text-sm text-muted-foreground">{t("skills.description")}</p>
-    </div>
-    {state.status === "pending" ? <div className={GRID_CLASS} role="status" aria-label={t("platform.loading")}>
-      <IdentityCardSkeleton footerSubtitleWidthClass="w-14" footerTitleWidthClass="w-24" />
-      <IdentityCardSkeleton footerSubtitleWidthClass="w-20" footerTitleWidthClass="w-32" />
-    </div>
-      : !page ? <ReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
+  const createButton = <WorkflowButton type="button" data-testid="new-skill-card" disabled={blocked} onClick={() => setCreateOpen(true)}>
+    <Plus aria-hidden />{t("skills.create")}</WorkflowButton>;
+  return <PageSection id="skills-section" testId="skills-section" title={t("skills.title")}
+    description={collection ? t("skills.ui.count", { count: String(rows.length) }) : t("skills.ui.description")}
+    actions={collection ? <>{rows.length > 0 ? <ListSearch value={query} onChange={setQuery} placeholder={t("skills.ui.search")} /> : null}{createButton}</> : undefined}>
+    {state.status === "pending" ? <CardGridSkeleton cards={2} />
+      : state.status === "error" ? <ErrorState error={state.error} onRetry={reload} />
+      : rows.length === 0 ? <div className="rounded-xl border border-dashed border-border" data-testid="skills-library">
+          <EmptyState icon={Sparkles} title={t("skills.none")} description={t("skills.ui.emptyBody")} action={createButton} />
+        </div>
+      : filtered.length === 0 ? <NoMatchState onClear={() => setQuery("")} />
       : <>
-        <div className={GRID_CLASS} data-testid="skills-library">
-          <CreateIdentityCard ariaLabel={t("skills.create")} label={t("skills.create")} dataTestId="new-skill-card"
-            disabled={blocked} onClick={() => setCreateOpen(true)} />
-          {page.definitions.map((row) => <AgentIdentityCard key={`${row.resourceId}:${row.resourceVersion}`}
-            dataTestId={`skill-definition-${row.resourceId}`} label={row.displayName} subtitle={`$${row.stableSlug}`}
+        <div className={CARD_GRID_CLASS} data-testid="skills-library">
+          {paged.pageRows.map((row) => <AgentCard key={`${row.resourceId}:${row.resourceVersion}`}
+            testId={`skill-definition-${row.resourceId}`} label={row.displayName} description={`$${row.stableSlug}`}
             ariaLabel={t("skills.open")} disabled={blocked} onClick={() => setSelected(row.resourceId)}
             avatar={<SkillGlyph />}
-            statusBadge={row.status === SkillDefinitionStatus.Disabled ? <Badge tone="negative">{t("skills.status.disabled")}</Badge>
-              : row.catalogShared ? <Badge tone="positive">{t("skills.shared")}</Badge> : null} />)}
+            status={row.status === SkillDefinitionStatus.Disabled ? <Badge tone="negative">{t("skills.status.disabled")}</Badge>
+              : row.catalogShared ? <Badge tone="positive">{t("skills.shared")}</Badge> : <Badge tone="neutral">{t("skills.ui.private")}</Badge>} />)}
         </div>
-        {page.definitions.length === 0 ? <p className="text-sm text-muted-foreground">{t("skills.none")}</p> : null}
-        <div className="flex gap-2">
-          {pageIndex > 0 ? <Button disabled={blocked} onClick={() => { setSelected(null); setPageIndex(pageIndex - 1); }}>{t("roles.previous")}</Button> : null}
-          {page.nextOffset !== undefined ? <Button disabled={blocked} onClick={() => {
-            const next = page.nextOffset!;
-            setSelected(null); setOffsets((old) => [...old.slice(0, pageIndex + 1), next]); setPageIndex(pageIndex + 1);
-          }}>{t("roles.next")}</Button> : null}
-        </div>
+        <Pagination total={paged.total} page={paged.page} pageSize={paged.pageSize} pageSizes={CARD_PAGE_SIZES}
+          onPageChange={(page) => { setSelected(null); paged.setPage(page); }} onPageSizeChange={paged.setPageSize}
+          partial={collection && !collection.complete ? <>{t("list.partial", { count: String(rows.length) })}{" "}
+            <button type="button" className="text-brand-text hover:underline" onClick={loadMore}>{t("list.loadMore")}</button></> : undefined} />
       </>}
     <SkillCreateDialog open={createOpen} onClose={() => setCreateOpen(false)} onLocked={setBusy}
       onRecorded={() => { setCreateOpen(false); setRevision((value) => value + 1); }} />
@@ -353,7 +364,7 @@ export function SkillsSection({ locked = false, refreshRevision = 0 }: { locked?
       {selected ? <SkillDetail resourceId={selected} onLocked={setBusy}
         onChanged={() => setRevision((value) => value + 1)} /> : null}
     </AgentManagementDialog>
-  </section>;
+  </PageSection>;
 }
 
 function SkillCreateDialog({ open, onClose, onLocked, onRecorded }: {
@@ -389,113 +400,167 @@ function SkillCreateDialog({ open, onClose, onLocked, onRecorded }: {
   </AgentManagementDialog>;
 }
 
+type SkillDanger = { command: Omit<ActionCommand, "idempotencyKey">; title: string; body: string; label: string };
+
 function SkillDetail({ resourceId, onLocked, onChanged }: {
   resourceId: string; onLocked: (locked: boolean) => void; onChanged: () => void;
 }) {
   const client = useBffClient();
   const t = useT();
+  const reasonText = useReasonText();
+  const failureText = useFailureText();
   const [revision, setRevision] = useState(0);
   const [definitionState, reloadDefinition] = useLoad(`skill-definition:${resourceId}:${revision}`, () => client.skillDefinition(resourceId));
-  const [offsets, setOffsets] = useState<number[]>([0]);
-  const [pageIndex, setPageIndex] = useState(0);
-  const offset = offsets[pageIndex] ?? 0;
-  const [versionsState, reloadVersions] = useLoad(`skill-versions:${resourceId}:${offset}:${revision}`, () => client.skillVersions(resourceId, offset));
+  const { state: versionsState, reload: reloadVersions, loadMore } = useOffsetCollection<SkillVersionView>(`skill-versions:${resourceId}:${revision}`, async (offset) => {
+    const data: SkillVersionPage = await client.skillVersions(resourceId, offset);
+    if (!data || data.skillResourceId !== resourceId || !Array.isArray(data.versions)
+      || !data.versions.every((row) => validSkillVersion(row, resourceId))) throw new TransportError(t("platform.loadFailed"));
+    return { items: data.versions, nextOffset: data.nextOffset ?? undefined };
+  });
   const [uploading, setUploading] = useState(false);
   const [uploadPending, setUploadPending] = useState(false);
+  const [danger, setDanger] = useState<SkillDanger | null>(null);
+  const [viewing, setViewing] = useState<string | null>(null);
   const recorded = () => { setRevision((value) => value + 1); setUploading(false); setUploadPending(false); onChanged(); };
   const action = useSkillAction(recorded);
   const pending = action.intent !== null || action.busy || uploadPending;
   useEffect(() => { onLocked(pending); }, [pending, onLocked]);
+  // A settled destructive request closes its confirmation; the re-read shows the outcome.
+  const settled = danger !== null && action.intent === null && action.submission !== null && !action.unknown
+    && action.submission.gateState === ActionGateState.Allowed;
+  useEffect(() => { if (settled) setDanger(null); }, [settled]);
+  const collection = versionsState.status === "ok" ? versionsState.data : null;
+  const versions = collection && new Set(collection.items.map((row) => row.assetId)).size === collection.items.length
+    ? [...collection.items].sort((a, b) => b.ordinal - a.ordinal) : null;
+  const paged = usePaged(versions ?? []);
   const definition = definitionState.status === "ok" && validSkillDefinition(definitionState.data)
     && definitionState.data.resourceId === resourceId ? definitionState.data : null;
-  const versionsData: SkillVersionPage | null = versionsState.status === "ok" ? versionsState.data : null;
-  const versions = versionsData && versionsData.skillResourceId === resourceId && Array.isArray(versionsData.versions)
-    && versionsData.versions.every((row) => validSkillVersion(row, resourceId))
-    && (versionsData.nextOffset === undefined || (Number.isSafeInteger(versionsData.nextOffset) && versionsData.nextOffset > offset))
-    ? versionsData : null;
-  if (definitionState.status === "pending") return <Notice role="status">{t("platform.loading")}</Notice>;
-  if (!definition) return <ReadFailure error={definitionState.status === "error" ? definitionState.error : undefined} onRetry={reloadDefinition} />;
+  if (definitionState.status === "pending") return <DetailSkeleton />;
+  if (!definition) return <ErrorState error={definitionState.status === "error" ? definitionState.error : undefined} onRetry={reloadDefinition} />;
   const active = definition.status === SkillDefinitionStatus.Active;
   const target = { resourceId: definition.resourceId, resourceVersion: definition.resourceVersion, explicitConfirmation: true };
   // 确认文案按成员看到的版本序号（v{ordinal}）称呼版本；assetVersion 只是并发控制值。
   const reviewedAsset = action.intent?.assetId;
-  const reviewedOrdinal = reviewedAsset ? versions?.versions.find((row) => row.assetId === reviewedAsset)?.ordinal : undefined;
+  const reviewedOrdinal = reviewedAsset ? versions?.find((row) => row.assetId === reviewedAsset)?.ordinal : undefined;
   const reviewedVersion = reviewedOrdinal !== undefined ? `v${reviewedOrdinal}` : "";
   const review: Record<string, PlatformMessageKey> = {
-    "skill.definition.share": "skills.reviewShare", "skill.definition.unshare": "skills.reviewUnshare",
-    "skill.definition.disable": "skills.reviewDisable", "skill.version.publish": "skills.reviewPublish",
-    "skill.version.retire": "skills.reviewRetire",
+    "skill.definition.share": "skills.reviewShare", "skill.version.publish": "skills.reviewPublish",
   };
-  return <section className="flex flex-col gap-3" data-testid="skill-detail">
-    <div className="flex flex-wrap items-center gap-2">
-      <h3 className="text-base font-semibold">{definition.displayName}</h3>
-      <code className="rounded bg-muted px-1.5 py-0.5 text-xs">${definition.stableSlug}</code>
-      <Badge tone={active ? "positive" : "negative"}>{t(active ? "skills.status.active" : "skills.status.disabled")}</Badge>
-      {definition.catalogShared ? <Badge tone="neutral">{t("skills.shared")}</Badge> : null}
-    </div>
-    <p className="break-words text-sm">{t("agents.owner")}: {definition.ownerPrincipalId} · {t("agents.resourceVersion")}: {definition.resourceVersion}</p>
-    <p className="text-sm text-muted-foreground">{t("skills.boundary")}</p>
-    <div className="flex flex-wrap gap-2">
-      {active && definition.canUpload === true ? <Button disabled={pending || uploading} onClick={() => setUploading(true)}>{t("skills.upload")}</Button> : null}
-      {definition.canShare === true && active && !definition.catalogShared ? <Button disabled={pending}
-        onClick={() => action.prepare({ actionKey: "skill.definition.share", ...target })}>{t("skills.share")}</Button> : null}
-      {definition.canShare === true && definition.catalogShared ? <Button disabled={pending}
-        onClick={() => action.prepare({ actionKey: "skill.definition.unshare", ...target })}>{t("skills.unshare")}</Button> : null}
-      {active && definition.canDisable === true ? <Button disabled={pending}
-        onClick={() => action.prepare({ actionKey: "skill.definition.disable", ...target })}>{t("skills.disable")}</Button> : null}
-      <Button disabled={pending} onClick={() => { reloadDefinition(); reloadVersions(); }}>{t("platform.refresh")}</Button>
-    </div>
-    <ActionReview action={action} summary={<p className="break-words">{t(review[action.intent?.actionKey ?? ""] ?? "skills.reviewShare",
-      { name: definition.displayName, version: reviewedVersion })}</p>} />
-    <ActionStatus action={action} />
+  const current = versions?.find((row) => row.current);
+  const ask = (next: SkillDanger) => { if (!pending) { action.reset(); setDanger(next); } };
+  const confirmDanger = () => {
+    if (!danger || action.busy) return;
+    if (action.intent) { void action.submit(); return; }
+    if (action.failure || action.submission) { action.reset(); setDanger(null); return; }
+    const frozen = action.prepare(danger.command);
+    if (frozen) void action.submit(frozen);
+  };
+  const decided = danger !== null && action.intent === null && (action.failure !== null || action.submission !== null);
+  return <section className="flex flex-col gap-6" data-testid="skill-detail">
+    <DetailHeader title={definition.displayName}
+      status={<span className="inline-flex items-center gap-1.5"><Badge tone={active ? "positive" : "negative"}>{t(active ? "skills.status.active" : "skills.status.disabled")}</Badge>
+        {definition.catalogShared ? <Badge tone="brand">{t("skills.shared")}</Badge> : null}</span>}
+      subtitle={<><PrincipalName principalId={definition.ownerPrincipalId} />{" · "}<code className="font-mono">${definition.stableSlug}</code></>}
+      actions={<>
+        {active && definition.canUpload === true ? <WorkflowButton type="button" disabled={pending || uploading} onClick={() => setUploading(true)}>
+          <Upload aria-hidden />{t("skills.upload")}</WorkflowButton> : null}
+        <MoreMenu disabled={pending} testId="skill-more" items={[
+          definition.canShare === true && active && !definition.catalogShared && { key: "share", label: t("skills.share"),
+            onSelect: () => { setDanger(null); action.prepare({ actionKey: "skill.definition.share", ...target }); } },
+          definition.canShare === true && definition.catalogShared && { key: "unshare", label: t("skills.unshare"), danger: true,
+            onSelect: () => ask({ command: { actionKey: "skill.definition.unshare", ...target }, label: t("skills.unshare"),
+              title: t("skills.ui.unshareTitle", { name: definition.displayName }), body: t("skills.reviewUnshare", { name: definition.displayName }) }) },
+          active && definition.canDisable === true && { key: "disable", label: t("skills.disable"), danger: true,
+            onSelect: () => ask({ command: { actionKey: "skill.definition.disable", ...target }, label: t("skills.ui.disable"),
+              title: t("skills.ui.disableTitle", { name: definition.displayName }), body: t("skills.reviewDisable", { name: definition.displayName }) }) },
+          { key: "refresh", label: t("platform.refresh"), onSelect: () => { reloadDefinition(); reloadVersions(); } },
+        ]} />
+      </>} />
+    {!danger ? <ActionReview action={action} summary={<p className="break-words">{t(review[action.intent?.actionKey ?? ""] ?? "skills.reviewShare",
+      { name: definition.displayName, version: reviewedVersion })}</p>} /> : null}
+    {!danger ? <ActionStatus action={action} /> : null}
     {uploading ? <SkillUpload definition={definition} onClose={() => { setUploading(false); setUploadPending(false); }}
       onLocked={setUploadPending} onRecorded={recorded} /> : null}
-    <h4 className="text-sm font-medium">{t("agents.version.history")}</h4>
-    {versionsState.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
-      : !versions ? <ReadFailure error={versionsState.status === "error" ? versionsState.error : undefined} onRetry={reloadVersions} />
-      : versions.versions.length === 0 ? <p className="text-sm text-muted-foreground">{t("skills.noVersions")}</p>
-      : <div className="flex flex-col divide-y divide-border/55 rounded-md border" data-testid="skill-versions">
-        {versions.versions.map((version) => <SkillVersionRow key={version.assetId} version={version} locked={pending}
-          onPublish={() => action.prepare({ actionKey: "skill.version.publish", ...target, assetId: version.assetId, assetVersion: version.assetVersion })}
-          onRetire={() => action.prepare({ actionKey: "skill.version.retire", ...target, assetId: version.assetId, assetVersion: version.assetVersion })} />)}
-      </div>}
-    {versions ? <div className="flex gap-2">
-      {pageIndex > 0 ? <Button disabled={pending} onClick={() => setPageIndex(pageIndex - 1)}>{t("roles.previous")}</Button> : null}
-      {versions.nextOffset !== undefined ? <Button disabled={pending} onClick={() => {
-        const next = versions.nextOffset!;
-        setOffsets((old) => [...old.slice(0, pageIndex + 1), next]); setPageIndex(pageIndex + 1);
-      }}>{t("roles.next")}</Button> : null}
-    </div> : null}
+    <KeyValueList items={[
+      { id: "slug", label: t("skills.ui.kv.slug"), value: <code className="font-mono text-[0.8125rem]">${definition.stableSlug}</code> },
+      { id: "owner", label: t("agents.owner"), value: <PrincipalName principalId={definition.ownerPrincipalId} /> },
+      { id: "visibility", label: t("skills.ui.kv.visibility"), value: t(definition.catalogShared ? "skills.ui.visibility.shared" : "skills.ui.visibility.private") },
+      { id: "current", label: t("agents.ui.kv.currentVersion"), value: current ? `v${current.ordinal}` : t("skills.ui.noCurrent") },
+    ]} />
+    <PageSection title={t("agents.version.history")} description={t("skills.ui.versionsBoundary")}>
+      {versionsState.status === "pending" ? <TableSkeleton rows={2} columns={4} />
+        : !versions ? <ErrorState compact error={versionsState.status === "error" ? versionsState.error : undefined} onRetry={reloadVersions} />
+        : versions.length === 0 ? <EmptyState compact icon={Sparkles} title={t("skills.noVersions")} description={t("skills.ui.noVersionsBody")} />
+        : <div className="overflow-hidden rounded-xl border border-border bg-card" data-testid="skill-versions">
+          <Table label={t("agents.version.history")} head={[t("agents.ui.col.version"), t("agents.ui.col.state"), t("skills.ui.col.description"),
+            t("skills.ui.col.size"), t("skills.ui.col.requirements"), <span key="actions" className="sr-only">{t("list.actions")}</span>]}>
+            {paged.pageRows.map((version) => <tr key={version.assetId} data-testid="skill-version" data-state={version.state}>
+              <Cell nowrap><span className="font-medium">v{version.ordinal}</span></Cell>
+              <Cell nowrap><span className="inline-flex items-center gap-1"><Badge tone={version.state === AgentVersionState.Published ? "positive"
+                : version.state === AgentVersionState.Draft ? "info" : "neutral"}>{t(versionLabels[version.state])}</Badge>
+                {version.current ? <Badge tone="brand">{t("skills.current")}</Badge> : null}</span></Cell>
+              <Cell><span className="line-clamp-2 break-words" title={version.description}>{version.shortDescription ?? version.description}</span></Cell>
+              <Cell nowrap><span className="tabular-nums text-muted-foreground">{formatBytes(version.artifactByteSize)}</span></Cell>
+              <Cell>{version.capabilityRequirements.length ? <TagList items={version.capabilityRequirements} max={3} />
+                : <span className="text-muted-foreground">{t("kv.none")}</span>}</Cell>
+              <Cell nowrap><span className="flex items-center justify-end gap-1">
+                <Button className="h-7 px-2.5 text-xs" aria-expanded={viewing === version.assetId}
+                  onClick={() => setViewing(viewing === version.assetId ? null : version.assetId)}>{t(viewing === version.assetId ? "skills.hideContent" : "skills.viewContent")}</Button>
+                {version.state === AgentVersionState.Draft && version.canPublish === true ? <Button className="h-7 px-2.5 text-xs" disabled={pending}
+                  onClick={() => { setDanger(null); action.prepare({ actionKey: "skill.version.publish", ...target, assetId: version.assetId, assetVersion: version.assetVersion }); }}>
+                  {t("agents.ui.version.publish")}</Button> : null}
+                {version.state === AgentVersionState.Published && version.canRetire === true ? <MoreMenu disabled={pending}
+                  label={t("agents.ui.version.actions", { ordinal: String(version.ordinal) })} items={[{ key: "retire", danger: true, label: t("agents.ui.version.retire"),
+                    onSelect: () => ask({ command: { actionKey: "skill.version.retire", ...target, assetId: version.assetId, assetVersion: version.assetVersion },
+                      label: t("agents.ui.version.retire"), title: t("skills.ui.retireTitle", { name: definition.displayName, version: `v${version.ordinal}` }),
+                      body: t("skills.reviewRetire", { name: definition.displayName, version: `v${version.ordinal}` }) }) }]} /> : null}
+              </span></Cell>
+            </tr>)}
+          </Table>
+          <div className="border-t border-border px-3 py-2">
+            <Pagination total={paged.total} page={paged.page} pageSize={paged.pageSize} onPageChange={paged.setPage} onPageSizeChange={paged.setPageSize}
+              partial={collection && !collection.complete ? <>{t("list.partial", { count: String(versions.length) })}{" "}
+                <button type="button" className="text-brand-text hover:underline" onClick={loadMore}>{t("list.loadMore")}</button></> : undefined} />
+          </div>
+        </div>}
+      {viewing && versions?.some((row) => row.assetId === viewing)
+        ? <SkillVersionContent key={viewing} version={versions.find((row) => row.assetId === viewing)!} /> : null}
+    </PageSection>
+    <TechnicalDetails items={[
+      { id: "skill", label: t("skills.ui.tech.skill"), value: definition.resourceId },
+      { id: "owner", label: t("agents.ui.tech.owner"), value: definition.ownerPrincipalId },
+      ...(versions ?? []).flatMap((version) => [
+        { id: `asset-${version.assetId}`, label: t("skills.ui.tech.version", { version: `v${version.ordinal}` }), value: version.assetId },
+        { id: `digest-${version.assetId}`, label: t("skills.ui.tech.digest", { version: `v${version.ordinal}` }), value: version.artifactDigest },
+      ]),
+    ]} />
+    <ConfirmDialog open={danger !== null} testId="skill-danger-confirm" pending={action.busy}
+      onOpenChange={(open) => { if (!open && !action.busy && !action.unknown) { action.reset(); setDanger(null); } }}
+      title={danger?.title ?? ""} description={danger?.body ?? ""}
+      confirmLabel={action.unknown ? t("agents.retry") : decided ? t("agents.ui.close") : danger?.label ?? ""} onConfirm={confirmDanger}>
+      {action.unknown ? <p role="status" className="break-words text-sm text-warning-text">{t("agents.unknown",
+        { operation: action.submission?.operationId ?? (action.failure?.kind === "unknown" ? action.failure.operationId : undefined) ?? "—" })}</p>
+        : action.failure ? <p role="alert" className="text-sm text-danger-text">{t("agents.rejected", { reason: failureText(action.failure) })}</p>
+        : action.submission?.reason ? <p role="alert" className="text-sm text-danger-text">{reasonText(action.submission.reason)}</p> : null}
+    </ConfirmDialog>
   </section>;
 }
 
-function SkillVersionRow({ version, locked, onPublish, onRetire }: {
-  version: SkillVersionView; locked: boolean; onPublish: () => void; onRetire: () => void;
-}) {
+function formatBytes(bytes: number): string {
+  return bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function SkillVersionContent({ version }: { version: SkillVersionView }) {
   const client = useBffClient();
   const t = useT();
-  const [open, setOpen] = useState(false);
-  const [content, reload] = useLoad(`skill-content:${version.assetId}:${open}`,
-    () => open ? client.skillVersionContent(version.assetId) : Promise.resolve(null));
+  const [content, reload] = useLoad(`skill-content:${version.assetId}`, () => client.skillVersionContent(version.assetId));
   const text = content.status === "ok" && content.data && content.data.assetId === version.assetId
     && content.data.artifactDigest === version.artifactDigest && typeof content.data.content === "string" ? content.data.content : null;
-  return <div className="flex flex-col gap-1.5 px-4 py-3" data-testid="skill-version" data-state={version.state}>
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="text-sm font-medium">v{version.ordinal}</span>
-      <Badge tone={version.state === AgentVersionState.Published ? "positive" : "neutral"}>{t(versionLabels[version.state])}</Badge>
-      {version.current ? <Badge tone="neutral">{t("skills.current")}</Badge> : null}
-    </div>
-    <p className="break-words text-sm">{version.shortDescription ?? version.description}</p>
-    <p className="break-all font-mono text-xs text-muted-foreground">{t("skills.digest")}: {version.artifactDigest} · {t("skills.size", { bytes: String(version.artifactByteSize) })}</p>
-    <p className="break-words text-xs text-muted-foreground">{t("agents.version.capabilities")}: {version.capabilityRequirements.join(", ") || "—"}</p>
-    <div className="flex flex-wrap gap-2">
-      <Button aria-expanded={open} onClick={() => setOpen(!open)}>{t(open ? "skills.hideContent" : "skills.viewContent")}</Button>
-      {version.state === AgentVersionState.Draft && version.canPublish === true ? <Button disabled={locked} onClick={onPublish}>{t("agents.version.publish")}</Button> : null}
-      {version.state === AgentVersionState.Published && version.canRetire === true ? <Button disabled={locked} onClick={onRetire}>{t("agents.version.retire")}</Button> : null}
-    </div>
-    {open ? content.status === "pending" ? <p role="status" className="text-sm">{t("platform.loading")}</p>
-      : text === null ? <ReadFailure error={content.status === "error" ? content.error : undefined} onRetry={reload} />
-      : <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3 text-xs" data-testid="skill-content">{text}</pre> : null}
+  return <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4" data-testid="skill-version-content">
+    <p className="text-sm font-medium">{t("skills.ui.contentOf", { version: `v${version.ordinal}` })}</p>
+    {content.status === "pending" ? <DetailSkeleton lines={3} />
+      : text === null ? <ErrorState compact error={content.status === "error" ? content.error : undefined} onRetry={reload} />
+      : <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-3 text-xs" data-testid="skill-content">{text}</pre>}
   </div>;
 }
 
@@ -606,26 +671,31 @@ function validInstallationSkillPage(page: AgentInstallationSkillPage, installati
       && typeof skill.projected === "boolean" && Object.values(AgentInstallationSkillStatus).includes(skill.status));
 }
 
+const installationSkillTones = {
+  [AgentInstallationSkillStatus.Effective]: "positive",
+  [AgentInstallationSkillStatus.Disabled]: "neutral",
+  [AgentInstallationSkillStatus.NoPermission]: "warning",
+  [AgentInstallationSkillStatus.ProjectionFailed]: "negative",
+  [AgentInstallationSkillStatus.RuntimeNotReady]: "info",
+} as const satisfies Record<AgentInstallationSkillStatus, "positive" | "neutral" | "warning" | "negative" | "info">;
+
 export function InstallationSkills({ installationId, locked }: { installationId: string; locked: boolean }) {
   const client = useBffClient();
   const t = useT();
   const [state, reload] = useLoad(`agent-installation-skills:${installationId}`, () => client.agentInstallationSkills(installationId));
   const page = state.status === "ok" && validInstallationSkillPage(state.data, installationId) ? state.data : null;
-  return <section className="flex flex-col gap-2 rounded-md border p-3" data-testid="agent-installation-skills">
-    <h4 className="text-sm font-medium">{t("skills.installation.title")}</h4>
-    <p className="text-sm text-muted-foreground">{t("skills.installation.boundary")}</p>
-    {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
-      : !page ? <ReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
-      : page.skills.length === 0 ? <p className="text-sm text-muted-foreground">{t("skills.installation.none")}</p>
-      : <ul className="flex flex-col divide-y divide-border/55">
-        {page.skills.map((skill) => <li key={skill.skillVersionAssetId} className="flex flex-wrap items-center gap-2 py-2 text-sm"
-          data-testid="agent-installation-skill" data-status={skill.status}>
-          <code>${skill.stableSlug}</code><span>v{skill.ordinal}</span>
-          <Badge tone={skill.status === AgentInstallationSkillStatus.Effective ? "positive"
-            : skill.status === AgentInstallationSkillStatus.RuntimeNotReady ? "neutral" : "negative"}>{t(installationSkillLabels[skill.status])}</Badge>
-          <span className="break-all font-mono text-xs text-muted-foreground">{skill.artifactDigest.slice(0, 12)}</span>
-        </li>)}
-      </ul>}
-    <Button className="w-fit" disabled={locked} onClick={reload}>{t("platform.refresh")}</Button>
-  </section>;
+  return <div className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-4" data-testid="agent-installation-skills">
+    <div className="flex items-center justify-end"><RefreshButton onClick={reload} pending={locked || state.status === "pending"} /></div>
+    {state.status === "pending" ? <TableSkeleton rows={2} columns={3} />
+      : !page ? <ErrorState compact error={state.status === "error" ? state.error : undefined} onRetry={reload} />
+      : page.skills.length === 0 ? <EmptyState compact icon={Sparkles} title={t("skills.installation.none")} />
+      : <Table label={t("skills.installation.title")} head={[t("skills.ui.col.skill"), t("agents.ui.col.version"), t("agents.ui.col.state"), t("skills.ui.col.digest")]}>
+        {page.skills.map((skill) => <tr key={skill.skillVersionAssetId} data-testid="agent-installation-skill" data-status={skill.status}>
+          <Cell nowrap><code className="font-mono text-[0.8125rem]">${skill.stableSlug}</code></Cell>
+          <Cell nowrap>v{skill.ordinal}</Cell>
+          <Cell nowrap><Badge tone={installationSkillTones[skill.status]}>{t(installationSkillLabels[skill.status])}</Badge></Cell>
+          <Cell><IdText value={skill.artifactDigest} label={t("skills.ui.col.digest")} /></Cell>
+        </tr>)}
+      </Table>}
+  </div>;
 }

@@ -12,7 +12,9 @@ import {
 import { newIdempotencyKey } from "../governance";
 import { type WriteFailure, writeFailure } from "../transport";
 import { useBffClient, useFailureText, useT } from "./context";
-import { Button, ReadFailure } from "./ui";
+import { Button, EmptyState, ErrorState, Pagination, TableSkeleton, usePaged } from "./ui";
+import { RefreshButton } from "./page-layout";
+import { Users } from "lucide-react";
 import { useLoad } from "./use-load";
 import { Switch } from "./switch";
 
@@ -46,6 +48,8 @@ export function AgentInstallationUse({ installationId, locked }: { installationI
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
   const page = state.status === "ok" && validPage(state.data, installationId) ? state.data : null;
+  // DD-170 §16.2: the member list states its size and pages locally (a bounded, authorized set).
+  const paged = usePaged(page?.members ?? []);
 
   const submit = async (next: Intent) => {
     if (inFlight.current) return;
@@ -90,20 +94,26 @@ export function AgentInstallationUse({ installationId, locked }: { installationI
   };
 
   return (
-    <section className="flex flex-col gap-2 rounded-md border p-3" data-testid="agent-installation-use">
-      <h4 className="text-sm font-medium">{t("agentUse.title")}</h4>
-      <p className="text-sm text-muted-foreground">{t("agentUse.boundary")}</p>
-      {state.status === "pending" ? <p role="status" className="text-sm">{t("platform.loading")}</p>
-        : !page ? <ReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
-        : page.members.length === 0 ? <p className="text-sm text-muted-foreground">{t("agentUse.none")}</p>
-        : <ul className="flex flex-col divide-y">
-          {page.members.map((member) => {
+    <section className="flex min-w-0 flex-col gap-3" data-testid="agent-installation-use">
+      <header className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <h4 className="text-[1.0625rem] font-semibold leading-6 tracking-[-0.012em] text-foreground">{t("agentUse.title")}</h4>
+          <p className="text-sm text-muted-foreground">{t("agentUse.boundary")}</p>
+        </div>
+        <RefreshButton onClick={reload} pending={busy || state.status === "pending"} />
+      </header>
+      <div className="flex min-w-0 flex-col gap-2 rounded-xl border border-border bg-card px-4 py-2">
+      {state.status === "pending" ? <TableSkeleton rows={3} columns={2} />
+        : !page ? <ErrorState compact error={state.status === "error" ? state.error : undefined} onRetry={reload} />
+        : page.members.length === 0 ? <EmptyState compact icon={Users} title={t("agentUse.none")} />
+        : <ul className="flex flex-col divide-y divide-border">
+          {paged.pageRows.map((member) => {
             const allowed = member.requested;
             const pendingHere = intent?.principalId === member.principalId;
             const status = member.requested ? t("agentUse.granted")
               : member.effective ? t("agentUse.inherited") : t("agentUse.notGranted");
             return (
-              <li key={member.principalId} className="flex items-center justify-between gap-3 py-2"
+              <li key={member.principalId} className="flex min-h-12 items-center justify-between gap-3 py-2"
                 data-testid={`agent-use-member-${member.principalId}`}>
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium">{member.displayName}</span>
@@ -120,15 +130,16 @@ export function AgentInstallationUse({ installationId, locked }: { installationI
             );
           })}
         </ul>}
+      {page && page.members.length > 0 ? <div className="border-t border-border pt-2">
+        <Pagination total={paged.total} page={paged.page} pageSize={paged.pageSize} onPageChange={paged.setPage} onPageSizeChange={paged.setPageSize} />
+      </div> : null}
+      </div>
       {page?.pendingActionExecutionId ? <p role="status" className="text-sm">{t("agentUse.pending")}</p> : null}
       {failure ? <p role={failure.kind === "unknown" ? "status" : "alert"} className="break-all text-sm">
         {failure.kind === "unknown" ? t("agentUse.unknown", { operation: failure.operationId ?? operation ?? "—" }) : failureText(failure)}
       </p> : null}
-      <div className="flex gap-2">
-        {intent && failure?.kind === "unknown"
-          ? <Button disabled={busy} onClick={() => void submit(intent)}>{t("agents.retry")}</Button> : null}
-        <Button disabled={busy} onClick={reload}>{t("platform.refresh")}</Button>
-      </div>
+      {intent && failure?.kind === "unknown"
+        ? <Button className="w-fit" disabled={busy} onClick={() => void submit(intent)}>{t("agents.retry")}</Button> : null}
     </section>
   );
 }

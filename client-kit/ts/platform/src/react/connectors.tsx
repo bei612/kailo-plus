@@ -3,6 +3,8 @@
 // 停用、恢复、删除与 Tenant 连接器策略只提交既有 mcp_connection.* 动作（05 §2.15），
 // 每次意图一个新幂等键并显式确认。凭据只作为一次性输入随探测与命令发出，界面从不回显；
 // 上游提供的名称、描述与 schema 一律按不可信外部内容以纯文本显示。
+// DD-170（.design/20 §16）：连接器是卡片网格（计数、分页），详情在对话框中按页头、键值、工具表、凭据分区呈现；
+// 停用、删除与轮换凭据只经确认对话框提交（提交中不关闭，结果不明只重查同一意图）。
 
 import {
   ActionGateState,
@@ -38,7 +40,13 @@ import { useBffClient, useOpenExternalUrl, useReasonText, useT } from "./context
 import { type GatewayAction, useGatewayAction } from "./gateway-action";
 import { useTimestamp } from "./gateway-shared";
 import { SettingsSectionHeader } from "./settings-surface";
-import { Badge, Button, Cell, Notice, ReadFailure, Table, type Tone } from "./ui";
+import { Badge, Button, Cell, Notice, ReadFailure, Table, type Tone, CARD_PAGE_SIZES, CardGridSkeleton, ConfirmDialog, DetailHeader, DetailSkeleton,
+  EmptyState, ErrorState, KeyValueList, PageSection, Pagination, RefreshButton, TagList, usePaged } from "./ui";
+import { ListSearch } from "./data-table";
+import { NoMatchState } from "./state-views";
+import { MoreMenu } from "./agents/detail-kit";
+import { Plug, Plus } from "lucide-react";
+import { Button as WorkflowButton } from "./profile/buzz/shared/ui/button";
 import { useLoad } from "./use-load";
 
 const inputClass = "h-8 rounded-md border border-input bg-background px-2.5 text-sm shadow-xs";
@@ -770,11 +778,12 @@ function VisibilityText({ connection, workspaceName }: { connection: McpConnecti
 
 function ToolsTable({ tools }: { tools: McpConnectionToolView[] }) {
   const t = useT();
-  if (!tools.length) return <Notice>{t("connectors.tools.noneEnabled")}</Notice>;
-  return <div className="overflow-x-auto"><Table head={[t("connectors.tools.name"), t("connectors.tools.description"), t("connectors.tools.risk"), t("connectors.tools.policy")]}>
+  if (!tools.length) return <EmptyState compact title={t("connectors.tools.noneEnabled")} />;
+  return <div className="overflow-hidden rounded-xl border border-border bg-card"><Table label={t("connectors.tools.title")} head={[t("connectors.tools.name"), t("connectors.tools.description"), t("connectors.tools.risk"), t("connectors.tools.policy")]}>
     {tools.map((tool) => <tr key={tool.toolResourceId} data-testid="connector-tool-row">
-      <Cell><p className="break-words">{tool.title ?? tool.upstreamName}</p><p className="break-all font-mono text-xs">{tool.name}</p></Cell>
-      <Cell>{tool.description ? <ExternalText value={tool.description} /> : "—"}</Cell>
+      <Cell><span className="flex min-w-0 flex-col"><span className="break-words font-medium">{tool.title ?? tool.upstreamName}</span>
+        <span className="truncate font-mono text-xs text-muted-foreground">{tool.upstreamName}</span></span></Cell>
+      <Cell>{tool.description ? <ExternalText value={tool.description} /> : <span className="text-muted-foreground">{t("tools.ui.noDescription")}</span>}</Cell>
       <Cell><span className="flex flex-wrap gap-1"><RiskBadge risk={tool.risk} />
         {tool.riskDeclared ? <Badge tone="neutral">{t("connectors.tools.declared")}</Badge> : null}</span></Cell>
       <Cell><CallPolicyBadge policy={tool.callPolicy} /></Cell>
@@ -875,23 +884,77 @@ function RotateCredential({ connection, action }: { connection: McpConnectionVie
   </div>;
 }
 
+const DANGER_KEYS = ["mcp_connection.disable", "mcp_connection.delete", "mcp_connection.rotate_credential"] as const;
+type DangerKey = (typeof DANGER_KEYS)[number];
+const dangerTitles: Record<DangerKey, PlatformMessageKey> = {
+  "mcp_connection.disable": "connectors.ui.disableTitle",
+  "mcp_connection.delete": "connectors.ui.deleteTitle",
+  "mcp_connection.rotate_credential": "connectors.ui.rotateTitle",
+};
+const dangerLabels: Record<DangerKey, PlatformMessageKey> = {
+  "mcp_connection.disable": "connectors.disable",
+  "mcp_connection.delete": "connectors.delete",
+  "mcp_connection.rotate_credential": "connectors.rotate.submit",
+};
+const isDanger = (key: string | undefined): key is DangerKey => !!key && (DANGER_KEYS as readonly string[]).includes(key);
+
+/**
+ * DD-170 (.design/20 §16.6): disabling, deleting and rotating a credential are confirmed in one
+ * dialog naming the connector. The intent (command and key) is frozen when the dialog opens; while it
+ * is submitted the dialog stays open; an UNKNOWN outcome only re-checks the same intent; a refusal is
+ * explained in the dialog; a settled request closes it.
+ */
+function ConnectorDangerConfirm({ action, connection, kind, onClose }: {
+  action: GatewayAction; connection: McpConnectionView; kind: DangerKey | null; onClose: () => void;
+}) {
+  const t = useT();
+  const reasonText = useConnectorReasonText();
+  const { intent, submission, failure, busy, unknown, warning } = action;
+  const decided = !intent && (submission !== null || failure !== null);
+  return <ConfirmDialog open={kind !== null} pending={busy}
+    testId={kind === "mcp_connection.delete" ? "connector-delete-dialog" : "connector-danger-dialog"}
+    onOpenChange={(open) => { if (!open && !busy && !unknown) { action.cancel(); onClose(); } }}
+    title={kind ? t(dangerTitles[kind], { name: connection.displayName }) : ""}
+    description={kind === "mcp_connection.delete" ? t("connectors.delete.explain", { name: connection.displayName }) : warning ? t(warning) : ""}
+    confirmLabel={unknown ? t("agents.retry") : decided ? t("agents.ui.close") : kind ? t(dangerLabels[kind]) : ""}
+    onConfirm={() => { if (intent) void action.submit(); else { action.cancel(); onClose(); } }}>
+    {kind === "mcp_connection.delete" && intent ? <p className="text-sm text-muted-foreground">{t("connectors.confirm.delete")}</p> : null}
+    {submission ? <p role={unknown ? "status" : submission.gateState === ActionGateState.Denied ? "alert" : "status"} className="break-words text-sm"
+      data-reason-code={submission.reason}>{unknown ? t("agents.unknown", { operation: submission.operationId })
+      : submission.gateState === ActionGateState.Denied
+        ? t("connectors.action.denied", { reason: submission.reason ? reasonText(submission.reason) : t("platform.reasonUnknown") })
+        : t("connectors.action.done")}</p> : null}
+    {failure ? <p role={failure.kind === "unknown" ? "status" : "alert"} className="break-words text-sm"
+      data-reason-code={failure.kind === "rejected" ? failure.reason : undefined}>{failure.kind === "unknown"
+      ? t("agents.unknown", { operation: failure.operationId ?? submission?.operationId ?? "—" })
+      : failure.reason ? reasonText(failure.reason) : failure.detail}</p> : null}
+  </ConfirmDialog>;
+}
+
 function ConnectorDetail({ id, page, onChanged }: { id: string; page: McpConnectionPage; onChanged: () => void }) {
   const client = useBffClient();
   const t = useT();
   const timestamp = useTimestamp();
+  const healthTone = useHealthTone();
   const probeError = useProbeError();
   const [state, reload] = useLoad(`mcp-connection:${id}`, () => client.mcpConnection(id));
   const [refreshing, setRefreshing] = useState(false);
   const [refresh, setRefresh] = useState<McpConnectionRefreshResult | null>(null);
   const [refreshFailure, setRefreshFailure] = useState<string | null>(null);
   const [reconfirming, setReconfirming] = useState(false);
+  const [danger, setDanger] = useState<DangerKey | null>(null);
   const changed = useRef(onChanged);
   changed.current = onChanged;
   const manage = useConnectorAction(() => { reload(); changed.current(); });
-  const deleting = manage.intent?.actionKey === "mcp_connection.delete";
-  if (state.status === "pending") return <Notice role="status">{t("platform.loading")}</Notice>;
+  // A dangerous intent (also the one frozen after an OAuth re-authorization) opens its confirmation.
+  const intentKey = manage.intent?.actionKey;
+  useEffect(() => { if (isDanger(intentKey)) setDanger(intentKey); }, [intentKey]);
+  const settled = danger !== null && !manage.intent && manage.submission !== null && !manage.unknown
+    && manage.submission.gateState !== ActionGateState.Denied;
+  useEffect(() => { if (settled) setDanger(null); }, [settled]);
+  if (state.status === "pending") return <DetailSkeleton />;
   if (state.status === "error" || !validConnection(state.data) || state.data.id !== id)
-    return <ReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />;
+    return <ErrorState error={state.status === "error" ? state.error : undefined} onRetry={reload} />;
   const connection = state.data;
   const runRefresh = async () => {
     setRefreshing(true); setRefreshFailure(null); setRefresh(null); setReconfirming(false);
@@ -906,74 +969,92 @@ function ConnectorDetail({ id, page, onChanged }: { id: string; page: McpConnect
   const simple = (actionKey: string, warning: PlatformMessageKey) => manage.prepare({ actionKey, explicitConfirmation: true,
     resourceId: connection.id, resourceVersion: connection.version }, warning);
   const active = connection.state === McpConnectionState.Active;
-  return <div className="flex flex-col gap-3 border-t pt-3" data-testid="connector-detail">
-    <dl className="grid grid-cols-1 gap-x-4 gap-y-1 text-sm md:grid-cols-2">
-      <div className="flex gap-2"><dt className="text-muted-foreground">{t("connectors.field.url")}</dt><dd className="break-all font-mono text-xs">{connection.endpointUrl}</dd></div>
-      <div className="flex gap-2"><dt className="text-muted-foreground">{t("connectors.field.transport")}</dt><dd><Label table={transportLabel} value={connection.transport} /></dd></div>
-      <div className="flex gap-2"><dt className="text-muted-foreground">{t("connectors.field.auth")}</dt><dd><Label table={authLabel} value={connection.authMode} /></dd></div>
-      {connection.authMode !== McpConnectionAuthMode.None ? <div className="flex gap-2"><dt className="text-muted-foreground">{t("connectors.credential")}</dt>
-        <dd>{connection.credentialSet ? t("connectors.credential.set", { at: timestamp(connection.credentialUpdatedAt) }) : t("connectors.credential.unset")}</dd></div> : null}
-      <div className="flex gap-2"><dt className="text-muted-foreground">{t("connectors.server")}</dt>
-        <dd className="break-all">{connection.serverName ? `${connection.serverName}${connection.serverVersion ? ` ${connection.serverVersion}` : ""}` : "—"}</dd></div>
-    </dl>
-    <h4 className="text-sm font-medium">{t("connectors.tools.title")}</h4>
-    <ToolsTable tools={connection.tools} />
-    {connection.canManage && connection.state !== McpConnectionState.Deleted ? <div className="flex flex-col gap-3" data-testid="connector-manage">
-      <div className="flex flex-wrap gap-2">
+  const manageable = connection.canManage && connection.state !== McpConnectionState.Deleted;
+  return <div className="flex flex-col gap-6" data-testid="connector-detail">
+    <DetailHeader title={connection.displayName}
+      status={<span className="inline-flex items-center gap-1.5"><ConnectorStateBadge connection={connection} />
+        <Badge tone={healthTone(connection.health)}><Label table={healthLabel} value={connection.health} /></Badge></span>}
+      subtitle={<span className="font-mono text-xs">{connection.endpointHost}</span>}
+      actions={manageable ? <div className="flex items-center gap-2" data-testid="connector-manage">
         <Button disabled={refreshing || manage.frozen || !active} onClick={() => void runRefresh()}>{t(refreshing ? "connectors.refresh.running" : "connectors.refresh")}</Button>
-        {active ? <Button disabled={manage.frozen} onClick={() => simple("mcp_connection.disable", "connectors.confirm.disable")}>{t("connectors.disable")}</Button>
-          : <Button disabled={manage.frozen} onClick={() => simple("mcp_connection.enable", "connectors.confirm.enable")}>{t("connectors.enable")}</Button>}
-        <Button disabled={manage.frozen} onClick={() => simple("mcp_connection.delete", "connectors.confirm.delete")}>{t("connectors.delete")}</Button>
-      </div>
+        <MoreMenu disabled={manage.frozen} testId="connector-more" items={[
+          !active && { key: "enable", label: t("connectors.enable"), onSelect: () => simple("mcp_connection.enable", "connectors.confirm.enable") },
+          active && { key: "disable", label: t("connectors.disable"), danger: true, onSelect: () => simple("mcp_connection.disable", "connectors.confirm.disable") },
+          { key: "delete", label: t("connectors.delete"), danger: true, onSelect: () => simple("mcp_connection.delete", "connectors.confirm.delete") },
+        ]} />
+      </div> : undefined} />
+    {connection.drift ? <p role="status" className="rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning-text">{t("connectors.drift")}</p> : null}
+    <KeyValueList items={[
+      { id: "url", label: t("connectors.field.url"), value: <span className="break-all font-mono text-xs">{connection.endpointUrl}</span> },
+      { id: "transport", label: t("connectors.field.transport"), value: <Label table={transportLabel} value={connection.transport} /> },
+      { id: "auth", label: t("connectors.field.auth"), value: <Label table={authLabel} value={connection.authMode} /> },
+      connection.authMode !== McpConnectionAuthMode.None && { id: "credential", label: t("connectors.credential"), value: connection.credentialSet
+        ? t("connectors.credential.set", { at: timestamp(connection.credentialUpdatedAt) }) : t("connectors.credential.unset") },
+      { id: "server", label: t("connectors.server"), value: connection.serverName
+        ? `${connection.serverName}${connection.serverVersion ? ` ${connection.serverVersion}` : ""}` : t("connectors.ui.serverUnknown") },
+      { id: "checked", label: t("connectors.ui.kv.checked"), value: timestamp(connection.healthCheckedAt) },
+    ]} />
+    {manageable ? <>
       {refreshFailure ? <p role="alert" className="text-sm">{refreshFailure}</p> : null}
       {refresh ? <RefreshOutcome result={refresh} /> : null}
       {refresh?.probe && !reconfirming ? <Button className="w-fit" disabled={manage.frozen} onClick={() => setReconfirming(true)}>
         {t(refresh.drift ? "connectors.reconfirm" : "connectors.reconfirm.adjust")}</Button> : null}
       {refresh?.probe && reconfirming ? <ReconfirmFlow connection={connection} probe={refresh.probe} refresh={refresh} page={page}
         onDone={() => { setReconfirming(false); setRefresh(null); reload(); changed.current(); }} onCancel={() => setReconfirming(false)} /> : null}
-      {active ? <RotateCredential connection={connection} action={manage} /> : null}
-      {!deleting ? <ConnectorActionPanel action={manage} testId="connector-manage-action" /> : null}
-      <AgentManagementDialog open={deleting} title={t("connectors.delete.title")} locked={manage.busy || manage.unknown}
-        onClose={manage.cancel} dataTestId="connector-delete-dialog">
-        <div className="flex flex-col gap-3 text-sm">
-          <p>{t("connectors.delete.explain", { name: connection.displayName })}</p>
-          <ConnectorActionPanel action={manage} testId="connector-delete-action" />
-        </div>
-      </AgentManagementDialog>
-    </div> : null}
+      {!danger ? <ConnectorActionPanel action={manage} testId="connector-manage-action" /> : null}
+    </> : null}
+    <PageSection title={t("connectors.tools.title")}>
+      <ToolsTable tools={connection.tools} />
+    </PageSection>
+    {manageable && active && connection.authMode !== McpConnectionAuthMode.None ? <PageSection title={t("connectors.credential")} description={t("connectors.ui.credentialHint")}>
+      <RotateCredential connection={connection} action={manage} />
+    </PageSection> : null}
+    <ConnectorDangerConfirm action={manage} connection={connection} kind={danger} onClose={() => setDanger(null)} />
   </div>;
 }
 
-function ConnectorRow({ connection, page, workspaceName, onChanged }: {
-  connection: McpConnectionView; page: McpConnectionPage; workspaceName: (id?: string) => string; onChanged: () => void;
+function ConnectorStateBadge({ connection }: { connection: McpConnectionView }) {
+  const t = useT();
+  const active = connection.state === McpConnectionState.Active;
+  return <Badge tone={active ? "positive" : "neutral"}>{t(active ? "connectors.state.active" : connection.state === McpConnectionState.Disabled
+    ? "connectors.state.disabled" : "connectors.state.deleted")}</Badge>;
+}
+
+/** §16.2(1): a connector is an identity card — name, host as secondary text, scope, owner, tools, state. */
+function ConnectorCard({ connection, workspaceName, onOpen }: {
+  connection: McpConnectionView; workspaceName: (id?: string) => string; onOpen: () => void;
 }) {
   const t = useT();
   const timestamp = useTimestamp();
   const healthTone = useHealthTone();
-  const [open, setOpen] = useState(false);
-  const active = connection.state === McpConnectionState.Active;
-  return <li className="flex flex-col gap-2 rounded-xl border bg-card p-3.5" data-testid="connector-row" data-connector={connection.id}>
-    <div className="flex flex-wrap items-start justify-between gap-2">
-      <div className="flex min-w-0 flex-col gap-1">
-        <p className="break-words font-medium">{connection.displayName}</p>
-        <p className="break-all text-xs text-muted-foreground">{connection.endpointHost}</p>
-        <p className="text-xs text-muted-foreground">
-          <VisibilityText connection={connection} workspaceName={workspaceName} />
-          {` · ${t("connectors.owner", { owner: connection.ownerDisplayName?.trim() || t("connectors.ownerUnknown") })}`}
-          {` · ${t("connectors.toolCount", { count: connection.tools.length })}`}
-        </p>
-      </div>
-      <div className="flex flex-wrap items-center gap-1">
-        <Badge tone={active ? "positive" : "neutral"}>{t(active ? "connectors.state.active" : connection.state === McpConnectionState.Disabled
-          ? "connectors.state.disabled" : "connectors.state.deleted")}</Badge>
-        <Badge tone={healthTone(connection.health)}><Label table={healthLabel} value={connection.health} /></Badge>
-        <span className="text-xs text-muted-foreground">{t("connectors.checkedAt", { at: timestamp(connection.healthCheckedAt) })}</span>
+  return <div className="group relative flex min-w-0 flex-col gap-2 rounded-xl border border-border bg-card p-4 transition-[box-shadow,border-color] duration-150 hover:border-input hover:shadow-sm"
+    data-testid="connector-row" data-connector={connection.id}>
+    <button type="button" aria-label={t("connectors.ui.open", { name: connection.displayName })} onClick={onOpen}
+      className="absolute inset-0 z-10 rounded-xl focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring">
+      <span className="sr-only">{t("connectors.details")}</span>
+    </button>
+    <div className="pointer-events-none relative flex min-w-0 items-start gap-3">
+      <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[0.75rem] bg-brand-soft text-brand-soft-foreground">
+        <Plug className="h-5 w-5" strokeWidth={1.75} />
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <p className="truncate text-sm font-semibold text-foreground">{connection.displayName}</p>
+        <p className="truncate font-mono text-xs text-muted-foreground">{connection.endpointHost}</p>
       </div>
     </div>
-    {connection.drift ? <p role="status" className="text-sm" data-testid="connector-drift">{t("connectors.drift")}</p> : null}
-    <Button className="w-fit" aria-expanded={open} onClick={() => setOpen(!open)}>{t(open ? "connectors.collapse" : "connectors.details")}</Button>
-    {open ? <ConnectorDetail id={connection.id} page={page} onChanged={onChanged} /> : null}
-  </li>;
+    <div className="pointer-events-none relative flex flex-wrap items-center gap-1.5">
+      <ConnectorStateBadge connection={connection} />
+      <Badge tone={healthTone(connection.health)}><Label table={healthLabel} value={connection.health} /></Badge>
+      <ExternalBadge />
+    </div>
+    <p className="pointer-events-none relative truncate text-xs text-muted-foreground">
+      <VisibilityText connection={connection} workspaceName={workspaceName} />
+      {` · ${t("connectors.owner", { owner: connection.ownerDisplayName?.trim() || t("connectors.ownerUnknown") })}`}
+      {` · ${t("connectors.toolCount", { count: connection.tools.length })}`}
+    </p>
+    {connection.drift ? <p role="status" className="pointer-events-none relative text-xs text-warning-text" data-testid="connector-drift">{t("connectors.drift")}</p> : null}
+    <p className="pointer-events-none relative text-xs text-muted-foreground">{t("connectors.checkedAt", { at: timestamp(connection.healthCheckedAt) })}</p>
+  </div>;
 }
 
 function PolicyEditor({ page, onChanged }: { page: McpConnectionPage; onChanged: () => void }) {
@@ -985,8 +1066,11 @@ function PolicyEditor({ page, onChanged }: { page: McpConnectionPage; onChanged:
   changed.current = onChanged;
   const action = useConnectorAction(() => changed.current());
   const list = [...new Set(suffixes.split("\n").map((line) => line.trim().toLowerCase()).filter(Boolean))];
-  return <section className="flex flex-col gap-3 rounded-xl border bg-card p-3.5" data-testid="connector-policy">
-    <h3 className="text-sm font-medium">{t("connectors.policy.title")}</h3>
+  return <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4" data-testid="connector-policy">
+    <div className="flex flex-col gap-0.5">
+      <h3 className="text-sm font-semibold">{t("connectors.policy.title")}</h3>
+      <p className="text-sm text-muted-foreground">{t("connectors.ui.policyHint")}</p>
+    </div>
     <label className={fieldClass}>{t("connectors.policy.members")}
       <select className={`${inputClass} w-fit`} value={registration} disabled={action.frozen} aria-label={t("connectors.policy.members")}
         onChange={(event) => setRegistration(event.target.value as McpMemberRegistration)}>
@@ -996,11 +1080,15 @@ function PolicyEditor({ page, onChanged }: { page: McpConnectionPage; onChanged:
     </label>
     <label className={fieldClass}>{t("connectors.policy.egress")}
       <textarea className={textareaClass} value={suffixes} disabled={action.frozen} aria-label={t("connectors.policy.egress")}
-        placeholder="example.com" onChange={(event) => setSuffixes(event.target.value)} />
+        placeholder={"example.com\napi.partner.org"} onChange={(event) => setSuffixes(event.target.value)} />
       <span className="text-xs text-muted-foreground">{t("connectors.policy.egressHint")}</span>
+      <span className="text-xs text-muted-foreground">{list.length ? t("connectors.ui.egressCount", { count: String(list.length) }) : t("connectors.ui.egressEmpty")}</span>
     </label>
-    <p className="break-words text-xs text-muted-foreground" data-testid="connector-policy-cap">{policy.platformAnyPublicHost
-      ? t("connectors.policy.capAny") : t("connectors.policy.cap", { suffixes: policy.platformHostSuffixes.join(", ") || "—" })}</p>
+    <div className="flex flex-col gap-1.5">
+      <p className="break-words text-xs text-muted-foreground" data-testid="connector-policy-cap">{policy.platformAnyPublicHost
+        ? t("connectors.policy.capAny") : t("connectors.policy.cap", { suffixes: policy.platformHostSuffixes.join(", ") || "—" })}</p>
+      {!policy.platformAnyPublicHost && policy.platformHostSuffixes.length ? <TagList items={policy.platformHostSuffixes} /> : null}
+    </div>
     <Button className="w-fit" disabled={action.frozen} onClick={() => action.prepare({ actionKey: "mcp_connection.policy.update", explicitConfirmation: true,
       mcpConnectionPolicyUpdate: { memberRegistration: registration, egressHostSuffixes: list } }, "connectors.confirm.policy")}>{t("connectors.policy.save")}</Button>
     <ConnectorActionPanel action={action} testId="connector-policy-action" />
@@ -1013,24 +1101,42 @@ export function ConnectorsSettingsPanel() {
   const t = useT();
   const [state, reload] = useLoad("mcp-connections", () => client.mcpConnections(), { keepWhileRevalidating: true });
   const [adding, setAdding] = useState(false);
+  const [open, setOpen] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const page = state.status === "ok" && validConnectionPage(state.data) ? state.data : null;
   const workspaceName = useWorkspaceNames(!!page && page.connections.some((connection) => !!connection.workspaceId));
+  const q = query.trim().toLocaleLowerCase();
+  const rows = page?.connections ?? [];
+  const filtered = q ? rows.filter((connection) => `${connection.displayName} ${connection.endpointHost}`.toLocaleLowerCase().includes(q)) : rows;
+  const paged = usePaged(filtered, { pageSize: CARD_PAGE_SIZES[0], resetKey: q });
+  const selected = page?.connections.find((connection) => connection.id === open);
   const header = <SettingsSectionHeader title={t("platform.settings.connectors")} description={t("platform.settings.connectorsDescription")}
-    action={page && canAdd(page) ? <Button onClick={() => setAdding(true)}>{t("connectors.add")}</Button> : undefined} />;
+    action={<div className="flex items-center gap-2"><RefreshButton onClick={reload} pending={state.status === "pending"} />
+      {page && canAdd(page) ? <WorkflowButton type="button" onClick={() => setAdding(true)}><Plus aria-hidden />{t("connectors.add")}</WorkflowButton> : null}</div>} />;
   return <section className="flex min-w-0 flex-col gap-4" data-testid="settings-connectors">
     {header}
-    {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
-      : !page ? <ReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
+    {state.status === "pending" ? <CardGridSkeleton cards={2} />
+      : !page ? <ErrorState error={state.status === "error" ? state.error : undefined} onRetry={reload} />
       : <>
         <p className="text-xs text-muted-foreground">{t("connectors.boundary")}</p>
-        <Button className="w-fit" onClick={reload}>{t("platform.refresh")}</Button>
-        {page.connections.length === 0 ? <Notice>{t("connectors.none")}</Notice>
-          : <ul className="flex flex-col gap-3" data-testid="connector-list">
-            {page.connections.map((connection) => <ConnectorRow key={connection.id} connection={connection} page={page}
-              workspaceName={workspaceName} onChanged={reload} />)}
-          </ul>}
+        {page.connections.length === 0 ? <div className="rounded-xl border border-dashed border-border">
+            <EmptyState icon={Plug} title={t("connectors.none")} description={t(canAdd(page) ? "connectors.ui.emptyBody" : "connectors.cannotAdd")}
+              action={canAdd(page) ? <WorkflowButton type="button" onClick={() => setAdding(true)}><Plus aria-hidden />{t("connectors.add")}</WorkflowButton> : undefined} />
+          </div>
+          : <div className="flex flex-col gap-3">
+            {page.connections.length > CARD_PAGE_SIZES[0]! ? <ListSearch value={query} onChange={setQuery} placeholder={t("connectors.ui.search")} /> : null}
+            {filtered.length === 0 ? <NoMatchState onClear={() => setQuery("")} /> : <div className="grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-3" data-testid="connector-list">
+              {paged.pageRows.map((connection) => <ConnectorCard key={connection.id} connection={connection}
+                workspaceName={workspaceName} onOpen={() => setOpen(connection.id)} />)}
+            </div>}
+            <Pagination total={paged.total} page={paged.page} pageSize={paged.pageSize} pageSizes={CARD_PAGE_SIZES}
+              onPageChange={paged.setPage} onPageSizeChange={paged.setPageSize} />
+          </div>}
         {page.policy.canManage ? <PolicyEditor key={page.policy.version} page={page} onChanged={reload} /> : null}
         <AddConnectorDialog open={adding} page={page} onClose={() => setAdding(false)} onCreated={reload} />
+        <AgentManagementDialog open={selected !== undefined} title={t("connectors.ui.detailTitle")} onClose={() => setOpen(null)} dataTestId="connector-detail-dialog">
+          {selected ? <ConnectorDetail key={selected.id} id={selected.id} page={page} onChanged={reload} /> : null}
+        </AgentManagementDialog>
       </>}
   </section>;
 }

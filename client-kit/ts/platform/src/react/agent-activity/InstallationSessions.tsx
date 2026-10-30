@@ -2,14 +2,18 @@
 // Header markup follows Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/agents/ui/ManagedAgentSessionPanel.tsx::SessionHeader.
 // These are Core records, not fabricated ACP events or a replacement Transcript.
+// DD-170 (.design/20 §16.2): sessions and invocations are tables with a total and local paging over
+// a bounded cursor read; a session reads as its time and state, its root event only as an identifier.
 import { useEffect, useState } from "react";
-import { Clock3 } from "lucide-react";
+import { Clock3, MessagesSquare } from "lucide-react";
 import { ReasonCode, type AgentInstallationView, type AgentSessionPage, type AgentSessionView,
   type AgentInvocationPage, type AgentInvocationView } from "@client-kit/contracts";
 import type { PlatformMessageKey } from "../../i18n";
 import { useBffClient, useLocale, useReasonText, useT } from "../context";
-import { useLoad } from "../use-load";
-import { Badge, Button, Cell, Notice, ReadFailure, Table } from "../ui";
+import { TransportError } from "../../transport";
+import { type Loaded, useLoad } from "../use-load";
+import { Badge, Button, CellStack, DataTable, EmptyState, ErrorState, IdText, TableSkeleton, type DataColumn } from "../ui";
+import { RefreshButton } from "../page-layout";
 import { TaskDetail } from "../governance";
 import { AgentSessionTranscriptView } from "../agent-transcript/AgentSessionPanel";
 
@@ -70,118 +74,159 @@ function useForegroundRead(reload: () => void) {
   }, [reload]);
 }
 
+type CursorCollection<T> = { items: T[]; complete: boolean };
+
+/**
+ * DD-170 §16.2(3): an opaque-cursor list read page by page to its end (at most `step` pages per
+ * round), so the table can state a total. A repeated or malformed cursor fails the whole read.
+ */
+function useCursorCollection<T>(key: string, fetchPage: (cursor: string | undefined, seen: readonly (string | undefined)[]) => Promise<{ items: T[]; nextCursor?: string }>,
+  step = 10): [Loaded<CursorCollection<T>>, () => void, () => void] {
+  const [budget, setBudget] = useState(step);
+  const [state, reload] = useLoad(`${key}:pages=${budget}`, async () => {
+    const items: T[] = [];
+    const seen: (string | undefined)[] = [undefined];
+    let cursor: string | undefined;
+    for (let page = 0; page < budget; page++) {
+      const result = await fetchPage(cursor, seen);
+      items.push(...result.items);
+      if (result.nextCursor === undefined) return { items, complete: true };
+      seen.push(result.nextCursor);
+      cursor = result.nextCursor;
+    }
+    return { items, complete: false };
+  }, { keepWhileRevalidating: true });
+  return [state, reload, () => setBudget((value) => value + step)];
+}
+
+const sessionTones = {
+  PENDING: "info", STARTING: "info", ACTIVE: "positive", UNKNOWN: "warning", CLOSED: "neutral", ABANDONED: "neutral",
+} as const satisfies Record<AgentSessionView["status"], "info" | "positive" | "warning" | "neutral">;
+const sessionIdentity = (row: AgentSessionView) => JSON.stringify([row.rootEventId, row.projectionGeneration]);
+
+function LoadMore({ count, onMore }: { count: number; onMore: () => void }) {
+  const t = useT();
+  return <>{t("list.partial", { count: String(count) })} <button type="button" className="text-brand-text hover:underline" onClick={onMore}>{t("list.loadMore")}</button></>;
+}
+
 export function InstallationSessions({ installation }: { installation: AgentInstallationView }) {
   const client = useBffClient();
   const t = useT();
   const locale = useLocale();
-  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
-  const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   // DD-125(6), V-SCN-143: the Codex transcript only for Installation `audit` holders.
   const [transcript, setTranscript] = useState<string | null>(null);
-  const cursor = cursors[index];
-  const [state, reload] = useLoad(`agent-sessions:${installation.workspaceId}:${installation.resourceId}:${cursor ?? ""}`,
-    () => client.agentSessions(installation.resourceId, undefined, cursor));
+  const [state, reload, loadMore] = useCursorCollection<AgentSessionView>(`agent-sessions:${installation.workspaceId}:${installation.resourceId}`,
+    async (cursor, seen) => {
+      const page = await client.agentSessions(installation.resourceId, undefined, cursor);
+      if (!validSessionPage(page, installation, seen)) throw new TransportError(t("platform.loadFailed"));
+      return { items: page.sessions, nextCursor: page.nextCursor };
+    });
   useForegroundRead(reload);
-  const page = state.status === "ok" && validSessionPage(state.data, installation, cursors.slice(0, index + 1)) ? state.data : null;
-  const selectedSession = page?.sessions.find(row => JSON.stringify([row.rootEventId, row.projectionGeneration]) === selected);
-  const transcriptSession = installation.canAudit === true
-    ? page?.sessions.find(row => JSON.stringify([row.rootEventId, row.projectionGeneration]) === transcript) : undefined;
-  return <section className="mt-4 space-y-3" data-testid="agent-installation-sessions">
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2"><h3 className="text-sm font-semibold tracking-tight">{t("agents.sessions.title")}</h3></div>
-        <p className="mt-1 text-sm text-muted-foreground">{t("agents.sessions.boundary")}</p>
+  const collection = state.status === "ok" ? state.data : null;
+  const sessions = collection && new Set(collection.items.map(sessionIdentity)).size === collection.items.length ? collection.items : null;
+  const selectedSession = sessions?.find(row => sessionIdentity(row) === selected);
+  const transcriptSession = installation.canAudit === true ? sessions?.find(row => sessionIdentity(row) === transcript) : undefined;
+  const time = (value: string) => new Date(value).toLocaleString(locale);
+  const columns: DataColumn<AgentSessionView>[] = [
+    { key: "session", header: t("agents.sessions.title"), sortValue: row => Date.parse(String(row.createdAt)), cell: row =>
+      <CellStack primary={<time dateTime={String(row.createdAt)}>{time(String(row.createdAt))}</time>}
+        secondary={<IdText value={row.rootEventId} label={t("agents.sessions.root")} />} /> },
+    { key: "state", header: t("agents.ui.col.state"), width: "9rem", sortValue: row => row.status,
+      cell: row => <Badge tone={sessionTones[row.status]}>{t(sessionLabels[row.status])}</Badge> },
+    { key: "round", header: t("agents.ui.sessions.round"), width: "6rem", align: "end", secondary: true,
+      sortValue: row => row.projectionGeneration, cell: row => row.projectionGeneration },
+  ];
+  return <section className="flex min-w-0 flex-col gap-3" data-testid="agent-installation-sessions">
+    <header className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <h3 className="text-[1.0625rem] font-semibold leading-6 tracking-[-0.012em] text-foreground">{t("agents.sessions.title")}</h3>
+        <p className="text-sm text-muted-foreground">{t("agents.ui.sessions.boundary")}</p>
       </div>
-      <Button onClick={reload}>{t("platform.refresh")}</Button>
-    </div>
-    {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice> : !page ?
-      <ReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} /> : <>
-        {page.sessions.length === 0 ? <Notice>{t("agents.sessions.empty")}</Notice> :
-          <Table head={[t("agents.sessions.root"), t("agents.installation.generation"), t("agents.sessions.recordedState"), t("agents.sessions.created"),
-            ...(installation.canAudit === true ? [t("agentTranscript.sessions.open")] : [])]}>
-            {page.sessions.map(row => {
-              const identity = JSON.stringify([row.rootEventId, row.projectionGeneration]);
-              return <tr key={identity}>
-                <Cell mono><Button aria-expanded={selected === identity}
-                  aria-label={t("agents.sessions.open", { root: row.rootEventId, generation: row.projectionGeneration })}
-                  onClick={() => setSelected(selected === identity ? null : identity)}>{row.rootEventId}</Button></Cell>
-                <Cell>{row.projectionGeneration}</Cell>
-                <Cell><Badge tone="neutral">{t(sessionLabels[row.status])}</Badge></Cell>
-                <Cell><time dateTime={String(row.createdAt)}>{new Date(String(row.createdAt)).toLocaleString(locale)}</time></Cell>
-                {installation.canAudit === true ? <Cell><Button aria-expanded={transcript === identity}
-                  aria-label={t("agentTranscript.sessions.openLabel", { root: row.rootEventId, generation: row.projectionGeneration })}
-                  onClick={() => setTranscript(transcript === identity ? null : identity)}>
-                  {t(transcript === identity ? "agentTranscript.sessions.hide" : "agentTranscript.sessions.open")}</Button></Cell> : null}
-              </tr>;
-            })}
-          </Table>}
-        <div className="flex gap-2">
-          {index > 0 ? <Button onClick={() => { setSelected(null); setTranscript(null); setIndex(index - 1); }}>{t("roles.previous")}</Button> : null}
-          {page.nextCursor !== undefined ? <Button onClick={() => {
-            setSelected(null); setTranscript(null); setCursors(old => [...old.slice(0, index + 1), page.nextCursor]); setIndex(index + 1);
-          }}>{t("roles.next")}</Button> : null}
-        </div>
+      <RefreshButton onClick={reload} pending={state.status === "pending"} />
+    </header>
+    {state.status === "pending" ? <TableSkeleton rows={3} columns={3} />
+      : !sessions ? <ErrorState compact error={state.status === "error" ? state.error : undefined} onRetry={reload} />
+      : <>
+        <DataTable rows={sessions} rowKey={sessionIdentity} label={t("agents.sessions.title")} columns={columns}
+          initialSort={{ key: "session", direction: "desc" }} selectedKey={selected}
+          onRowClick={row => { const identity = sessionIdentity(row); setSelected(selected === identity ? null : identity); }}
+          rowActionsWidth={installation.canAudit === true ? "9rem" : undefined}
+          rowActions={installation.canAudit === true ? row => {
+            const identity = sessionIdentity(row);
+            return <Button className="h-7 px-2.5 text-xs" aria-expanded={transcript === identity}
+              aria-label={t("agentTranscript.sessions.openLabel", { root: row.rootEventId, generation: row.projectionGeneration })}
+              onClick={() => setTranscript(transcript === identity ? null : identity)}>
+              {t(transcript === identity ? "agentTranscript.sessions.hide" : "agentTranscript.sessions.open")}</Button>;
+          } : undefined}
+          partial={collection && !collection.complete ? <LoadMore count={sessions.length} onMore={loadMore} /> : undefined}
+          empty={<EmptyState compact icon={MessagesSquare} title={t("agents.sessions.empty")} />} />
         {transcriptSession ? <AgentSessionTranscriptView key={transcript ?? ""}
           agentAvatarUrl={null} agentName={installation.agentDisplayName ?? t("agentTranscript.agentFallback")}
           agentPubkey={installation.agentPubkey ?? installation.agentPrincipalId}
           emptyDescription={t("agentTranscript.emptyChannel", { name: installation.agentDisplayName ?? t("agentTranscript.agentFallback") })}
           installation={installation} projectionGeneration={transcriptSession.projectionGeneration}
           rootEventId={transcriptSession.rootEventId} /> : null}
-        {selectedSession ? <SessionInvocations key={JSON.stringify([selectedSession.rootEventId, selectedSession.projectionGeneration])} session={selectedSession} /> : null}
+        {selectedSession ? <SessionInvocations key={sessionIdentity(selectedSession)} session={selectedSession} /> : null}
       </>}
   </section>;
 }
+
+const invocationTones = {
+  CREATED: "info", DISPATCHING: "info", RUNNING: "info", UNKNOWN: "warning", COMPLETED: "positive", FAILED: "negative", CANCELED: "neutral",
+} as const satisfies Record<AgentInvocationView["status"], "info" | "positive" | "warning" | "negative" | "neutral">;
 
 function SessionInvocations({ session }: { session: AgentSessionView }) {
   const client = useBffClient();
   const t = useT();
   const locale = useLocale();
   const reasonText = useReasonText();
-  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
-  const [index, setIndex] = useState(0);
   const [open, setOpen] = useState<{ root: string; current: string } | null>(null);
-  const cursor = cursors[index];
-  const [state, reload] = useLoad(`agent-invocations:${session.workspaceId}:${session.installationResourceId}:${session.rootEventId}:${session.projectionGeneration}:${cursor ?? ""}`,
-    () => client.agentInvocations(session.installationResourceId, session.rootEventId, session.projectionGeneration, cursor));
+  const [state, reload, loadMore] = useCursorCollection<AgentInvocationView>(
+    `agent-invocations:${session.workspaceId}:${session.installationResourceId}:${session.rootEventId}:${session.projectionGeneration}`,
+    async (cursor, seen) => {
+      const page = await client.agentInvocations(session.installationResourceId, session.rootEventId, session.projectionGeneration, cursor);
+      if (!validInvocationPage(page, seen)) throw new TransportError(t("platform.loadFailed"));
+      return { items: page.invocations, nextCursor: page.nextCursor };
+    });
   useForegroundRead(reload);
-  const page = state.status === "ok" && validInvocationPage(state.data, cursors.slice(0, index + 1)) ? state.data : null;
-  return <div className="space-y-3" data-testid="agent-session-invocations">
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+  const collection = state.status === "ok" ? state.data : null;
+  const invocations = collection && new Set(collection.items.map(row => row.invocationId)).size === collection.items.length ? collection.items : null;
+  const status = (row: AgentInvocationView) => row.observation !== undefined ? reasonText(row.observation)
+    : row.status === "UNKNOWN" ? t("agents.invocations.state.unknown")
+    : row.cancelPending ? t("agents.invocations.cancelPending") : t(invocationLabels[row.status]);
+  const columns: DataColumn<AgentInvocationView>[] = [
+    { key: "updated", header: t("agents.invocations.id"), sortValue: row => Date.parse(String(row.updatedAt)), cell: row =>
+      <CellStack primary={<time dateTime={String(row.updatedAt)}>{new Date(String(row.updatedAt)).toLocaleString(locale)}</time>}
+        secondary={<IdText value={row.invocationId} label={t("agents.invocations.id")} />} /> },
+    { key: "state", header: t("agents.ui.col.state"), width: "12rem", cell: row =>
+      <Badge tone={row.observation !== undefined || row.status === "UNKNOWN" || row.cancelPending ? "warning" : invocationTones[row.status]}>{status(row)}</Badge> },
+    { key: "turn", header: t("agents.invocations.turn"), width: "10rem", secondary: true, cell: row => row.runtimeTurnId
+      ? <IdText value={row.runtimeTurnId} label={t("agents.invocations.turn")} /> : <span className="text-muted-foreground">{t("agents.sessions.unrecorded")}</span> },
+  ];
+  return <div className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-4" data-testid="agent-session-invocations">
+    <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold tracking-tight">{t("agents.invocations.title")}</h3>
-          <Badge tone="neutral"><Clock3 aria-hidden className="mr-1 inline h-4 w-4" />{t(sessionLabels[session.status])}</Badge>
+          <h4 className="text-sm font-semibold tracking-tight">{t("agents.invocations.title")}</h4>
+          <Badge tone="neutral"><Clock3 aria-hidden className="mr-1 inline h-3.5 w-3.5" />{t(sessionLabels[session.status])}</Badge>
         </div>
-        <p className="mt-1 break-all text-sm text-muted-foreground">{t("agents.sessions.thread")}: {session.runtimeThreadId ?? t("agents.sessions.unrecorded")}</p>
+        <p className="mt-1 flex flex-wrap items-center gap-1 text-sm text-muted-foreground">{t("agents.sessions.thread")}:{" "}
+          {session.runtimeThreadId ? <IdText value={session.runtimeThreadId} label={t("agents.sessions.thread")} /> : t("agents.sessions.unrecorded")}</p>
       </div>
-      <Button onClick={() => { setOpen(null); reload(); }}>{t("platform.refresh")}</Button>
+      <RefreshButton onClick={() => { setOpen(null); reload(); }} pending={state.status === "pending"} />
     </div>
-    {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice> : !page ?
-      <ReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} /> : <>
-        {open && page.invocations.some(row => row.actionExecutionId === open.root && row.canReadTask === true) ?
-          <TaskDetail key={open.current} actionExecutionId={open.current} onBack={() => setOpen(null)}
-            onOpen={current => setOpen({ root: open.root, current })} /> : <>
-            {page.invocations.length === 0 ? <Notice>{t("agents.invocations.empty")}</Notice> :
-              <Table head={[t("agents.invocations.id"), t("agents.sessions.recordedState"), t("agents.invocations.turn"), t("agents.sessions.updated"), t("tasks.execution")]}>
-                {page.invocations.map(row => <tr key={row.invocationId}>
-                  <Cell mono>{row.invocationId}</Cell>
-                  <Cell><Badge tone="neutral">{row.observation !== undefined ? reasonText(row.observation) :
-                    row.status === "UNKNOWN" ? t("agents.invocations.state.unknown") :
-                      row.cancelPending ? t("agents.invocations.cancelPending") : t(invocationLabels[row.status])}</Badge></Cell>
-                  <Cell mono>{row.runtimeTurnId ?? t("agents.sessions.unrecorded")}</Cell>
-                  <Cell><time dateTime={String(row.updatedAt)}>{new Date(String(row.updatedAt)).toLocaleString(locale)}</time></Cell>
-                  <Cell>{row.canReadTask === true ? <Button onClick={() => setOpen({ root: row.actionExecutionId, current: row.actionExecutionId })}>{t("tasks.execution")}</Button> :
-                    <span className="break-all font-mono text-xs">{row.actionExecutionId}</span>}</Cell>
-                </tr>)}
-              </Table>}
-            <div className="flex gap-2">
-              {index > 0 ? <Button onClick={() => setIndex(index - 1)}>{t("roles.previous")}</Button> : null}
-              {page.nextCursor !== undefined ? <Button onClick={() => {
-                setCursors(old => [...old.slice(0, index + 1), page.nextCursor]); setIndex(index + 1);
-              }}>{t("roles.next")}</Button> : null}
-            </div>
-          </>}
-      </>}
+    {state.status === "pending" ? <TableSkeleton rows={2} columns={3} />
+      : !invocations ? <ErrorState compact error={state.status === "error" ? state.error : undefined} onRetry={reload} />
+      : open && invocations.some(row => row.actionExecutionId === open.root && row.canReadTask === true) ?
+        <TaskDetail key={open.current} actionExecutionId={open.current} onBack={() => setOpen(null)}
+          onOpen={current => setOpen({ root: open.root, current })} />
+      : <DataTable rows={invocations} rowKey={row => row.invocationId} label={t("agents.invocations.title")} columns={columns}
+          initialSort={{ key: "updated", direction: "desc" }} rowActionsWidth="10rem"
+          rowActions={row => row.canReadTask === true
+            ? <Button className="h-7 px-2.5 text-xs" onClick={() => setOpen({ root: row.actionExecutionId, current: row.actionExecutionId })}>{t("tasks.execution")}</Button>
+            : <IdText value={row.actionExecutionId} label={t("tasks.execution")} />}
+          partial={collection && !collection.complete ? <LoadMore count={invocations.length} onMore={loadMore} /> : undefined}
+          empty={<EmptyState compact icon={Clock3} title={t("agents.ui.invocations.empty")} />} />}
   </div>;
 }

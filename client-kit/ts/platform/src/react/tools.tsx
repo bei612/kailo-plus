@@ -10,10 +10,13 @@ import {
   type PlatformToolView,
 } from "@client-kit/contracts";
 import { useState } from "react";
+import { Plus, Wrench } from "lucide-react";
 import { AddConnectorDialog, CallPolicyBadge, ExternalBadge, RiskBadge } from "./connectors";
 import { useBffClient, useT } from "./context";
-import { Badge, Button, Cell, Notice, Table, ReadFailure } from "./ui";
-import { useLoad } from "./use-load";
+import { Badge, CellStack, DataTable, EmptyState, ErrorState, IdText, PageSection, RefreshButton, TableSkeleton, type DataColumn } from "./ui";
+import { useOffsetCollection } from "./use-offset-collection";
+import { TransportError } from "../transport";
+import { Button as WorkflowButton } from "./profile/buzz/shared/ui/button";
 
 // DD-140 (1): the closed platform native tool name → action key map.
 const NATIVE_TOOL_ACTIONS: Readonly<Record<string, string>> = {
@@ -98,58 +101,53 @@ export function ConnectorGroupHeading({ group }: { group: ConnectorToolGroup }) 
   </p>;
 }
 
+// DD-170 (.design/20 §16.2): the catalog is one table — tool, source, description, risk, how it is
+// called and its state — read to its end (bounded) and paged locally. Identifiers are secondary.
 export function ToolManagement() {
   const client = useBffClient();
   const t = useT();
-  const [offsets, setOffsets] = useState([0]);
-  const [index, setIndex] = useState(0);
   const [adding, setAdding] = useState(false);
-  const offset = offsets[index] ?? 0;
-  const [state, reload] = useLoad(`platform-tools:${offset}`, () => client.platformTools(offset));
-  const page = state.status === "ok" && validPlatformToolPage(state.data, offset) ? state.data : null;
-  const groups = page ? groupTools(page.tools) : null;
-  const status = (tool: PlatformToolView) => <Badge tone="neutral">{t(tool.status !== "ACTIVE" || tool.resourceState !== "ACTIVE" ? "agents.tools.provisioning"
-    : tool.canConsume ? "agents.tools.available" : "agents.tools.unavailable")}</Badge>;
-  return <section className="flex flex-col gap-3 border-t pt-3" data-testid="platform-tools">
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <h2 className="font-medium">{t("agents.tools.title")}</h2>
-      <Button onClick={() => setAdding(true)} data-testid="platform-tools-add-connector">{t("connectors.add")}</Button>
-    </div>
-    <p className="text-sm text-muted-foreground">{t("agents.tools.boundary")}</p>
-    <Button className="w-fit" onClick={reload}>{t("platform.refresh")}</Button>
+  const { state, reload, loadMore } = useOffsetCollection<PlatformToolView>("platform-tools", async (offset) => {
+    const page = await client.platformTools(offset);
+    if (!validPlatformToolPage(page, offset)) throw new TransportError(t("platform.loadFailed"));
+    return { items: page.tools, nextOffset: page.nextOffset ?? undefined };
+  });
+  const collection = state.status === "ok" ? state.data : null;
+  const tools = collection && new Set(collection.items.map((tool) => tool.resourceId)).size === collection.items.length ? collection.items : null;
+  const status = (tool: PlatformToolView) => {
+    const pending = tool.status !== "ACTIVE" || tool.resourceState !== "ACTIVE";
+    return <Badge tone={pending ? "info" : tool.canConsume ? "positive" : "neutral"}>{t(pending ? "tools.ui.status.pending"
+      : tool.canConsume ? "tools.ui.status.available" : "tools.ui.status.unavailable")}</Badge>;
+  };
+  const columns: DataColumn<PlatformToolView>[] = [
+    { key: "name", header: t("tools.ui.col.tool"), width: "26%", sortValue: (tool) => tool.connector?.title ?? tool.name, cell: (tool) =>
+      <CellStack primary={tool.connector ? tool.connector.title ?? tool.connector.upstreamName : tool.name}
+        secondary={<IdText value={tool.connector ? tool.name : tool.resourceId} label={t("tools.ui.col.tool")} />} /> },
+    { key: "source", header: t("tools.ui.col.source"), width: "16%", sortValue: (tool) => tool.connector?.connectionName ?? "", cell: (tool) => tool.connector
+      ? <span className="flex min-w-0 flex-wrap items-center gap-1"><span className="truncate">{tool.connector.connectionName}</span><ExternalBadge /></span>
+      : t("tools.ui.source.platform") },
+    { key: "description", header: t("connectors.tools.description"), secondary: true, cell: (tool) => tool.connector?.description
+      ? <span className="line-clamp-2 whitespace-pre-wrap break-words text-xs text-muted-foreground" title={tool.connector.description}>
+          <span className="font-medium">{t("connectors.providedByService")}</span> {tool.connector.description}</span>
+      : <span className="text-muted-foreground">{t("tools.ui.noDescription")}</span> },
+    { key: "risk", header: t("connectors.tools.risk"), width: "8rem", cell: (tool) => tool.connector ? <RiskBadge risk={tool.connector.risk} />
+      : <span className="text-muted-foreground">{t("tools.ui.platformManaged")}</span> },
+    { key: "policy", header: t("connectors.tools.policy"), width: "10rem", cell: (tool) => tool.connector ? <CallPolicyBadge policy={tool.connector.callPolicy} />
+      : <span className="text-muted-foreground">{t("tools.ui.perCall")}</span> },
+    { key: "state", header: t("platform.state"), width: "8.5rem", cell: status },
+  ];
+  return <section className="flex min-w-0 flex-col gap-4" data-testid="platform-tools">
+    <PageSection title={t("tools.ui.title")} description={t("tools.ui.description")}
+      actions={<><RefreshButton onClick={reload} pending={state.status === "pending"} />
+        <WorkflowButton type="button" onClick={() => setAdding(true)} data-testid="platform-tools-add-connector"><Plus aria-hidden />{t("connectors.add")}</WorkflowButton></>}>
+      {state.status === "pending" ? <TableSkeleton rows={4} columns={5} />
+        : !tools ? <ErrorState error={state.status === "error" ? state.error : undefined} onRetry={reload} />
+        : <DataTable rows={tools} rowKey={(tool) => tool.resourceId} label={t("tools.ui.title")} columns={columns}
+            search={{ placeholder: t("tools.ui.search"), text: (tool) => [tool.name, tool.connector?.title, tool.connector?.connectionName, tool.connector?.description].join(" ") }}
+            partial={collection && !collection.complete ? <>{t("list.partial", { count: String(tools.length) })}{" "}
+              <button type="button" className="text-brand-text hover:underline" onClick={loadMore}>{t("list.loadMore")}</button></> : undefined}
+            empty={<EmptyState icon={Wrench} title={t("tools.ui.emptyTitle")} description={t("tools.ui.emptyBody")} />} />}
+    </PageSection>
     <AddConnectorDialog open={adding} onClose={() => setAdding(false)} onCreated={reload} />
-    {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
-      : !page || !groups ? <ReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
-      : <>
-        {page.tools.length === 0 ? <Notice>{t("agents.tools.none")}</Notice> : <>
-          {groups.native.length ? <div className="overflow-x-auto"><Table head={[t("agents.name"), t("agents.owner"), t("agents.resourceVersion"), t("platform.state")]}>
-            {groups.native.map((tool) => <tr key={tool.resourceId}>
-              <Cell><p>{tool.name}</p><p className="break-all font-mono text-xs">{tool.resourceId}</p></Cell>
-              <Cell mono>{tool.ownerPrincipalId}</Cell><Cell>{tool.resourceVersion}</Cell>
-              <Cell>{status(tool)}</Cell>
-            </tr>)}
-          </Table></div> : null}
-          {groups.connectors.map((group) => <div key={group.connectionId} className="flex flex-col gap-2" data-testid="platform-tools-connector">
-            <ConnectorGroupHeading group={group} />
-            <div className="overflow-x-auto"><Table head={[t("agents.name"), t("connectors.tools.description"), t("connectors.tools.risk"), t("connectors.tools.policy"), t("platform.state")]}>
-              {group.tools.map((tool) => <tr key={tool.resourceId} data-testid="platform-tool-connector-row">
-                <Cell><p className="break-words">{tool.connector?.title ?? tool.connector?.upstreamName}</p>
-                  <p className="break-all font-mono text-xs">{tool.name}</p></Cell>
-                <Cell>{tool.connector?.description ? <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">
-                  <span className="font-medium">{t("connectors.providedByService")}</span> {tool.connector.description}</p> : "—"}</Cell>
-                <Cell>{tool.connector ? <RiskBadge risk={tool.connector.risk} /> : null}</Cell>
-                <Cell>{tool.connector ? <CallPolicyBadge policy={tool.connector.callPolicy} /> : null}</Cell>
-                <Cell>{status(tool)}</Cell>
-              </tr>)}
-            </Table></div>
-          </div>)}
-        </>}
-        <div className="flex flex-wrap gap-2">
-          {index > 0 ? <Button onClick={() => setIndex(index - 1)}>{t("roles.previous")}</Button> : null}
-          {page.nextOffset != null ? <Button onClick={() => {
-            setOffsets((old) => [...old.slice(0, index + 1), page.nextOffset!]); setIndex(index + 1);
-          }}>{t("roles.next")}</Button> : null}
-        </div>
-      </>}
   </section>;
 }

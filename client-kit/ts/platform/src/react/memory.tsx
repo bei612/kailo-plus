@@ -1,5 +1,8 @@
 // DD-66/68, 19 §5/7: both TS hosts use this same governed Memory surface.
 // Decrypted bodies stay in the mounted view, never local storage or telemetry.
+// DD-170 (.design/20 §16): memory is read only on the explicit "Read memory" action; the cold list
+// states its size and pages locally, each body shows its state in words and its head only as a
+// technical identifier; removing an entry is confirmed in a dialog.
 import {
   ActionDispatchState, ActionGateState, AgentInstallationState, ErrorClass, AgentMemoryWriteInputExpectedHeadState,
   PlatformSessionAccessMode, ReasonCode, ResourceState, TaskStatus,
@@ -7,13 +10,15 @@ import {
   type AgentMemoryReadView, type AgentMemoryEntryPage,
   type AgentMemoryWriteInput, type TaskView,
 } from "@client-kit/contracts";
-import { AlertTriangle } from "lucide-react";
-import { Fragment, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Brain } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { newIdempotencyKey, taskPhase } from "../governance";
 import { platformPluralForm } from "../i18n";
 import { BffError, TransportError, type WriteFailure, writeFailure } from "../transport";
 import { useBffClient, useFailureText, useLocale, useReasonText, useT } from "./context";
-import { Badge, Button, Notice } from "./ui";
+import { Badge, Button, ConfirmDialog, DetailSkeleton, EmptyState, ErrorState, Pagination, usePaged } from "./ui";
+import { RefreshButton } from "./page-layout";
+import { SectionCard, TechnicalDetails } from "./agents/detail-kit";
 import { useLoad } from "./use-load";
 import { orderMemoryEntries, type MemoryListEntry } from "./memory-order";
 
@@ -78,12 +83,16 @@ export function InstallationMemory({ resourceId, workspaceId, installation, onLo
   const t = useT();
   const [open, setOpen] = useState(false);
   const [locked, setLocked] = useState(false);
-  return <section className="flex flex-col gap-3 border-t pt-3" data-testid="agent-memory">
-    <h4 className="text-sm font-medium">{t("agents.memory.title")}</h4>
-    <p className="text-sm text-muted-foreground">{t(installation ? "agents.memory.governed" : "agents.memory.readOnly")}</p>
-    <Button className="w-fit" disabled={locked} aria-expanded={open} onClick={() => setOpen(!open)}>
-      {t(open ? "agents.memory.close" : "agents.memory.open")}
-    </Button>
+  return <section className="flex min-w-0 flex-col gap-3" data-testid="agent-memory">
+    <header className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <h4 className="text-[1.0625rem] font-semibold leading-6 tracking-[-0.012em] text-foreground">{t("agents.memory.title")}</h4>
+        <p className="text-sm text-muted-foreground">{t(installation ? "agents.ui.memory.governed" : "agents.ui.memory.readOnly")}</p>
+      </div>
+      <Button disabled={locked} aria-expanded={open} onClick={() => setOpen(!open)}>
+        {t(open ? "agents.memory.close" : "agents.memory.open")}
+      </Button>
+    </header>
     {open ? <MemoryContents key={`${workspaceId}:${resourceId}`} resourceId={resourceId} workspaceId={workspaceId}
       installation={installation} onLocked={(next) => { setLocked(next); onLocked?.(next); }} /> : null}
   </section>;
@@ -151,27 +160,39 @@ function MemoryContents({ resourceId, workspaceId, installation, onLocked }: {
     setEdit(null); onLocked(false);
     if (refresh) { setRound((value) => value + 1); reload(); reloadTasks(); reloadSession(); }
   };
+  const listed = order?.entries ?? (page?.state === "COMPLETE" ? page.entries : []);
+  const paged = usePaged(listed);
   return <>
-    {installation && session.status === "error" ? <Notice role="status">{t("platform.loadFailed")}
-      <Button onClick={reloadSession}>{t("platform.retry")}</Button></Notice> : null}
-    <h5 className="text-sm font-medium">{t("agents.memory.core")}</h5>
-    <p className="text-sm text-muted-foreground">{t("agents.memory.newSessions")}</p>
-    <MemoryBody key={`core:${round}`} resourceId={resourceId} workspaceId={workspaceId} slug="core" onEdit={onEdit} />
-    {coreMissingLinks.length ? <MemoryDanglingRefsHint slugs={coreMissingLinks} /> : null}
-    <h5 className="text-sm font-medium">{t("agents.memory.cold")}</h5>
-    <Button className="w-fit" onClick={reload}>{t("platform.refresh")}</Button>
-    {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
-      : !page ? <Notice role="status">{t("platform.loadFailed")}<Button onClick={reload}>{t("platform.retry")}</Button></Notice>
-      : page.state !== "COMPLETE" ? <Notice role="status">{t(page.state === "BOUND_EXCEEDED" ? "agents.memory.boundExceeded" : "agents.memory.unknown")}</Notice>
-      : page.entries.length === 0 ? <Notice>{t("agents.memory.none")}</Notice>
-      : <>
-        {order && !order.coreExists && page.entries.some((entry) => !entry.tombstone) ? <MemoryNoCoreHint /> : null}
-        <div className="space-y-2" data-testid="agent-memory-list">
-          {(order?.entries ?? page.entries).map((entry) => <MemoryEntryAccordion key={`${round}:${entry.eventId}`} entry={entry}
-            missingLinks={order?.missingLinks.get(entry.slug) ?? []}
-            resourceId={resourceId} workspaceId={workspaceId} onEdit={onEdit} />)}
-        </div>
-      </>}
+    {installation && session.status === "error" ? <ErrorState compact error={session.error} onRetry={reloadSession} /> : null}
+    <SectionCard testId="agent-memory-core">
+      <div className="flex flex-col gap-0.5">
+        <h5 className="text-sm font-semibold">{t("agents.memory.core")}</h5>
+        <p className="text-sm text-muted-foreground">{t("agents.memory.newSessions")}</p>
+      </div>
+      <MemoryBody key={`core:${round}`} resourceId={resourceId} workspaceId={workspaceId} slug="core" onEdit={onEdit} />
+      {coreMissingLinks.length ? <MemoryDanglingRefsHint slugs={coreMissingLinks} /> : null}
+    </SectionCard>
+    <div className="flex flex-col gap-3" data-testid="agent-memory-cold">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h5 className="text-sm font-semibold">{t("agents.memory.cold")}</h5>
+        <RefreshButton onClick={reload} pending={state.status === "pending"} />
+      </div>
+      {state.status === "pending" ? <DetailSkeleton lines={3} />
+        : !page ? <ErrorState compact error={state.status === "error" ? state.error : undefined} onRetry={reload} />
+        : page.state !== "COMPLETE" ? <p role="status" className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
+            {t(page.state === "BOUND_EXCEEDED" ? "agents.memory.boundExceeded" : "agents.memory.unknown")}</p>
+        : page.entries.length === 0 ? <EmptyState compact icon={Brain} title={t("agents.ui.memory.emptyTitle")} description={t("agents.ui.memory.emptyBody")} />
+        : <>
+          {order && !order.coreExists && page.entries.some((entry) => !entry.tombstone) ? <MemoryNoCoreHint /> : null}
+          <div className="space-y-2" data-testid="agent-memory-list">
+            {paged.pageRows.map((entry) => <MemoryEntryAccordion key={`${round}:${entry.eventId}`} entry={entry}
+              missingLinks={order?.missingLinks.get(entry.slug) ?? []}
+              resourceId={resourceId} workspaceId={workspaceId} onEdit={onEdit} />)}
+          </div>
+          <Pagination testId="agent-memory-pagination" total={paged.total} page={paged.page} pageSize={paged.pageSize}
+            onPageChange={paged.setPage} onPageSizeChange={paged.setPageSize} />
+        </>}
+    </div>
     {canWrite ? <>
       <form className="flex flex-col gap-2" onSubmit={(event) => {
         event.preventDefault(); if (!edit && coldSlug(slugInput)) setNewSlug(slugInput);
@@ -183,11 +204,12 @@ function MemoryContents({ resourceId, workspaceId, installation, onLocked }: {
         <Button type="submit" className="w-fit" disabled={!!edit || !coldSlug(slugInput)}>{t("agents.memory.readEntry")}</Button>
       </form>
       {newSlug ? <MemoryBody key={`${round}:${newSlug}`} resourceId={resourceId} workspaceId={workspaceId} slug={newSlug} onEdit={onEdit} /> : null}
-      {!taskRows ? <Notice role="status">{t("agents.inFlightUnavailable")}<Button onClick={reloadTasks}>{t("platform.retry")}</Button></Notice>
-        : pending.length ? <div role="status" className="space-y-1 text-sm">
+      {!taskRows ? <div role="status" className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">{t("agents.inFlightUnavailable")}
+          <Button onClick={reloadTasks}>{t("platform.retry")}</Button></div>
+        : pending.length ? <div role="status" className="flex flex-col gap-1 rounded-lg bg-muted/50 p-3 text-sm">
           <p>{t("agents.memory.inFlight")}</p>{pending.map((task) => <p className="break-words" key={task.actionExecutionId}>
             {t(task.dispatchState === ActionDispatchState.Unknown ? "tasks.status.unknown" : taskPhase(task).label)} · {task.operationId}
-          </p>)}<Button onClick={reloadTasks}>{t("platform.refresh")}</Button>
+          </p>)}<Button className="w-fit" onClick={reloadTasks}>{t("platform.refresh")}</Button>
         </div> : null}
     </> : null}
     {edit && installation ? <MemoryEditor key={`${edit.read.operationId}:${edit.mode}`} edit={edit}
@@ -273,13 +295,16 @@ function MemoryBody({ resourceId, workspaceId, slug, onEdit }: {
     ? client.agentMemoryCore(resourceId) : client.agentMemoryEntry(resourceId, slug));
   const value = state.status === "ok" && validMemoryRead(state.data, resourceId, workspaceId, slug) ? state.data : null;
   return <section className="flex flex-col gap-2" data-testid="agent-memory-body">
-    <p className="break-words text-sm"><MemorySlugTitle slug={slug} /></p>
-    {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
-      : !value ? <Notice role="status">{t("platform.loadFailed")}</Notice>
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm"><MemorySlugTitle slug={slug} />
+        {value ? <Badge tone={value.state === "FOUND" ? "positive" : value.state === "ABSENT" ? "neutral" : "warning"}>
+          {t(value.state === "FOUND" ? "agents.ui.memory.found" : value.state === "ABSENT" ? "agents.ui.memory.absent" : "agents.ui.memory.unreadable")}</Badge> : null}</span>
+      <RefreshButton onClick={reload} pending={state.status === "pending"} />
+    </div>
+    {state.status === "pending" ? <DetailSkeleton lines={2} />
+      : !value ? <ErrorState compact error={state.status === "error" ? state.error : undefined} onRetry={reload} />
       : <>
-        <Badge tone="neutral">{t(value.state === "FOUND" ? "agents.memory.found" : value.state === "ABSENT" ? "agents.memory.absent" : "agents.memory.unreadable")}</Badge>
-        {value.eventId ? <p className="break-all font-mono text-xs">{t("agents.memory.head")}: {value.eventId}</p> : null}
-        {value.state === "FOUND" ? <pre className="whitespace-pre-wrap break-words text-sm">{value.content}</pre> : null}
+        {value.state === "FOUND" ? <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-muted/40 p-3 font-sans text-sm leading-6">{value.content}</pre> : null}
         {onEdit && value.state !== "UNREADABLE" ? <div className="flex flex-wrap gap-2">
           <Button onClick={() => onEdit(value, "value")}>{t(slug === "core" ? "agents.memory.replace" : "agents.memory.set")}</Button>
           {slug !== "core" && value.state === "FOUND" ? <>
@@ -287,8 +312,8 @@ function MemoryBody({ resourceId, workspaceId, slug, onEdit }: {
             <Button onClick={() => onEdit(value, "remove")}>{t("agents.memory.remove")}</Button>
           </> : null}
         </div> : null}
+        <TechnicalDetails items={[{ id: "head", label: t("agents.ui.memory.head"), value: value.eventId }]} />
       </>}
-    <Button className="w-fit" onClick={reload}>{t("platform.refresh")}</Button>
   </section>;
 }
 
@@ -312,12 +337,12 @@ function MemoryEditor({ edit, installation, canWrite, requestBlocked, onFinished
     : edit.mode === "remove" ? "agent.memory.entry.remove" : "agent.memory.entry.set";
   const title = edit.read.slug === "core" ? "agents.memory.replace" : edit.mode === "patch" ? "agents.memory.patch"
     : edit.mode === "remove" ? "agents.memory.remove" : "agents.memory.set";
-  const prepare = () => {
+  const build = (): ActionCommand | null => {
     if (intent || busy || !canWrite || requestBlocked
       || !validMemoryRead(edit.read, installation.resourceId, installation.workspaceId, edit.read.slug)
       || edit.read.state === "UNREADABLE"
       || (edit.mode !== "value" && edit.read.state !== "FOUND")
-      || (edit.mode === "patch" && (!patch || !eventId(edit.read.valueHash)))) return;
+      || (edit.mode === "patch" && (!patch || !eventId(edit.read.valueHash)))) return null;
     const memoryWrite: AgentMemoryWriteInput = {
       slug: edit.read.slug,
       expectedHeadState: edit.read.state === "FOUND" ? AgentMemoryWriteInputExpectedHeadState.Found : AgentMemoryWriteInputExpectedHeadState.Absent,
@@ -325,17 +350,19 @@ function MemoryEditor({ edit, installation, canWrite, requestBlocked, onFinished
     };
     if (edit.mode === "value") memoryWrite.value = value;
     if (edit.mode === "patch") { memoryWrite.patch = patch; memoryWrite.baseHash = edit.read.valueHash; }
-    setIntent({ actionKey, idempotencyKey: newIdempotencyKey(), resourceId: installation.resourceId,
-      resourceVersion: installation.resourceVersion, workspaceId: installation.workspaceId, memoryWrite });
+    return { actionKey, idempotencyKey: newIdempotencyKey(), resourceId: installation.resourceId,
+      resourceVersion: installation.resourceVersion, workspaceId: installation.workspaceId, memoryWrite };
   };
-  const submit = async () => {
-    if (!intent || inFlight.current || !canWrite) return;
+  const prepare = () => { const command = build(); if (command) setIntent(command); };
+  // `frozen` is the exact intent: the review's, or the removal confirmation's just-frozen command.
+  const submit = async (frozen: ActionCommand | null = intent) => {
+    if (!frozen || inFlight.current || !canWrite) return;
     inFlight.current = true; setBusy(true); setFailure(null); setSubmission(null);
     try {
-      const result = await client.submitAction(intent);
+      const result = await client.submitAction(frozen);
       // These four registered HUMAN actions are SYNC/NONE/noApproval. A
       // different/unknown protocol result cannot unlock a replacement intent.
-      if (!result || result.actionKey !== intent.actionKey
+      if (!result || result.actionKey !== frozen.actionKey
         || typeof result.actionExecutionId !== "string" || !result.actionExecutionId
         || typeof result.operationId !== "string" || !result.operationId
         || !Object.values(ActionGateState).includes(result.gateState)
@@ -360,17 +387,46 @@ function MemoryEditor({ edit, installation, canWrite, requestBlocked, onFinished
   };
   const unknown = failure?.kind === "unknown" || (submission !== null && !memoryOutcomeKnown(submission));
   const decided = !intent && (failure !== null || submission !== null);
-  return <section className="flex flex-col gap-3 rounded-md border p-3" data-testid="agent-memory-editor">
-    <h5 className="text-sm font-medium">{t(title)}</h5>
-    <p className="break-words text-sm"><MemorySlugTitle slug={edit.read.slug} /> · {t("agents.resourceVersion")}: {installation.resourceVersion}</p>
-    <p className="break-all font-mono text-xs">{t("agents.memory.head")}: {edit.read.eventId ?? t("agents.memory.absent")}</p>
+  const removed = edit.mode === "remove" && !intent && submission !== null && memoryOutcomeKnown(submission)
+    && submission.gateState === ActionGateState.Allowed && submission.dispatchState === ActionDispatchState.Dispatched && submission.reason === undefined;
+  const finished = useRef(onFinished);
+  finished.current = onFinished;
+  // A settled removal closes its confirmation and re-reads the list.
+  useEffect(() => { if (removed) finished.current(true); }, [removed]);
+  if (edit.mode === "remove") {
+    // DD-170 §16.6: removing writes a tombstone — a ConfirmDialog naming the entry. Submitting keeps it
+    // open; an UNKNOWN outcome keeps the same frozen request and only re-checks it, never a new key.
+    const confirm = () => {
+      if (busy) return;
+      if (intent) { void submit(); return; }
+      if (decided) { onFinished(true); return; }
+      const command = build();
+      if (!command) return;
+      setIntent(command);
+      void submit(command);
+    };
+    return <ConfirmDialog open testId="agent-memory-remove" pending={busy}
+      onOpenChange={(open) => { if (!open && !busy && !unknown) onFinished(decided); }}
+      title={t("agents.ui.memory.removeTitle", { slug: edit.read.slug })} description={t("agents.memory.tombstoneWarning")}
+      confirmLabel={unknown ? t("agents.retry") : decided ? t("agents.ui.close") : t("agents.memory.remove")} onConfirm={confirm}>
+      {submission ? <p role="status" className="break-words text-sm">{unknown ? t("agents.unknown", { operation: submission.operationId })
+        : submission.reason ? reasonText(submission.reason) : t("agents.memory.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}</p> : null}
+      {failure ? <p role={failure.kind === "unknown" ? "status" : "alert"} className="break-words text-sm">{failure.kind === "unknown"
+        ? t("agents.unknown", { operation: failure.operationId ?? "" }) : failureText(failure)}</p> : null}
+      {requestBlocked && !intent && !decided ? <p role="status" className="text-sm text-muted-foreground">{t("agents.memory.inFlight")}</p> : null}
+    </ConfirmDialog>;
+  }
+  return <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4" data-testid="agent-memory-editor">
+    <h5 className="text-sm font-semibold">{t(title)}</h5>
+    <p className="break-words text-sm"><MemorySlugTitle slug={edit.read.slug} /></p>
     {!intent && !decided ? <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
       {edit.mode !== "remove" ? <label className="flex flex-col gap-1 text-sm">{t(edit.mode === "patch" ? "agents.memory.patchText" : "agents.memory.value")}
         <textarea value={edit.mode === "patch" ? patch : value}
           onChange={(event) => edit.mode === "patch" ? setPatch(event.target.value) : setValue(event.target.value)}
           className="min-h-40 rounded-md border border-input bg-background p-2 text-sm" />
       </label> : <p className="text-sm">{t("agents.memory.tombstoneWarning")}</p>}
-      {edit.mode === "patch" ? <p className="break-all font-mono text-xs">{t("agents.memory.baseHash")}: {edit.read.valueHash}</p> : null}
+      <TechnicalDetails items={[{ id: "head", label: t("agents.ui.memory.head"), value: edit.read.eventId },
+        { id: "base", label: t("agents.memory.baseHash"), value: edit.mode === "patch" ? edit.read.valueHash : undefined }]} />
       <div className="flex gap-2"><Button type="submit" disabled={!canWrite || requestBlocked || (edit.mode === "patch" && !patch)}>{t("agents.review")}</Button>
         <Button onClick={() => onFinished(false)}>{t("agents.cancel")}</Button></div>
     </form> : intent ? <div className="flex flex-col gap-2 text-sm" role="group">
@@ -382,7 +438,7 @@ function MemoryEditor({ edit, installation, canWrite, requestBlocked, onFinished
     {submission ? <p role="status" className="break-words text-sm">{unknown ? t("agents.unknown", { operation: submission.operationId })
       : t("agents.memory.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}
       {submission.reason ? ` ${reasonText(submission.reason)}` : ""}</p> : null}
-    {failure ? <Notice role={failure.kind === "unknown" ? "status" : "alert"}>{failure.kind === "unknown"
-      ? t("agents.unknown", { operation: failure.operationId ?? "" }) : failureText(failure)}</Notice> : null}
+    {failure ? <p role={failure.kind === "unknown" ? "status" : "alert"} className="break-words text-sm">{failure.kind === "unknown"
+      ? t("agents.unknown", { operation: failure.operationId ?? "" }) : failureText(failure)}</p> : null}
   </section>;
 }

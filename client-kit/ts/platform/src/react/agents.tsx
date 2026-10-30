@@ -46,20 +46,29 @@ import {
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { consumePendingOpenCreateAgent, subscribeOpenCreateAgent } from "./open-create-agent-event";
 import { parseDocument, stringify } from "yaml";
-import { ArrowRight, BookUser, CalendarClock, Check, Code, GitPullRequest, MessageSquare, Pencil, Play, Plus, RefreshCw, SmilePlus, Upload, Webhook, X, Zap } from "lucide-react";
+import { ArrowRight, BookUser, Bot, CalendarClock, Check, ChevronDown, Code, GitPullRequest, MessageSquare, Pencil, Play, Plus, RefreshCw, SmilePlus, Square, Upload, Webhook, Wrench, X, Zap } from "lucide-react";
 import { newIdempotencyKey, taskPhase } from "../governance";
 import { relativeTime } from "../format";
 import type { PlatformMessageKey } from "../i18n";
 import { TransportError, type WriteFailure, writeFailure } from "../transport";
 import { useBffClient, useCurrentPrincipalId, useFailureText, useLocale, useReasonText, useT } from "./context";
-import { Badge, Button, Cell, Notice, Table, ReadFailure as AgentReadFailure } from "./ui";
-import { useLoad } from "./use-load";
+import { Badge, Button, Cell, Notice, Table, ReadFailure as AgentReadFailure, DataTable, Pagination, usePaged, CellStack, CARD_PAGE_SIZES,
+  type DataColumn, EmptyState, ErrorState, TableSkeleton, DetailSkeleton, CardGridSkeleton, KeyValueList, IdText, Tag, TagList, shortId,
+  ConfirmDialog, PageSection, DetailHeader, RefreshButton } from "./ui";
+import { ListSearch } from "./data-table";
+import { NoMatchState } from "./state-views";
+import { useOffsetCollection } from "./use-offset-collection";
+import { ExpandableText, MoreMenu, PrincipalName, SectionCard, TechnicalDetails } from "./agents/detail-kit";
+import { AgentCard, CARD_GRID_CLASS } from "./agents/agent-card";
+import { useLifecycleRequest } from "./agent-activity/AgentLifecycleControls";
+import { lifecycleOffer } from "./agent-activity/agentLifecycle";
+import { EditRespondToDialog } from "./agent-activity/EditRespondToDialog";
+import { type Loaded, useLoad } from "./use-load";
 import { ChannelTeamsSection } from "./agent-library/ChannelTeamsSection";
 import { InstallationMemory } from "./memory";
 import { AgentInstallationUse } from "./agent-installation-use";
-import { installationLabels, validInstallation } from "./agent-installation-view";
+import { installationLabels, installationTones, validInstallation } from "./agent-installation-view";
 import { InstallationSessions } from "./agent-activity/InstallationSessions";
-import { AgentLifecycleSection } from "./agent-activity/AgentLifecycleControls";
 import { ConnectorGroupHeading, ToolManagement, groupTools, selectableTool, validPlatformToolPage } from "./tools";
 import { InstallationSkills, SkillsSection, validSkillVersion } from "./skills";
 import { WorkflowYamlEditor } from "./workflow-yaml-editor";
@@ -88,11 +97,9 @@ import { generateWorkflowName } from "./workflow-name";
 import { workflowCardLabel, workflowTriggerSummary } from "./workflow-card-label";
 import { Button as WorkflowButton } from "./profile/buzz/shared/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
-import { AgentIdentityCard } from "./agent-library/AgentIdentityCard";
 import { AgentsPageFrame } from "./agent-library/AgentsPageFrame";
 import { AgentTeamsLibrary } from "./agent-library/AgentTeamsLibrary";
 import { AgentCatalogDialog } from "./agent-library/AgentCatalogDialog";
-import { CreateIdentityCard } from "./agent-library/CreateIdentityCard";
 import { AgentManagementDialog } from "./agent-library/AgentManagementDialog";
 import { AgentSnapshotImportDialog, agentSnapshotSource, type AgentSnapshotSource } from "./agent-library/AgentSnapshotImportDialog";
 import { AgentSnapshotExportDialog, type SnapshotExportHost, type SnapshotExportTarget } from "./agent-library/AgentSnapshotExportDialog";
@@ -102,7 +109,6 @@ import { Textarea as AgentTextarea } from "./profile/buzz/shared/ui/textarea";
 import { AgentCreationPreview } from "./agent-library/AgentCreationPreview";
 import { AgentIdentityFields } from "./agent-library/AgentDescriptionField";
 import { effectiveAgentDescription } from "./agent-library/agentDescription";
-import { IdentityCardSkeleton } from "./agent-library/identity-card-skeleton";
 import { AgentDefinitionAdvanced, AgentParallelismField } from "./agent-library/AgentDefinitionAdvanced";
 import { AvatarHostProvider, type AvatarHost } from "./profile/avatar-host";
 import { WorkflowScheduleFields } from "./workflow-schedule-fields";
@@ -110,9 +116,6 @@ import { defaultScheduleTrigger } from "./workflow-schedule";
 import { formatDurationSeconds, parseDurationSeconds } from "./workflow-duration";
 import { cronExpressionError, cronYamlError } from "./cron-expression";
 import { supportedSteps, validApprovalPolicy, workflowApprovalPolicy, workflowAction, nextStepId, workflowStepsContent, validStepTimeout, type WorkflowStepDraft, type WorkflowActionKind } from "./workflow-steps";
-
-// Original UnifiedAgentsSection grid at Buzz 779af8886caae1317b4de962082429867ab61503.
-const IDENTITY_CARD_GRID_CLASS = "w-full grid-cols-1 [@container(min-width:21rem)]:grid-cols-2 [@container(min-width:32rem)]:grid-cols-3 [@container(min-width:43rem)]:grid-cols-4 [@container(min-width:54rem)]:grid-cols-5 grid gap-3";
 
 function validDefinition(value: AgentDefinitionView): boolean {
   return !!value && typeof value.resourceId === "string" && !!value.resourceId
@@ -171,13 +174,18 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & {
 } = {}) {
   const client = useBffClient();
   const t = useT();
-  const [offsets, setOffsets] = useState<number[]>([0]);
-  const [pageIndex, setPageIndex] = useState(0);
-  const offset = offsets[pageIndex] ?? 0;
-  const [state, reload] = useLoad(`agent-definitions:${offset}`, () => client.agentDefinitions(offset));
+  // DD-170 §16.2(3): the offset-paged definition directory is read to its end (bounded) so the
+  // section states an exact total and pages locally; a malformed page fails the whole read closed.
+  const { state, reload, loadMore } = useOffsetCollection<AgentDefinitionView>("agent-definitions", async (offset) => {
+    const data = await client.agentDefinitions(offset);
+    if (!data || !Array.isArray(data.definitions) || !data.definitions.every(validDefinition)
+      || new Set(data.definitions.map((row) => row.resourceId)).size !== data.definitions.length) throw new TransportError(t("platform.loadFailed"));
+    return { items: data.definitions, nextOffset: data.nextOffset ?? undefined };
+  });
   const [selected, setSelected] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const [edit, setEdit] = useState<{ target: AgentDefinitionView; owner: boolean } | null>(null);
   const [locked, setLocked] = useState(false);
   const [versionEdit, setVersionEdit] = useState<VersionEdit | null>(null);
@@ -194,7 +202,7 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & {
   const [catalog, setCatalog] = useState<"agents" | "teams" | null>(null);
   const blocked = locked || versionLocked;
   // Original requestOpenCreateAgent (search Actions "Create a new agent"): open the same governed
-  // create dialog the New agent card opens, only while that card would be enabled.
+  // create dialog the New agent entry opens, only while that entry would be enabled.
   const createAvailable = useRef(false);
   createAvailable.current = !blocked && edit === null && versionEdit === null;
   useEffect(() => {
@@ -202,11 +210,14 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & {
     if (consumePendingOpenCreateAgent()) open();
     return subscribeOpenCreateAgent(open);
   }, []);
-  const data = state.status === "ok" ? state.data : null;
-  const page = data && Array.isArray(data.definitions) && data.definitions.every(validDefinition)
-    && (data.nextOffset === undefined || (Number.isSafeInteger(data.nextOffset) && data.nextOffset > offset))
-    ? data : null;
-  const nextOffset = page?.nextOffset;
+  const collection = state.status === "ok" ? state.data : null;
+  const rows = collection?.items ?? [];
+  const q = query.trim().toLocaleLowerCase();
+  const filtered = q ? rows.filter((row) => `${row.displayName} ${row.stableSlug}`.toLocaleLowerCase().includes(q)) : rows;
+  const paged = usePaged(filtered, { pageSize: CARD_PAGE_SIZES[0], resetKey: q });
+  const refresh = () => { reload(); setRefreshRevision((value) => value + 1); };
+  const createButton = <WorkflowButton type="button" data-testid="new-agent" disabled={blocked || edit !== null || versionEdit !== null}
+    onClick={() => setCreateOpen(true)}><Plus aria-hidden />{t("agents.ui.create")}</WorkflowButton>;
 
   return (
     <AgentsPageFrame title={t("platform.tab.agents")} description={t("agents.description")} action={<div className="flex shrink-0 items-center gap-1">
@@ -218,6 +229,11 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & {
           title={t("agents.snapshot.importTitle")} data-testid="agents-import-snapshot"
           disabled={blocked || importSource !== null} onClick={() => { setImportError(null); importInput.current?.click(); }}>
           <Upload aria-hidden className="h-4 w-4" />
+        </WorkflowButton>
+        {/* DD-170 §16.1: the platform tool catalog is a page-level secondary action, not a stray button. */}
+        <WorkflowButton className="shrink-0" size="icon" variant="ghost" aria-label={t("agents.ui.toolsCatalog")}
+          title={t("agents.ui.toolsCatalog")} data-testid="agents-tools-open" disabled={blocked} onClick={() => setToolsOpen(true)}>
+          <Wrench aria-hidden className="h-4 w-4" />
         </WorkflowButton>
         <input ref={importInput} type="file" hidden accept=".json,.png,application/json,image/png" data-testid="agents-import-snapshot-file"
           onChange={(event) => {
@@ -231,52 +247,44 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & {
               else setImportSource(next);
             }, () => setImportError("agents.snapshot.unsupportedFile"));
           }} />
-        <WorkflowButton className="shrink-0" size="icon" variant="ghost" aria-label={t("platform.refresh")}
-          disabled={blocked || installationLocked || state.status === "pending"}
-          onClick={() => { reload(); setRefreshRevision((value) => value + 1); }}>
-          <RefreshCw aria-hidden className={`h-4 w-4 ${state.status === "pending" ? "animate-spin" : ""}`} />
+        <WorkflowButton className="shrink-0" size="icon" variant="ghost" aria-label={t("platform.refresh")} title={t("platform.refresh")}
+          disabled={blocked || installationLocked || state.status === "pending"} onClick={refresh}>
+          <RefreshCw aria-hidden className={`h-4 w-4 ${state.status === "pending" ? "animate-spin motion-reduce:animate-none" : ""}`} />
         </WorkflowButton>
     </div>}>
       {importError ? <Notice role="alert">{t(importError)}</Notice> : null}
-      <AgentSnapshotImportDialog source={importSource} onClose={() => setImportSource(null)}
-        onImported={() => { reload(); setRefreshRevision((value) => value + 1); }} />
+      <AgentSnapshotImportDialog source={importSource} onClose={() => setImportSource(null)} onImported={refresh} />
       <AgentSnapshotExportDialog target={exportTarget} host={navigation.snapshotExportHost} onClose={() => setExportTarget(null)} />
       {/* 写意图不随列表/详情刷新或翻页卸载；未知结果保留冻结版本与原幂等键。 */}
       <VersionAction edit={versionEdit} avatarHost={navigation.avatarHost} onReset={() => setVersionEdit(null)} onLocked={setVersionLocked}
         onRecorded={() => { setVersionRevision((value) => value + 1); reload(); }} />
-      <section className="flex flex-col gap-3">
-        {state.status === "pending" ? <div className={IDENTITY_CARD_GRID_CLASS} role="status" aria-label={t("platform.loading")}>
-          <IdentityCardSkeleton footerSubtitleWidthClass="w-14" footerTitleWidthClass="w-24" />
-          <IdentityCardSkeleton footerSubtitleWidthClass="w-20" footerTitleWidthClass="w-32" />
-          <IdentityCardSkeleton footerSubtitleWidthClass="w-16" footerTitleWidthClass="w-28" />
-        </div>
-          : !page ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
+      <PageSection id="agents-definitions" testId="agents-library-personas" title={t("agents.ui.definitionsTitle")}
+        description={collection ? t("agents.ui.definitionsCount", { count: String(rows.length) }) : t("agents.ui.definitionsHint")}
+        actions={<>{rows.length > 0 ? <ListSearch value={query} onChange={setQuery} placeholder={t("agents.ui.searchAgents")} /> : null}{createButton}</>}>
+        {state.status === "pending" ? <CardGridSkeleton cards={3} />
+          : state.status === "error" ? <ErrorState error={state.error} onRetry={reload} />
+          : rows.length === 0 ? <div className="rounded-xl border border-dashed border-border">
+              <EmptyState icon={Bot} title={t("agents.ui.emptyTitle")} description={t("agents.ui.emptyBody")} action={createButton} />
+            </div>
+          : filtered.length === 0 ? <NoMatchState onClear={() => setQuery("")} />
           : <>
-              <div className={IDENTITY_CARD_GRID_CLASS} data-testid="agents-library-personas">
-                <CreateIdentityCard ariaLabel={t("agents.create")} label={t("agents.create")}
-                  dataTestId="new-agent-card" disabled={blocked || edit !== null || versionEdit !== null}
-                  onClick={() => setCreateOpen(true)} />
-                {page.definitions.map((row) => (
-                  <DefinitionIdentityCard key={`${row.resourceId}:${row.resourceVersion}:${refreshRevision}:${versionRevision}`} row={row} avatarHost={navigation.avatarHost}
+              <div className={CARD_GRID_CLASS}>
+                {paged.pageRows.map((row) => (
+                  <DefinitionCard key={`${row.resourceId}:${row.resourceVersion}:${refreshRevision}:${versionRevision}`} row={row} avatarHost={navigation.avatarHost}
                     disabled={blocked || versionEdit !== null} onClick={() => setSelected(row.resourceId)} />
                 ))}
               </div>
-            <div className="flex gap-2">
-              {pageIndex > 0 ? <Button disabled={blocked || versionEdit !== null} onClick={() => { setSelected(null); setPageIndex(pageIndex - 1); }}>{t("roles.previous")}</Button> : null}
-              {nextOffset !== undefined ? <Button disabled={blocked || versionEdit !== null} onClick={() => {
-                setSelected(null);
-                setOffsets((old) => [...old.slice(0, pageIndex + 1), nextOffset]);
-                setPageIndex(pageIndex + 1);
-              }}>{t("roles.next")}</Button> : null}
-            </div>
-          </>}
-      </section>
+              <Pagination total={paged.total} page={paged.page} pageSize={paged.pageSize} pageSizes={CARD_PAGE_SIZES}
+                onPageChange={(page) => { setSelected(null); paged.setPage(page); }} onPageSizeChange={paged.setPageSize}
+                partial={collection && !collection.complete ? <PartialMore count={rows.length} onMore={loadMore} /> : undefined} />
+            </>}
+      </PageSection>
       {/* The action hook stays mounted when its presentation closes. UNKNOWN cannot close it. */}
       <DefinitionAction edit={edit} open={createOpen || edit !== null} onClose={() => { setCreateOpen(false); setEdit(null); }}
         externalBlocked={versionEdit !== null || versionLocked} onReset={() => setEdit(null)} onLocked={setLocked}
         onRecorded={() => { setSelected(null); reload(); }} />
       <AgentManagementDialog open={selected !== null}
-        title={t("agents.open")} locked={blocked} onClose={() => setSelected(null)}>
+        title={t("agents.ui.definitionDialog")} locked={blocked} onClose={() => setSelected(null)}>
         {selected ? <DefinitionDetail key={`${selected}:${versionRevision}`} resourceId={selected} locked={blocked || versionEdit !== null}
           onEdit={(target, owner) => { setSelected(null); setEdit({ target, owner }); }}
           onVersionEdit={(next) => { setSelected(null); setVersionEdit(next); }}
@@ -289,11 +297,10 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & {
       <AgentCatalogDialog open={catalog !== null} preferSection={catalog ?? "agents"} onOpenChange={(next) => { if (!next) setCatalog(null); }}
         onCreateAgent={() => { if (createAvailable.current) setCreateOpen(true); }}
         onImport={() => { setImportError(null); importInput.current?.click(); }}
-        onRecorded={() => { reload(); setRefreshRevision((value) => value + 1); }} avatarHost={navigation.avatarHost} />
+        onRecorded={refresh} avatarHost={navigation.avatarHost} />
       {/* DD-135、17 §8：Skills 是 Agents 页内与定义并列的管理区。 */}
       <SkillsSection locked={blocked || versionEdit !== null} refreshRevision={refreshRevision} />
-      <Button className="w-fit" disabled={blocked} onClick={() => setToolsOpen(true)}>{t("agents.tools.title")}</Button>
-      <AgentManagementDialog open={toolsOpen} title={t("agents.tools.title")} onClose={() => setToolsOpen(false)}>
+      <AgentManagementDialog open={toolsOpen} title={t("agents.ui.toolsCatalog")} onClose={() => setToolsOpen(false)}>
         <ToolManagement />
       </AgentManagementDialog>
       <InstallationManagement {...navigation} versionRevision={versionRevision} refreshRevision={refreshRevision} onLockedChange={setInstallationLocked} />
@@ -301,28 +308,41 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & {
   );
 }
 
-/** Original AgentPersonaCard identity face, backed by the authorized exact published Asset. */
-function DefinitionIdentityCard({ row, disabled, onClick, avatarHost }: {
+/** §16.2(3): the footer note of a bounded read that stopped at its limit. */
+function PartialMore({ count, onMore }: { count: number; onMore: () => void }) {
+  const t = useT();
+  return <>{t("list.partial", { count: String(count) })} <button type="button" className="text-brand-text hover:underline" onClick={onMore}>{t("list.loadMore")}</button></>;
+}
+
+/** An Agent card backed by the authorized exact published Version (name, description, avatar). */
+function DefinitionCard({ row, disabled, onClick, avatarHost }: {
   row: AgentDefinitionView; disabled: boolean; onClick: () => void; avatarHost?: AgentAvatarHost;
 }) {
   const client = useBffClient();
   const t = useT();
   const assetId = row.currentPublishedVersionAssetId;
-  const [state, reload] = useLoad(`definition-card:${row.resourceId}:${row.resourceVersion}:${assetId ?? ""}`,
+  const [state] = useLoad(`definition-card:${row.resourceId}:${row.resourceVersion}:${assetId ?? ""}`,
     () => assetId ? client.agentVersion(assetId) : Promise.resolve(null));
   const value = state.status === "ok" ? state.data : null;
   const version = value && validVersion(value, row.resourceId) && value.assetId === assetId
     && value.state === AgentVersionState.Published ? value : null;
-  const card = <AgentIdentityCard dataTestId={`agent-definition-${row.resourceId}`}
+  const unreadable = !!assetId && state.status !== "pending" && !version;
+  const card = <AgentCard testId={`agent-definition-${row.resourceId}`}
     label={version?.content.personaIdentity.displayName ?? row.displayName}
-    subtitle={version ? effectiveAgentDescription(version.content.personaIdentity) : null}
+    description={version ? effectiveAgentDescription(version.content.personaIdentity) : unreadable ? t("agents.ui.versionUnreadable") : null}
     avatarUrl={avatarHost ? version?.content.personaIdentity.avatarUrl : undefined}
+    status={assetId ? <Badge tone="positive">{t("agents.ui.status.published")}</Badge> : <Badge tone="neutral">{t("agents.ui.status.unpublished")}</Badge>}
+    meta={version ? t("agents.ui.versionNumber", { ordinal: String(version.ordinal) }) : undefined}
     ariaLabel={t("agents.open")} disabled={disabled} onClick={onClick} />;
-  return <div className="flex min-w-0 flex-col gap-2">
-    {assetId && state.status === "pending" ? <IdentityCardSkeleton />
-      : avatarHost && version ? <AvatarHostProvider value={avatarHost(version)}>{card}</AvatarHostProvider> : card}
-    {assetId && state.status !== "pending" && !version ? <AgentReadFailure error={state.status === "error" ? state.error : undefined}
-      onRetry={reload} /> : null}
+  if (assetId && state.status === "pending") return <CardSkeleton />;
+  return avatarHost && version ? <AvatarHostProvider value={avatarHost(version)}>{card}</AvatarHostProvider> : card;
+}
+
+function CardSkeleton() {
+  return <div aria-hidden className="flex min-h-[5.5rem] items-start gap-3 rounded-xl border border-border bg-card p-3.5">
+    <span className="h-11 w-11 shrink-0 animate-pulse rounded-[0.875rem] bg-muted motion-reduce:animate-none" />
+    <span className="flex flex-1 flex-col gap-2 pt-1"><span className="h-3 w-28 animate-pulse rounded bg-muted motion-reduce:animate-none" />
+      <span className="h-3 w-40 animate-pulse rounded bg-muted motion-reduce:animate-none" /></span>
   </div>;
 }
 
@@ -1596,27 +1616,34 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
   </>;
 }
 
-const projectionLabels = {
-  [AgentRuntimeProjectionState.Pending]: "agents.installation.projection.pending",
-  [AgentRuntimeProjectionState.Active]: "agents.installation.projection.active",
-  [AgentRuntimeProjectionState.Error]: "agents.installation.projection.error",
-  [AgentRuntimeProjectionState.Revoked]: "agents.installation.projection.revoked",
+const projectionLabelsUi = {
+  [AgentRuntimeProjectionState.Pending]: "agents.ui.runtime.pending",
+  [AgentRuntimeProjectionState.Active]: "agents.ui.runtime.active",
+  [AgentRuntimeProjectionState.Error]: "agents.ui.runtime.error",
+  [AgentRuntimeProjectionState.Revoked]: "agents.ui.runtime.revoked",
 } as const satisfies Record<AgentRuntimeProjectionState, PlatformMessageKey>;
-const resourceLabels = {
-  [ResourceState.Provisioning]: "agents.installation.resource.provisioning",
-  [ResourceState.Active]: "agents.installation.resource.active",
-  [ResourceState.Unknown]: "agents.installation.resource.unknown",
-  [ResourceState.Failed]: "agents.installation.resource.failed",
-  [ResourceState.RetainedReadOnly]: "agents.installation.resource.retained",
-  [ResourceState.Deleting]: "agents.installation.resource.deleting",
-  [ResourceState.Deleted]: "agents.installation.resource.deleted",
-} as const satisfies Record<ResourceState, PlatformMessageKey>;
-const principalLabels = { ACTIVE: "agents.installation.principal.active", DISABLED: "agents.installation.principal.disabled" } as const;
 const channelLabels = { ACTIVE: "agents.installation.channel.active", DISABLED: "agents.installation.channel.disabled", ERROR: "agents.installation.channel.error" } as const;
 const triggerLabels = {
   [AgentTrigger.Mention]: "agents.installation.trigger.mention",
   [AgentTrigger.ManualAssignment]: "agents.installation.trigger.manual",
 } as const satisfies Record<AgentTrigger, PlatformMessageKey>;
+
+/** §16.1: a Kailo-styled Workspace choice (label, chevron, focus ring), not a bare native control. */
+function WorkspacePicker({ workspaces, value, disabled, onChange }: {
+  workspaces: readonly WorkspaceView[]; value: string; disabled: boolean; onChange: (id: string) => void;
+}) {
+  const t = useT();
+  return <label className="inline-flex items-center gap-2 text-sm">
+    <span className="text-muted-foreground">{t("platform.workspace")}</span>
+    <span className="relative inline-flex">
+      <select disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)}
+        className="h-8 max-w-56 appearance-none truncate rounded-lg border border-input bg-background py-0 pl-3 pr-8 text-sm text-foreground shadow-xs focus-visible:border-brand focus-visible:outline-hidden focus-visible:ring-[3px] focus-visible:ring-ring/15 disabled:opacity-60">
+        {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+      </select>
+      <ChevronDown aria-hidden className="pointer-events-none absolute right-2.5 top-2 h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
+    </span>
+  </label>;
+}
 
 function InstallationManagement({ versionRevision, refreshRevision, onLockedChange, workspaceId, onWorkspaceChange, avatarHost }: WorkspaceNavigation & {
   versionRevision: number; refreshRevision: number; onLockedChange: (locked: boolean) => void;
@@ -1639,21 +1666,20 @@ function InstallationManagement({ versionRevision, refreshRevision, onLockedChan
     && typeof w.name === "string" && typeof w.slug === "string") && new Set(value.map((w) => w.id)).size === value.length ? value : null;
   const selection = onWorkspaceChange ? workspaceId : selected ?? workspaceId;
   const workspace = selection ? workspaces?.find((w) => w.id === selection) : workspaces?.[0];
-  return <section className="flex flex-col gap-3" data-testid="agent-installations">
-    <h2 className="font-medium">{t("agents.installation.title")}</h2>
-    {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
-      : !workspaces ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
-      : !workspace ? <Notice>{t("agents.installation.noWorkspace")}</Notice>
-      : <>
-        <label className="flex flex-wrap items-center gap-2 text-sm">{t("platform.workspace")}
-          <select disabled={locked} className="h-8 min-w-0 max-w-full rounded-md border border-input bg-background px-2" value={workspace.id}
-            onChange={(event) => { if (onWorkspaceChange) onWorkspaceChange(event.target.value); else setSelected(event.target.value); setDelegationTarget(null); setPermissionTarget(null); setUpgradeTarget(null); setRegrantTarget(null); }}>
-            {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-          </select>
-        </label>
-      </>}
-    {/* 原意图留在 Workspace/列表之外，结果不明时不生成替代键。 */}
-    <Button className="w-fit" disabled={locked || !workspace} onClick={() => setCreateOpen(true)}>{t("agents.installation.create")}</Button>
+  return <PageSection id="agent-installations" testId="agent-installations" title={t("agents.installation.title")}
+    description={t("agents.ui.installationsHint")}
+    actions={workspaces && workspace ? <>
+      <WorkspacePicker workspaces={workspaces} value={workspace.id} disabled={locked} onChange={(id) => {
+        if (onWorkspaceChange) onWorkspaceChange(id); else setSelected(id);
+        setDelegationTarget(null); setPermissionTarget(null); setUpgradeTarget(null); setRegrantTarget(null);
+      }} />
+      {/* 原意图留在 Workspace/列表之外，结果不明时不生成替代键。 */}
+      <WorkflowButton type="button" disabled={locked} onClick={() => setCreateOpen(true)}><Plus aria-hidden />{t("agents.ui.install")}</WorkflowButton>
+    </> : undefined}>
+    {state.status === "pending" ? <CardGridSkeleton cards={3} />
+      : !workspaces ? <ErrorState error={state.status === "error" ? state.error : undefined} onRetry={reload} />
+      : !workspace ? <EmptyState icon={Bot} title={t("agents.ui.noWorkspaceTitle")} description={t("agents.ui.noWorkspaceBody")} />
+      : null}
     <InstallationCreate open={createOpen} onClose={() => setCreateOpen(false)} workspaceId={workspace?.id} workspaceName={workspace?.name} sourceRevision={`${versionRevision}:${revision}:${refreshRevision}`} locked={locked} onLocked={setLocked}
       onRecorded={() => setRevision((old) => old + 1)} />
     {upgradeTarget ? <InstallationCreate key={`upgrade:${upgradeTarget.resourceId}`} upgrade={upgradeTarget} open onClose={() => setUpgradeTarget(null)}
@@ -1674,9 +1700,10 @@ function InstallationManagement({ versionRevision, refreshRevision, onLockedChan
         onRecorded={() => setRevision((old) => old + 1)} /> : null}
     </> : null}
     </AgentManagementDialog>
-    {workspace ? <InstallationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} locked={locked} onLocked={setLocked} avatarHost={avatarHost}
+    {workspace ? <InstallationList key={`${workspace.id}:${revision}:${refreshRevision}`} workspaceId={workspace.id} workspaceName={workspace.name} locked={locked} onLocked={setLocked} avatarHost={avatarHost}
+      onInstall={() => setCreateOpen(true)}
       onPermission={setPermissionTarget} onManage={setDelegationTarget} onUpgrade={setUpgradeTarget} onRegrant={setRegrantTarget} /> : null}
-  </section>;
+  </PageSection>;
 }
 
 /**
@@ -1715,7 +1742,7 @@ export function WorkspaceAgentDialogs({ workspaceId, workspaceName, createOpen, 
       workspaceId={regrantTarget.workspaceId} workspaceName={workspaceName} sourceRevision={`channel:${revision}`}
       locked={locked} onLocked={setLocked} onRecorded={recorded} /> : null}
     <AgentManagementDialog open={selectedId !== null} title={t("agents.installation.open")} locked={locked} onClose={() => onSelectedChange(null)}>
-      {selectedId ? <InstallationDetail key={`${selectedId}:${revision}`} resourceId={selectedId} workspaceId={workspaceId} locked={locked} onLocked={setLocked}
+      {selectedId ? <InstallationDetail key={`${selectedId}:${revision}`} resourceId={selectedId} workspaceId={workspaceId} workspaceName={workspaceName} locked={locked} onLocked={setLocked}
         autoManage={manageDelegation}
         onPermission={(row) => { onSelectedChange(null); setPermissionTarget(row); }}
         onManage={(row) => { onSelectedChange(null); setDelegationTarget(row); }}
@@ -2347,41 +2374,47 @@ function DelegationScope({ scope, toolNames }: { scope: DelegationScopeParameter
   </div>;
 }
 
-function InstallationList({ workspaceId, locked, onPermission, onManage, onUpgrade, onRegrant, onLocked, avatarHost }: {
-  workspaceId: string; locked: boolean; onPermission: (row: AgentInstallationView) => void; onManage: (row: AgentInstallationView) => void; onUpgrade: (row: AgentInstallationView) => void;
+function InstallationList({ workspaceId, workspaceName, locked, onInstall, onPermission, onManage, onUpgrade, onRegrant, onLocked, avatarHost }: {
+  workspaceId: string; workspaceName?: string; locked: boolean;
+  onInstall?: () => void;
+  onPermission: (row: AgentInstallationView) => void; onManage: (row: AgentInstallationView) => void; onUpgrade: (row: AgentInstallationView) => void;
   onRegrant: (row: AgentInstallationView) => void;
   onLocked: (locked: boolean) => void;
   avatarHost?: AgentAvatarHost;
 }) {
   const client = useBffClient();
   const t = useT();
-  const [offsets, setOffsets] = useState([0]);
-  const [pageIndex, setPageIndex] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
-  const offset = offsets[pageIndex] ?? 0;
-  const [state, reload] = useLoad(`agent-installations:${workspaceId}:${offset}`, () => client.agentInstallations(workspaceId, offset));
-  const value = state.status === "ok" ? state.data : null;
-  const page = value && Array.isArray(value.installations) && value.installations.every((row) => validInstallation(row) && row.workspaceId === workspaceId)
-    && new Set(value.installations.map((row) => row.resourceId)).size === value.installations.length
-    && (value.nextOffset === undefined || (Number.isSafeInteger(value.nextOffset) && value.nextOffset > offset)) ? value : null;
-  const next = page?.nextOffset;
-  const changePage = (index: number) => { setSelected(null); setPageIndex(index); };
+  // DD-170 §16.2(3): the Workspace's installation directory is read to its end (bounded).
+  const { state, reload, loadMore } = useOffsetCollection<AgentInstallationView>(`agent-installations:${workspaceId}`, async (offset) => {
+    const value = await client.agentInstallations(workspaceId, offset);
+    if (!value || !Array.isArray(value.installations) || !value.installations.every((row) => validInstallation(row) && row.workspaceId === workspaceId)
+      || new Set(value.installations.map((row) => row.resourceId)).size !== value.installations.length) throw new TransportError(t("platform.loadFailed"));
+    return { items: value.installations, nextOffset: value.nextOffset ?? undefined };
+  });
+  const collection = state.status === "ok" ? state.data : null;
+  const rows = collection?.items ?? [];
+  const paged = usePaged(rows, { pageSize: CARD_PAGE_SIZES[0], resetKey: workspaceId });
   return <div className="flex flex-col gap-3">
-    {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
-      : !page ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={() => { setSelected(null); reload(); }} />
+    {state.status === "pending" ? <CardGridSkeleton cards={3} />
+      : state.status === "error" ? <ErrorState error={state.error} onRetry={() => { setSelected(null); reload(); }} />
       : <>
-        {page.installations.length === 0 ? <Notice>{t("agents.installation.none")}</Notice>
-          : <div className={IDENTITY_CARD_GRID_CLASS}>
-            {page.installations.map((row) => <InstallationIdentityCard key={row.resourceId} row={row} avatarHost={avatarHost}
-              locked={locked} onOpen={() => setSelected(row.resourceId)} />)}
-          </div>}
-        <div className="flex gap-2">
-          {pageIndex > 0 ? <Button disabled={locked} onClick={() => changePage(pageIndex - 1)}>{t("roles.previous")}</Button> : null}
-          {next !== undefined ? <Button disabled={locked} onClick={() => { setOffsets((old) => [...old.slice(0, pageIndex + 1), next]); changePage(pageIndex + 1); }}>{t("roles.next")}</Button> : null}
-        </div>
+        {rows.length === 0 ? <div className="rounded-xl border border-dashed border-border">
+            <EmptyState icon={Bot} title={t("agents.ui.installationsEmptyTitle")} description={t("agents.ui.installationsEmptyBody")}
+              action={onInstall ? <WorkflowButton type="button" disabled={locked} onClick={onInstall}><Plus aria-hidden />{t("agents.ui.install")}</WorkflowButton> : undefined} />
+          </div>
+          : <>
+            <div className={CARD_GRID_CLASS}>
+              {paged.pageRows.map((row) => <InstallationCard key={row.resourceId} row={row} avatarHost={avatarHost}
+                locked={locked} onOpen={() => setSelected(row.resourceId)} />)}
+            </div>
+            <Pagination total={paged.total} page={paged.page} pageSize={paged.pageSize} pageSizes={CARD_PAGE_SIZES}
+              onPageChange={(page) => { setSelected(null); paged.setPage(page); }} onPageSizeChange={paged.setPageSize}
+              partial={collection && !collection.complete ? <PartialMore count={rows.length} onMore={loadMore} /> : undefined} />
+          </>}
         <AgentManagementDialog open={selected !== null} title={t("agents.installation.open")}
           locked={locked} onClose={() => setSelected(null)}>
-          {selected ? <InstallationDetail key={selected} resourceId={selected} workspaceId={workspaceId} locked={locked} onLocked={onLocked}
+          {selected ? <InstallationDetail key={selected} resourceId={selected} workspaceId={workspaceId} workspaceName={workspaceName} locked={locked} onLocked={onLocked}
             onPermission={(row) => { setSelected(null); onPermission(row); }}
             onManage={(row) => { setSelected(null); onManage(row); }}
             onUpgrade={(row) => { setSelected(null); onUpgrade(row); }}
@@ -2391,7 +2424,12 @@ function InstallationList({ workspaceId, locked, onPermission, onManage, onUpgra
   </div>;
 }
 
-function InstallationIdentityCard({ row, locked, onOpen, avatarHost }: {
+function InstallationStatus({ row }: { row: AgentInstallationView }) {
+  const t = useT();
+  return <Badge tone={installationTones[row.state]}>{t(installationLabels[row.state])}</Badge>;
+}
+
+function InstallationCard({ row, locked, onOpen, avatarHost }: {
   row: AgentInstallationView; locked: boolean; onOpen: () => void;
   avatarHost?: AgentAvatarHost;
 }) {
@@ -2399,27 +2437,33 @@ function InstallationIdentityCard({ row, locked, onOpen, avatarHost }: {
   const t = useT();
   // A visible installation does not confer Version-read permission. Read the
   // exact pinned version; never borrow the latest definition or another scope.
-  const [state, reload] = useLoad(`installation-card:${row.resourceId}:${row.pinnedVersionAssetId}`,
+  const [state] = useLoad(`installation-card:${row.resourceId}:${row.pinnedVersionAssetId}`,
     () => client.agentVersion(row.pinnedVersionAssetId));
   const candidate = state.status === "ok" ? state.data : null;
   const version = candidate && validVersion(candidate, row.agentResourceId)
     && candidate.assetId === row.pinnedVersionAssetId ? candidate : null;
   const host = avatarHost && version ? avatarHost(version) : null;
-  const card = <AgentIdentityCard dataTestId={`agent-installation-${row.resourceId}`}
-      // 成员可读安装却未必可读 Version：用安装视图随附的固定版本显示名，不借最新定义。
-      label={version?.content.personaIdentity.displayName ?? (row.agentDisplayName?.trim() || t("agents.installation.id"))}
-      subtitle={version ? effectiveAgentDescription(version.content.personaIdentity) : null}
-      avatarUrl={host ? version?.content.personaIdentity.avatarUrl : undefined}
-      ariaLabel={t("agents.installation.open")} disabled={locked} onClick={onOpen}
-      statusBadge={<Badge tone="neutral">{t(installationLabels[row.state])}</Badge>} />;
-  return <div className="flex min-w-0 flex-col gap-2">
-    {state.status === "pending" ? <IdentityCardSkeleton /> : host ? <AvatarHostProvider value={host}>{card}</AvatarHostProvider> : card}
-    {state.status !== "pending" && !version ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} /> : null}
-  </div>;
+  if (state.status === "pending") return <CardSkeleton />;
+  const card = <AgentCard testId={`agent-installation-${row.resourceId}`}
+    // 成员可读安装却未必可读 Version：用安装视图随附的固定版本显示名，不借最新定义。
+    label={version?.content.personaIdentity.displayName ?? (row.agentDisplayName?.trim() || t("agents.ui.unnamedAgent"))}
+    description={version ? effectiveAgentDescription(version.content.personaIdentity) : t("agents.ui.versionUnreadable")}
+    avatarUrl={host ? version?.content.personaIdentity.avatarUrl : undefined}
+    status={<InstallationStatus row={row} />}
+    meta={version ? t("agents.ui.versionNumber", { ordinal: String(version.ordinal) }) : undefined}
+    ariaLabel={t("agents.installation.open")} disabled={locked} onClick={onOpen} />;
+  return host ? <AvatarHostProvider value={host}>{card}</AvatarHostProvider> : card;
 }
 
-function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onManage, onUpgrade, onRegrant, onLocked, autoManage = false }: {
-  resourceId: string; workspaceId: string; locked: boolean; onPermission: (row: AgentInstallationView) => void; onManage: (row: AgentInstallationView) => void; onUpgrade: (row: AgentInstallationView) => void;
+const projectionTones = {
+  [AgentRuntimeProjectionState.Pending]: "info",
+  [AgentRuntimeProjectionState.Active]: "positive",
+  [AgentRuntimeProjectionState.Error]: "negative",
+  [AgentRuntimeProjectionState.Revoked]: "neutral",
+} as const satisfies Record<AgentRuntimeProjectionState, "info" | "positive" | "negative" | "neutral">;
+
+function InstallationDetail({ resourceId, workspaceId, workspaceName, locked, onPermission, onManage, onUpgrade, onRegrant, onLocked, autoManage = false }: {
+  resourceId: string; workspaceId: string; workspaceName?: string; locked: boolean; onPermission: (row: AgentInstallationView) => void; onManage: (row: AgentInstallationView) => void; onUpgrade: (row: AgentInstallationView) => void;
   /** DD-122 (4): same-version upgrade from the Tools section. */
   onRegrant: (row: AgentInstallationView) => void;
   onLocked: (locked: boolean) => void;
@@ -2429,57 +2473,97 @@ function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onM
   const t = useT();
   const [toolsOpen, setToolsOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
+  const [accessOpen, setAccessOpen] = useState(false);
   const [state, reload] = useLoad(`agent-installation:${workspaceId}:${resourceId}`, () => client.agentInstallation(resourceId));
   const row = state.status === "ok" && validInstallation(state.data) && state.data.resourceId === resourceId
     && state.data.workspaceId === workspaceId ? state.data : null;
+  // The exact pinned Version names the Agent; an unreadable Version is not borrowed from elsewhere.
+  const [versionState] = useLoad(`installation-version:${resourceId}:${row?.pinnedVersionAssetId ?? ""}`,
+    () => row ? client.agentVersion(row.pinnedVersionAssetId) : Promise.resolve(null));
+  const versionValue = versionState.status === "ok" ? versionState.data : null;
+  const version = row && versionValue && validVersion(versionValue, row.agentResourceId)
+    && versionValue.assetId === row.pinnedVersionAssetId ? versionValue : null;
+  // DD-125(6): the original Stop / Start agent / Restart agent entries, each confirmed first.
+  const lifecycle = useLifecycleRequest(reload);
   const manageable = row !== null && row.state === AgentInstallationState.Active && row.resourceState === ResourceState.Active;
   const autoManaged = useRef(false);
   useEffect(() => {
-    // Same condition as the "View delegation grants" button below; at most once per mount.
+    // Same condition as the "View delegation grants" entry below; at most once per mount.
     if (!autoManage || autoManaged.current || locked || !manageable || !row) return;
     autoManaged.current = true;
     onManage(row);
   }, [autoManage, locked, manageable, row, onManage]);
-  if (state.status === "pending") return <Notice role="status">{t("platform.loading")}</Notice>;
-  if (!row) return <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />;
-  return <section className="flex flex-col gap-2 border-t pt-3" data-testid="agent-installation-detail">
-    <p className="text-sm text-muted-foreground">{t("agents.installation.management")}</p>
-    <h3 className="text-sm font-medium">{t("agents.installation.id")}: <span className="break-all font-mono">{row.resourceId}</span></h3>
-    <Badge tone="neutral">{t(installationLabels[row.state])}</Badge>
-    <p className="text-sm">{t(resourceLabels[row.resourceState])} · {t("agents.resourceVersion")}: {row.resourceVersion}</p>
-    <p className="break-all text-sm">{t("agents.owner")}: {row.ownerPrincipalId}</p>
-    <p className="break-all text-sm">{t("platform.workspace")}: {row.workspaceId}</p>
-    <p className="break-all text-sm">{t("agents.installation.definition")}: {row.agentResourceId}</p>
-    <p className="break-all text-sm">{t("agents.installation.version")}: {row.pinnedVersionAssetId}</p>
-    <p className="break-all text-sm">{t("agents.installation.principal")}: {row.agentPrincipalId} · {t(principalLabels[row.agentPrincipalState])}</p>
-    <h4 className="text-sm font-medium">{t("agents.installation.channel")}</h4>
-    {row.channelBinding ? <>
-      <p className="text-sm">{t(channelLabels[row.channelBinding.status])}</p>
-      <p className="break-all text-sm">{row.channelBinding.channelId ?? t("agents.installation.notRecorded")}</p>
-      <p className="text-sm">{t("agents.installation.triggers")}: {row.channelBinding.triggers.map((trigger) => t(triggerLabels[trigger])).join(" · ")}</p>
-    </> : <p role="status" className="text-sm">{t("agents.installation.notRecorded")}</p>}
-    <h4 className="text-sm font-medium">{t("agents.installation.projection")}</h4>
-    <p className="text-sm">{t("agents.installation.activeGeneration")}: {row.activeProjectionGeneration ?? t("agents.installation.notRecorded")}</p>
-    {row.projection ? <>
-      <p className="text-sm">{t(projectionLabels[row.projection.state])} · {t("agents.installation.generation")}: {row.projection.generation}</p>
-      <p className="break-words text-sm">{t("agents.version.runtimeProfile")}: {row.projection.runtimeProfileKey}</p>
-      <p className="break-all font-mono text-xs">{t("agents.version.hash")}: {row.projection.configHash}</p>
-    </> : <p role="status" className="text-sm">{t("agents.installation.notRecorded")}</p>}
-    {/* DD-125(6): original Stop / Start agent / Restart agent and "Manage agent access...". */}
-    <AgentLifecycleSection installation={row} name={row.agentDisplayName?.trim() ?? ""} locked={locked} onRecorded={reload} />
-    {toolsOpen ? <InstallationTools installation={row} locked={locked} onRegrant={onRegrant} />
-      : <Button className="w-fit" disabled={locked} aria-expanded={false} onClick={() => setToolsOpen(true)}>{t("agents.installation.tools.open")}</Button>}
-    {skillsOpen ? <InstallationSkills installationId={row.resourceId} locked={locked} />
-      : <Button className="w-fit" disabled={locked} aria-expanded={false} onClick={() => setSkillsOpen(true)}>{t("skills.installation.open")}</Button>}
-    {row.state === AgentInstallationState.Active && row.resourceState === ResourceState.Active
-      ? <Button className="w-fit" disabled={locked} onClick={() => onManage(row)}>{t("agents.delegation.open")}</Button> : null}
-    <Button className="w-fit" disabled={locked} onClick={reload}>{t("platform.refresh")}</Button>
-    {row.canUpgrade === true && row.state === AgentInstallationState.Active ? <Button className="w-fit" disabled={locked} onClick={() => onUpgrade(row)}>{t("agents.upgradeVersion")}</Button> : null}
-    {row.state === AgentInstallationState.Active || row.state === AgentInstallationState.Draining ? <Button className="w-fit" disabled={locked} onClick={() => onPermission(row)}>{t("agents.execute.open")}</Button> : null}
+  if (state.status === "pending") return <DetailSkeleton />;
+  if (!row) return <ErrorState error={state.status === "error" ? state.error : undefined} onRetry={reload} />;
+  const offer = lifecycleOffer(row);
+  const lifecycleBusy = lifecycle.controller.busy || lifecycle.controller.pending.length > 0;
+  const name = version?.content.personaIdentity.displayName ?? (row.agentDisplayName?.trim() || t("agents.ui.unnamedAgent"));
+  const binding = row.channelBinding;
+  return <section className="flex flex-col gap-6" data-testid="agent-installation-detail">
+    <DetailHeader title={name} status={<InstallationStatus row={row} />}
+      subtitle={<><PrincipalName principalId={row.ownerPrincipalId} known={row.ownerDisplayName} />
+        {" · "}{version ? t("agents.ui.versionNumber", { ordinal: String(version.ordinal) }) : t("agents.ui.revision", { revision: String(row.resourceVersion) })}</>}
+      actions={<>
+        {offer.start ? <WorkflowButton type="button" data-testid="agent-lifecycle-start" disabled={locked || lifecycleBusy}
+          onClick={() => lifecycle.request("start", [row])}><Play aria-hidden />{t("agentLifecycle.start")}</WorkflowButton> : null}
+        {offer.stop ? <Button data-testid="agent-lifecycle-stop" disabled={locked || lifecycleBusy}
+          onClick={() => lifecycle.request("stop", [row])}><Square aria-hidden className="h-4 w-4" />{t("agentLifecycle.stop")}</Button> : null}
+        <MoreMenu disabled={locked} testId="agent-installation-more" items={[
+          offer.restart && { key: "restart", label: t("agentLifecycle.restart"), disabled: lifecycleBusy, onSelect: () => lifecycle.request("restart", [row]) },
+          (offer.stop || offer.start || offer.restart) && { key: "access", label: t("agentLifecycle.manageAccess"), disabled: lifecycleBusy, onSelect: () => setAccessOpen(true) },
+          manageable && { key: "delegation", label: t("agents.delegation.open"), onSelect: () => onManage(row) },
+          (row.state === AgentInstallationState.Active || row.state === AgentInstallationState.Draining)
+            && { key: "permission", label: t("agents.execute.open"), onSelect: () => onPermission(row) },
+          row.canUpgrade === true && row.state === AgentInstallationState.Active
+            && { key: "upgrade", label: t("agents.upgradeVersion"), onSelect: () => onUpgrade(row) },
+          { key: "refresh", label: t("platform.refresh"), onSelect: reload },
+        ]} />
+      </>} />
+    {lifecycle.feedback}
+    {lifecycle.dialog}
+    <EditRespondToDialog agent={accessOpen ? { installationId: row.resourceId, name } : null}
+      onOpenChange={setAccessOpen} open={accessOpen} onRecorded={reload} />
+    <KeyValueList items={[
+      { id: "agent", label: t("agents.ui.kv.agent"), value: version
+        ? t("agents.ui.agentVersion", { name: version.content.personaIdentity.displayName, ordinal: String(version.ordinal) })
+        : t("agents.ui.versionUnreadable") },
+      { id: "workspace", label: t("platform.workspace"), value: workspaceName ?? t("agents.ui.currentWorkspace") },
+      { id: "owner", label: t("agents.owner"), value: <PrincipalName principalId={row.ownerPrincipalId} known={row.ownerDisplayName} /> },
+      { id: "identity", label: t("agents.installation.principal"), value: t(row.agentPrincipalState === "ACTIVE" ? "agents.ui.identityActive" : "agents.ui.identityDisabled") },
+      { id: "channel", label: t("agents.installation.channel"), value: binding
+        ? <span className="inline-flex flex-wrap items-center gap-2"><Badge tone={binding.status === "ACTIVE" ? "positive" : binding.status === "ERROR" ? "negative" : "neutral"}>
+            {t(channelLabels[binding.status])}</Badge>
+            <TagList items={binding.triggers.map((trigger) => t(triggerLabels[trigger]))} /></span>
+        : t("agents.ui.notConnected") },
+      { id: "runtime", label: t("agents.ui.kv.runtime"), value: row.projection
+        ? <span className="inline-flex flex-wrap items-center gap-2"><Badge tone={projectionTones[row.projection.state]}>{t(projectionLabelsUi[row.projection.state])}</Badge>
+            <span className="text-muted-foreground">{row.projection.runtimeProfileKey}</span></span>
+        : t("agents.ui.runtimeNotReady") },
+    ]} />
     {row.state === AgentInstallationState.Active && row.resourceState === ResourceState.Active
       ? <AgentInstallationUse installationId={resourceId} locked={locked} /> : null}
+    <PageSection title={t("agents.installation.tools.title")} description={t("agents.installation.tools.boundary")}
+      actions={toolsOpen ? undefined : <Button disabled={locked} aria-expanded={false} onClick={() => setToolsOpen(true)}>{t("agents.installation.tools.open")}</Button>}>
+      {toolsOpen ? <InstallationTools installation={row} locked={locked} onRegrant={onRegrant} /> : null}
+    </PageSection>
+    <PageSection title={t("skills.installation.title")} description={t("skills.installation.boundary")}
+      actions={skillsOpen ? undefined : <Button disabled={locked} aria-expanded={false} onClick={() => setSkillsOpen(true)}>{t("skills.installation.open")}</Button>}>
+      {skillsOpen ? <InstallationSkills installationId={row.resourceId} locked={locked} /> : null}
+    </PageSection>
     {row.state === AgentInstallationState.Active ? <InstallationMemory resourceId={resourceId} workspaceId={workspaceId} installation={row} onLocked={onLocked} /> : null}
     <InstallationSessions key={`${workspaceId}:${resourceId}`} installation={row} />
+    <TechnicalDetails items={[
+      { id: "installation", label: t("agents.ui.tech.installation"), value: row.resourceId },
+      { id: "definition", label: t("agents.ui.tech.definition"), value: row.agentResourceId },
+      { id: "version", label: t("agents.ui.tech.version"), value: row.pinnedVersionAssetId },
+      { id: "principal", label: t("agents.ui.tech.principal"), value: row.agentPrincipalId },
+      { id: "workspace", label: t("agents.ui.tech.workspace"), value: row.workspaceId },
+      { id: "owner", label: t("agents.ui.tech.owner"), value: row.ownerPrincipalId },
+      { id: "channel", label: t("agents.ui.tech.channel"), value: binding?.channelId },
+      { id: "config", label: t("agents.ui.tech.configHash"), value: row.projection?.configHash },
+      { id: "round", label: t("agents.ui.tech.round"), value: row.activeProjectionGeneration !== undefined ? String(row.activeProjectionGeneration) : undefined },
+      { id: "revision", label: t("agents.ui.tech.revision"), value: String(row.resourceVersion) },
+    ]} />
   </section>;
 }
 
@@ -2522,6 +2606,13 @@ function toolNeedsGrant(tool: InstallationTool): boolean {
   return tool.bindingStatus === AgentToolBindingStatus.NoPermission || tool.bindingStatus === AgentToolBindingStatus.Pending;
 }
 
+const toolStatusTones = {
+  [AgentToolBindingStatus.Active]: "positive",
+  [AgentToolBindingStatus.NoPermission]: "warning",
+  [AgentToolBindingStatus.Pending]: "info",
+  [AgentToolBindingStatus.Revoked]: "neutral",
+} as const satisfies Record<AgentToolBindingStatus, "positive" | "warning" | "info" | "neutral">;
+
 function InstallationTools({ installation, locked, onRegrant }: {
   installation: AgentInstallationView; locked: boolean; onRegrant: (row: AgentInstallationView) => void;
 }) {
@@ -2542,40 +2633,37 @@ function InstallationTools({ installation, locked, onRegrant }: {
       return tool.reasonCode === undefined ? t("agents.installation.tools.pendingHint") : reasonText(tool.reasonCode);
     return tool.reasonCode === undefined ? null : reasonText(tool.reasonCode);
   };
-  return <section className="flex flex-col gap-2 rounded-md border p-3" data-testid="agent-installation-tools">
-    <h4 className="text-sm font-medium">{t("agents.installation.tools.title")}</h4>
-    <p className="text-sm text-muted-foreground">{t("agents.installation.tools.boundary")}</p>
-    {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
-      : !page ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
+  return <SectionCard testId="agent-installation-tools">
+    <div className="flex items-center justify-end"><RefreshButton onClick={reload} pending={state.status === "pending"} /></div>
+    {state.status === "pending" ? <TableSkeleton rows={3} columns={4} />
+      : !page ? <ErrorState compact error={state.status === "error" ? state.error : undefined} onRetry={reload} />
       : <>
-        <p className="text-sm">{t("agents.installation.generation")}: {page.generation}</p>
-        {page.tools.length === 0 ? <Notice>{t("agents.installation.tools.none")}</Notice> : <div className="overflow-x-auto">
-          <Table head={[t("agents.installation.tools.name"), t("agents.installation.tools.source"), t("agents.installation.tools.requirement"),
+        {page.tools.length === 0 ? <EmptyState compact icon={Wrench} title={t("agents.installation.tools.none")} /> : <Table label={t("agents.installation.tools.title")}
+          head={[t("agents.installation.tools.name"), t("agents.installation.tools.source"), t("agents.installation.tools.requirement"),
             t("agents.installation.tools.provider"), t("agents.installation.tools.status")]}>
-            {page.tools.map((tool) => {
-              const note = detail(tool);
-              return <tr key={toolKey(tool)} data-testid="agent-installation-tool" data-status={tool.bindingStatus}>
-                <Cell><span className="break-words">{tool.name ?? tool.capabilityRequirement ?? tool.toolResourceId ?? "—"}</span>
-                  {tool.toolResourceId ? <p className="break-all font-mono text-xs">{tool.toolResourceId}</p> : null}</Cell>
-                <Cell>{t(toolSourceLabels[tool.source])}</Cell>
-                <Cell>{tool.capabilityRequirement ?? "—"}</Cell>
-                <Cell>{tool.source === AgentInstallationToolSource.PlatformNative ? t("agents.installation.tools.platformProvider")
-                  : tool.source === AgentInstallationToolSource.UserRegisteredExternal ? t("agents.installation.tools.connectorProvider")
-                  : tool.applicationBindingId ? <span className="break-all font-mono text-xs">{tool.applicationBindingId}</span>
-                  : t("agents.installation.tools.noProvider")}</Cell>
-                <Cell><Badge tone={tool.bindingStatus === AgentToolBindingStatus.Active ? "positive" : "neutral"}>{t(toolStatusLabels[tool.bindingStatus])}</Badge>
-                  {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}</Cell>
-              </tr>;
-            })}
-          </Table>
-        </div>}
-        {canRegrant ? <>
+          {page.tools.map((tool) => {
+            const note = detail(tool);
+            return <tr key={toolKey(tool)} data-testid="agent-installation-tool" data-status={tool.bindingStatus}>
+              <Cell><CellStack primary={tool.name ?? tool.capabilityRequirement ?? t("agents.ui.unnamedTool")}
+                secondary={tool.toolResourceId ? <IdText value={tool.toolResourceId} label={t("agents.ui.tech.tool")} /> : undefined} /></Cell>
+              <Cell nowrap>{t(toolSourceLabels[tool.source])}</Cell>
+              <Cell>{tool.capabilityRequirement ? <Tag>{tool.capabilityRequirement}</Tag> : <span className="text-muted-foreground">{t("kv.none")}</span>}</Cell>
+              <Cell>{tool.source === AgentInstallationToolSource.PlatformNative ? t("agents.installation.tools.platformProvider")
+                : tool.source === AgentInstallationToolSource.UserRegisteredExternal ? t("agents.installation.tools.connectorProvider")
+                : tool.applicationBindingId ? <CellStack primary={t("agents.ui.applicationProvider")}
+                  secondary={<IdText value={tool.applicationBindingId} label={t("agents.installation.tools.provider")} />} />
+                : t("agents.installation.tools.noProvider")}</Cell>
+              <Cell><span className="flex flex-col items-start gap-1"><Badge tone={toolStatusTones[tool.bindingStatus]}>{t(toolStatusLabels[tool.bindingStatus])}</Badge>
+                {note ? <span className="text-xs text-muted-foreground">{note}</span> : null}</span></Cell>
+            </tr>;
+          })}
+        </Table>}
+        {canRegrant ? <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/50 p-3">
           <p className="text-sm text-muted-foreground">{t("agents.installation.tools.regrantHint")}</p>
-          <Button className="w-fit" disabled={locked} onClick={() => onRegrant(installation)}>{t("agents.installation.tools.regrant")}</Button>
-        </> : needsGrant ? <p className="text-sm text-muted-foreground">{t("agents.installation.tools.regrantUnavailable")}</p> : null}
+          <Button disabled={locked} onClick={() => onRegrant(installation)}>{t("agents.installation.tools.regrant")}</Button>
+        </div> : needsGrant ? <p className="text-sm text-muted-foreground">{t("agents.installation.tools.regrantUnavailable")}</p> : null}
       </>}
-    <Button className="w-fit" disabled={locked} onClick={reload}>{t("platform.refresh")}</Button>
-  </section>;
+  </SectionCard>;
 }
 
 function InstallationPermission({ kind, installation, locked, onLocked, onRecorded }: {
@@ -2654,15 +2742,17 @@ function InstallationPermission({ kind, installation, locked, onLocked, onRecord
       if (active()) { setBusy(false); reloadTasks(); }
     }
   };
-  return <section className="flex flex-col gap-2 rounded-md border p-3" data-testid={`agent-installation-${kind}`}>
-    <h4 className="text-sm font-medium">{t(`${labels}.title`)}</h4>
+  return <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4" data-testid={`agent-installation-${kind}`}>
+    <h4 className="text-sm font-semibold">{t(`${labels}.title`)}</h4>
     <p className="text-sm text-muted-foreground">{t(`${labels}.boundary`)}</p>
     {permission ? <p role="status" className="text-sm">{permission.effective ? t(`${labels}.effective`) : t(`${labels}.notEffective`)}
-      {permission.pendingActionExecutionId ? ` · ${permission.pendingActionExecutionId}` : ""}</p> : <Notice>{t(`${labels}.unverified`)}</Notice>}
+      {permission.pendingActionExecutionId ? <> · {t("agents.ui.pendingRequest")} <IdText value={permission.pendingActionExecutionId} /></> : null}</p> : <Notice>{t(`${labels}.unverified`)}</Notice>}
     {intent ? <div className="flex flex-col gap-2 text-sm" role="group">
-      <p className="break-all">{intent.command.actionKey} · {intent.command.resourceId} · {intent.command.resourceVersion}</p>
-      <p className="break-all">{t("agents.installation.principal")}: {intent.agent}</p>
-      <p className="break-all">{t("platform.workspace")}: {intent.workspace}</p>
+      <KeyValueList items={[
+        { id: "action", label: t("agents.ui.kv.request"), value: t(intent.command.actionKey === actions.grant ? `${labels}.grant` : `${labels}.revoke`) },
+        { id: "agent", label: t("agents.installation.principal"), value: <span className="inline-flex flex-wrap items-center gap-2">
+          {installation.agentDisplayName?.trim() || t("agents.ui.unnamedAgent")}<IdText value={intent.agent} label={t("agents.installation.principal")} /></span> },
+      ]} />
       <p>{intent.command.actionKey === actions.grant ? t(`${labels}.approval`) : t(`${labels}.revokeWarning`)}</p>
       <div className="flex gap-2"><Button disabled={busy || !sameScope} onClick={() => void submit()}>{busy ? t("platform.loading") : unknown ? t("agents.retry") : t("agents.confirm")}</Button>
         {!busy && !unknown ? <Button onClick={() => { setIntent(null); onLocked(false); }}>{t("agents.cancel")}</Button> : null}</div>
@@ -2678,6 +2768,37 @@ function InstallationPermission({ kind, installation, locked, onLocked, onRecord
   </section>;
 }
 
+type VersionConfiguration = { canCreate: boolean; profiles: AgentVersionConfigurationPage["profiles"]; routes: AgentVersionConfigurationPage["routes"] };
+
+/**
+ * DD-170 §16.2(3): every authorized configuration page (runtime profiles and model routes) read
+ * as one bounded set, so neither the detail nor the editor pages through "configuration pages".
+ * A malformed or repeated page fails the whole read closed; nothing is supplied by default.
+ */
+async function loadVersionConfiguration(client: ReturnType<typeof useBffClient>, definition: AgentDefinitionView): Promise<VersionConfiguration> {
+  const profiles: VersionConfiguration["profiles"] = [];
+  const routes: VersionConfiguration["routes"] = [];
+  let canCreate = false;
+  let offset = 0;
+  for (let index = 0; index < 10; index++) {
+    const page = await client.agentVersionConfiguration(definition.resourceId, offset);
+    if (!validVersionConfiguration(page, definition, offset)) throw new TransportError("Invalid version configuration page");
+    profiles.push(...page.profiles); routes.push(...page.routes);
+    canCreate = canCreate || page.canCreate;
+    if (page.nextOffset == null) break;
+    offset = page.nextOffset;
+  }
+  if (new Set(profiles.map((profile) => profile.key)).size !== profiles.length
+    || new Set(routes.map((route) => route.resourceId)).size !== routes.length) throw new TransportError("Invalid version configuration page");
+  return { canCreate: canCreate && routes.length > 0, profiles, routes };
+}
+
+function useVersionConfiguration(definition: AgentDefinitionView | null | undefined, enabled = true) {
+  const client = useBffClient();
+  return useLoad(`version-sources:${definition?.resourceId ?? "none"}:${definition?.resourceVersion ?? 0}:${enabled}`,
+    () => definition && enabled ? loadVersionConfiguration(client, definition) : Promise.resolve(null));
+}
+
 function DefinitionDetail({ resourceId, locked, onEdit, onVersionEdit, onExport }: {
   resourceId: string; locked: boolean; onEdit: (target: AgentDefinitionView, owner: boolean) => void;
   onVersionEdit: (edit: VersionEdit) => void;
@@ -2687,60 +2808,69 @@ function DefinitionDetail({ resourceId, locked, onEdit, onVersionEdit, onExport 
   const client = useBffClient();
   const t = useT();
   const [state, reload] = useLoad(`agent-definition:${resourceId}`, () => client.agentDefinition(resourceId));
-  if (state.status === "pending") return <Notice role="status">{t("platform.loading")}</Notice>;
   const row = state.status === "ok" && validDefinition(state.data) && state.data.resourceId === resourceId ? state.data : null;
-  if (!row) return <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />;
+  const assetId = row?.currentPublishedVersionAssetId;
+  const [publishedState, reloadPublished] = useLoad(`agent-version:${assetId ?? ""}`, () => assetId ? client.agentVersion(assetId) : Promise.resolve(null));
+  const [configuration, reloadConfiguration] = useVersionConfiguration(row);
+  const [revision, setRevision] = useState(0);
+  if (state.status === "pending") return <DetailSkeleton />;
+  if (!row) return <ErrorState error={state.status === "error" ? state.error : undefined} onRetry={reload} />;
+  const value = publishedState.status === "ok" ? publishedState.data : null;
+  const published = value && validVersion(value, resourceId) && value.assetId === assetId
+    && value.state === AgentVersionState.Published && versionMissing(value.content).length === 0 ? value : null;
+  const source = configuration.status === "ok" ? configuration.data : null;
+  const refresh = () => { reload(); reloadPublished(); reloadConfiguration(); setRevision((old) => old + 1); };
+  const content = published?.content;
   return (
-    <section className="flex flex-col gap-3" data-testid="agent-definition-detail">
-      <h2 className="font-medium">{row.displayName}</h2>
-      <p className="break-words text-sm">{t("agents.slug")}: {row.stableSlug}</p>
-      <p className="break-words text-sm">{t("agents.owner")}: {row.ownerPrincipalId}</p>
-      <p className="text-sm">{t("agents.resourceVersion")}: {row.resourceVersion}</p>
-      <div className="flex flex-wrap gap-2">
-        <Button onClick={reload}>{t("platform.refresh")}</Button>
-        <Button disabled={locked} onClick={() => onEdit(row, false)}>{t("agents.update")}</Button>
-        <Button disabled={locked} onClick={() => onEdit(row, true)}>{t("agents.transfer")}</Button>
-        {onExport ? <Button disabled={locked || !row.currentPublishedVersionAssetId} data-testid="agent-definition-export"
-          title={row.currentPublishedVersionAssetId ? undefined : t("agents.export.needsPublished")}
-          onClick={() => row.currentPublishedVersionAssetId && onExport({ resourceId: row.resourceId, resourceVersion: row.resourceVersion,
-            displayName: row.displayName, versionAssetId: row.currentPublishedVersionAssetId })}>{t("agents.export.export")}</Button> : null}
-      </div>
-      {row.currentPublishedVersionAssetId ? <PublishedVersion resourceId={resourceId} assetId={row.currentPublishedVersionAssetId} />
-        : <p className="text-sm text-muted-foreground">{t("agents.noPublishedVersion")}</p>}
-      <VersionDirectory definition={row} locked={locked} onEdit={onVersionEdit} />
+    <section className="flex flex-col gap-6" data-testid="agent-definition-detail">
+      <DetailHeader title={row.displayName}
+        status={assetId ? <Badge tone="positive">{t("agents.ui.status.published")}</Badge> : <Badge tone="neutral">{t("agents.ui.status.unpublished")}</Badge>}
+        subtitle={<><PrincipalName principalId={row.ownerPrincipalId} />{" · "}{t("agents.ui.revision", { revision: String(row.resourceVersion) })}</>}
+        actions={<>
+          {source?.canCreate ? <WorkflowButton type="button" disabled={locked} onClick={() => onVersionEdit({ definition: row, mode: "edit" })}>
+            <Plus aria-hidden />{t("agents.ui.version.create")}</WorkflowButton> : null}
+          <MoreMenu disabled={locked} testId="agent-definition-more" items={[
+            { key: "rename", label: t("agents.update"), onSelect: () => onEdit(row, false) },
+            { key: "transfer", label: t("agents.transfer"), onSelect: () => onEdit(row, true) },
+            onExport && { key: "export", label: t("agents.export.export"), testId: "agent-definition-export",
+              disabled: !row.currentPublishedVersionAssetId,
+              onSelect: () => row.currentPublishedVersionAssetId && onExport({ resourceId: row.resourceId, resourceVersion: row.resourceVersion,
+                displayName: row.displayName, versionAssetId: row.currentPublishedVersionAssetId }) },
+            { key: "refresh", label: t("platform.refresh"), onSelect: refresh },
+          ]} />
+        </>} />
+      {assetId && publishedState.status === "pending" ? <DetailSkeleton lines={4} />
+        : assetId && !published ? <ErrorState compact error={publishedState.status === "error" ? publishedState.error : undefined} onRetry={reloadPublished} />
+        : <KeyValueList testId="agent-definition-facts" items={[
+          { id: "slug", label: t("agents.slug"), value: <code className="font-mono text-[0.8125rem]">{row.stableSlug}</code> },
+          { id: "owner", label: t("agents.owner"), value: <PrincipalName principalId={row.ownerPrincipalId} /> },
+          { id: "current", label: t("agents.ui.kv.currentVersion"), value: published
+            ? t("agents.ui.versionNumber", { ordinal: String(published.ordinal) }) : t("agents.noPublishedVersion") },
+          content && { id: "runtime", label: t("agents.ui.kv.runtimeProfile"), value: content.runtimeProfileKey },
+          content && { id: "route", label: t("agents.ui.kv.modelRoute"), value: t("agents.ui.routeConfigured") },
+          content && { id: "triggers", label: t("agents.ui.kv.triggers"), value: content.triggerDefaults.length
+            ? <TagList items={content.triggerDefaults.map((trigger) => t(triggerLabels[trigger]))} /> : t("kv.none") },
+          content && { id: "skills", label: t("agents.ui.kv.skills"), value: t("agents.ui.countItems", { count: String(content.skillVersionAssetIds.length) }) },
+          content && { id: "tools", label: t("agents.ui.kv.tools"), value: t("agents.ui.countItems", { count: String(content.declaredToolResourceIds.length) }) },
+          content && content.capabilityRequirements.length > 0 && { id: "capabilities", label: t("agents.ui.kv.capabilities"),
+            value: <TagList items={content.capabilityRequirements} /> },
+        ]} />}
+      {content ? <PageSection title={t("agents.version.instructions")}>
+        {content.instructions.trim() ? <ExpandableText text={content.instructions} testId="agent-definition-instructions" />
+          : <p className="text-sm text-muted-foreground">{t("agents.ui.noInstructions")}</p>}
+      </PageSection> : null}
+      <VersionDirectory key={revision} definition={row} locked={locked} configuration={configuration} onRetryConfiguration={reloadConfiguration} onEdit={onVersionEdit} />
+      <TechnicalDetails items={[
+        { id: "definition", label: t("agents.ui.tech.definition"), value: row.resourceId },
+        { id: "owner", label: t("agents.ui.tech.owner"), value: row.ownerPrincipalId },
+        { id: "version", label: t("agents.ui.tech.version"), value: published?.assetId },
+        { id: "hash", label: t("agents.ui.tech.configHash"), value: published?.configHash },
+        { id: "route", label: t("agents.ui.tech.route"), value: content?.modelRouteResourceId },
+        ...(content?.skillVersionAssetIds ?? []).map((id, index) => ({ id: `skill-${index}`, label: t("agents.ui.tech.skillVersion"), value: id })),
+        ...(content?.declaredToolResourceIds ?? []).map((id, index) => ({ id: `tool-${index}`, label: t("agents.ui.tech.tool"), value: id })),
+      ]} />
     </section>
   );
-}
-
-function PublishedVersion({ resourceId, assetId }: { resourceId: string; assetId: string }) {
-  const client = useBffClient();
-  const t = useT();
-  const [state, reload] = useLoad(`agent-version:${assetId}`, () => client.agentVersion(assetId));
-  const value = state.status === "ok" ? state.data : null;
-  const version = value && value.assetId === assetId && value.agentResourceId === resourceId
-    && value.state === AgentVersionState.Published
-    && Number.isSafeInteger(value.ordinal) && value.ordinal > 0
-    && Number.isSafeInteger(value.assetVersion) && value.assetVersion > 0
-    && typeof value.configHash === "string" && !!value.configHash
-    && typeof value.ownerPrincipalId === "string" && !!value.ownerPrincipalId
-    && value.content && typeof value.content.instructions === "string"
-    && typeof value.content.runtimeProfileKey === "string" && typeof value.content.modelRouteResourceId === "string"
-    ? value : null;
-  return <section className="flex flex-col gap-2 border-t pt-3">
-    <h3 className="text-sm font-medium">{t("agents.publishedVersion")}</h3>
-    {state.status === "pending" ? <p role="status">{t("platform.loading")}</p>
-      : !version ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
-      : <>
-        <Badge tone="neutral">{t("agents.version.published")}</Badge>
-        <p className="text-sm">{t("agents.version.ordinal")}: {version.ordinal}</p>
-        <p className="break-words text-sm">{t("agents.owner")}: {version.ownerPrincipalId}</p>
-        <p className="break-words text-sm">{t("agents.version.runtimeProfile")}: {version.content.runtimeProfileKey}</p>
-        <p className="break-words text-sm">{t("agents.version.modelRoute")}: {version.content.modelRouteResourceId}</p>
-        <p className="break-all font-mono text-xs">{t("agents.version.hash")}: {version.configHash}</p>
-        <h4 className="text-sm font-medium">{t("agents.version.instructions")}</h4>
-        <pre className="whitespace-pre-wrap break-words text-sm">{version.content.instructions}</pre>
-      </>}
-  </section>;
 }
 
 const versionLabels = {
@@ -2820,69 +2950,71 @@ function validVersionConfiguration(page: AgentVersionConfigurationPage, definiti
     && (page.nextOffset == null || (Number.isSafeInteger(page.nextOffset) && page.nextOffset > offset));
 }
 
-type VersionEdit = { definition: AgentDefinitionView; version?: AgentVersionView; mode: "edit" | "publish" | "retire"; configurationOffsets: number[] };
+type VersionEdit = { definition: AgentDefinitionView; version?: AgentVersionView; mode: "edit" | "publish" | "retire" };
 
-function VersionDirectory({ definition, locked, onEdit }: {
-  definition: AgentDefinitionView; locked: boolean; onEdit: (edit: VersionEdit) => void;
+const versionTones = {
+  [AgentVersionState.Draft]: "info",
+  [AgentVersionState.Published]: "positive",
+  [AgentVersionState.Retired]: "neutral",
+} as const satisfies Record<AgentVersionState, "info" | "positive" | "neutral">;
+
+/** §16.2: the definition's versions as one table — number, state, owner, references, row actions. */
+function VersionDirectory({ definition, locked, configuration, onRetryConfiguration, onEdit }: {
+  definition: AgentDefinitionView; locked: boolean;
+  configuration: Loaded<VersionConfiguration | null>; onRetryConfiguration: () => void;
+  onEdit: (edit: VersionEdit) => void;
 }) {
   const client = useBffClient();
   const t = useT();
-  const [offsets, setOffsets] = useState([0]);
-  const [index, setIndex] = useState(0);
-  const offset = offsets[index] ?? 0;
-  const [state, reload] = useLoad(`agent-versions:${definition.resourceId}:${offset}`, () => client.agentVersions(definition.resourceId, offset));
-  const [sourceOffsets, setSourceOffsets] = useState([0]);
-  const [sourceIndex, setSourceIndex] = useState(0);
-  const sourceOffset = sourceOffsets[sourceIndex] ?? 0;
-  const [configuration, reloadConfiguration] = useLoad(`version-sources:${definition.resourceId}:${sourceOffset}`, () => client.agentVersionConfiguration(definition.resourceId, sourceOffset));
-  const data = state.status === "ok" ? state.data : null;
-  const page = data && data.agentResourceId === definition.resourceId && data.resourceVersion === definition.resourceVersion
-    && Array.isArray(data.versions) && data.versions.every((version) => validVersion(version, definition.resourceId))
-    && new Set(data.versions.map((version) => version.assetId)).size === data.versions.length
-    && new Set(data.versions.map((version) => version.ordinal)).size === data.versions.length
-    && (data.nextOffset == null || (Number.isSafeInteger(data.nextOffset) && data.nextOffset > offset)) ? data : null;
-  const source = configuration.status === "ok" && validVersionConfiguration(configuration.data, definition, sourceOffset) ? configuration.data : null;
-  const configurationOffsets = sourceOffsets.slice(0, sourceIndex + 1);
-  return <section className="flex flex-col gap-3 border-t pt-3" data-testid="agent-version-directory">
-    <h3 className="font-medium">{t("agents.version.history")}</h3>
-    <p className="text-sm text-muted-foreground">{t("agents.version.boundary")}</p>
-    <div className="flex flex-wrap gap-2"><Button disabled={locked} onClick={() => { reload(); reloadConfiguration(); }}>{t("platform.refresh")}</Button>
-      {page && source?.canCreate ? <Button disabled={locked} onClick={() => onEdit({ definition, mode: "edit", configurationOffsets })}>{t("agents.version.create")}</Button> : null}</div>
-    {configuration.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
-      : !source ? <AgentReadFailure error={configuration.status === "error" ? configuration.error : undefined} onRetry={reloadConfiguration} />
-      : !source.canCreate ? <p className="text-sm text-muted-foreground">{t("agents.version.createUnavailable")}</p> : null}
-    {source ? <div className="flex flex-wrap gap-2 text-sm"><span>{t("agents.version.configurationPages")}</span>
-      {sourceIndex > 0 ? <Button disabled={locked} onClick={() => setSourceIndex(sourceIndex - 1)}>{t("roles.previous")}</Button> : null}
-      {source.nextOffset != null ? <Button disabled={locked} onClick={() => { setSourceOffsets((values) => [...values.slice(0, sourceIndex + 1), source.nextOffset!]); setSourceIndex(sourceIndex + 1); }}>{t("roles.next")}</Button> : null}</div> : null}
-    {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
-      : !page ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
-      : <>
-        {page.versions.length === 0 ? <Notice>{t("agents.version.none")}</Notice>
-          : page.versions.map((version) => <section key={version.assetId} className="flex flex-col gap-2 border-t pt-3">
-            <h4 className="text-sm font-medium">{version.content.personaIdentity.displayName} · {version.ordinal} · <Badge tone="neutral">{t(versionLabels[version.state])}</Badge></h4>
-            <p className="break-words text-sm">{version.assetId} · {t("agents.version.assetVersion")}: {version.assetVersion}</p>
-            <p className="break-words text-sm">{t("agents.owner")}: {version.ownerPrincipalId}</p>
-            <p className="break-words text-sm">{t("agents.version.runtimeProfile")}: {version.content.runtimeProfileKey ?? "—"} · {t("agents.version.modelRoute")}: {version.content.modelRouteResourceId ?? "—"}</p>
-            <p className="break-all font-mono text-xs">{t("agents.version.hash")}: {version.configHash}</p>
-            <p className="break-words text-sm">{t("agents.version.skillReferences")}: {version.content.skillVersionAssetIds.join(", ") || "—"}</p>
-            <p className="break-words text-sm">{t("agents.tools.selected")}: {version.content.declaredToolResourceIds.join(", ") || "—"}</p>
-            <p className="break-words text-sm">{t("agents.version.capabilities")}: {version.content.capabilityRequirements.join(", ") || "—"}</p>
-            <details><summary className="cursor-pointer text-sm">{t("agents.version.instructions")}</summary>
-              <pre className="whitespace-pre-wrap break-words text-sm">{version.content.instructions}</pre></details>
-            {version.state === AgentVersionState.Draft ? versionMissing(version.content).map((item) =>
-              <p key={item} className="w-fit rounded-md bg-warning-soft px-2 py-0.5 text-xs font-medium text-warning-text" data-testid={`agent-version-missing-${item}`}>{t(missingLabels[item])}</p>) : null}
-            {version.state === AgentVersionState.Draft && source && source.routes.length > 0 ? <div className="flex flex-wrap gap-2">
-              {version.canUpdate === true ? <Button disabled={locked} onClick={() => onEdit({ definition, version, mode: "edit", configurationOffsets })}>{t("agents.version.edit")}</Button> : null}
-              {version.canPublish === true ? <Button disabled={locked || versionMissing(version.content).length > 0}
-                onClick={() => onEdit({ definition, version, mode: "publish", configurationOffsets })}>{t("agents.version.publish")}</Button> : null}
-            </div> : null}
-            {version.state === AgentVersionState.Published && version.canRetire === true ? <Button className="w-fit" disabled={locked}
-              onClick={() => onEdit({ definition, version, mode: "retire", configurationOffsets })}>{t("agents.version.retire")}</Button> : null}
-          </section>)}
-        <div className="flex gap-2">{index > 0 ? <Button disabled={locked} onClick={() => setIndex(index - 1)}>{t("roles.previous")}</Button> : null}
-          {page.nextOffset != null ? <Button disabled={locked} onClick={() => { setOffsets((values) => [...values.slice(0, index + 1), page.nextOffset!]); setIndex(index + 1); }}>{t("roles.next")}</Button> : null}</div>
-      </>}
-  </section>;
+  const { state, reload, loadMore } = useOffsetCollection<AgentVersionView>(`agent-versions:${definition.resourceId}:${definition.resourceVersion}`, async (offset) => {
+    const data = await client.agentVersions(definition.resourceId, offset);
+    if (!data || data.agentResourceId !== definition.resourceId || data.resourceVersion !== definition.resourceVersion
+      || !Array.isArray(data.versions) || !data.versions.every((version) => validVersion(version, definition.resourceId)))
+      throw new TransportError(t("platform.loadFailed"));
+    return { items: data.versions, nextOffset: data.nextOffset ?? undefined };
+  });
+  const collection = state.status === "ok" ? state.data : null;
+  const versions = collection && new Set(collection.items.map((version) => version.assetId)).size === collection.items.length
+    && new Set(collection.items.map((version) => version.ordinal)).size === collection.items.length ? collection.items : null;
+  const source = configuration.status === "ok" ? configuration.data : null;
+  const writable = !!source && source.routes.length > 0;
+  const columns: DataColumn<AgentVersionView>[] = [
+    { key: "ordinal", header: t("agents.ui.col.version"), width: "34%", sortValue: (row) => row.ordinal, cell: (row) => <span className="flex min-w-0 flex-col gap-1">
+      <CellStack primary={t("agents.ui.versionNumber", { ordinal: String(row.ordinal) })} secondary={row.content.personaIdentity.displayName} />
+      {row.state === AgentVersionState.Draft ? versionMissing(row.content).map((item) =>
+        <span key={item} className="w-fit rounded-sm bg-warning-soft px-1.5 py-0.5 text-xs font-medium text-warning-text" data-testid={`agent-version-missing-${item}`}>{t(missingLabels[item])}</span>) : null}
+    </span> },
+    { key: "state", header: t("agents.ui.col.state"), width: "9rem", sortValue: (row) => row.state, cell: (row) => <span className="inline-flex flex-wrap items-center gap-1">
+      <Badge tone={versionTones[row.state]}>{t(versionLabels[row.state])}</Badge>
+      {row.assetId === definition.currentPublishedVersionAssetId ? <Badge tone="brand">{t("agents.ui.version.current")}</Badge> : null}
+    </span> },
+    { key: "owner", header: t("agents.owner"), secondary: true, truncate: true, cell: (row) => <PrincipalName principalId={row.ownerPrincipalId} /> },
+    { key: "skills", header: t("agents.ui.col.skills"), align: "end", width: "5.5rem", secondary: true, sortValue: (row) => row.content.skillVersionAssetIds.length,
+      cell: (row) => row.content.skillVersionAssetIds.length },
+    { key: "tools", header: t("agents.ui.col.tools"), align: "end", width: "5.5rem", secondary: true, sortValue: (row) => row.content.declaredToolResourceIds.length,
+      cell: (row) => row.content.declaredToolResourceIds.length },
+  ];
+  return <PageSection id="agent-versions" testId="agent-version-directory" title={t("agents.version.history")} description={t("agents.ui.version.boundary")}>
+    {configuration.status === "error" ? <ErrorState compact error={configuration.error} onRetry={onRetryConfiguration}
+      title={t("agents.ui.version.configurationFailed")} /> : null}
+    {state.status === "pending" ? <TableSkeleton rows={3} columns={4} />
+      : !versions ? <ErrorState compact error={state.status === "error" ? state.error : undefined} onRetry={reload} />
+      : <DataTable rows={versions} rowKey={(row) => row.assetId} label={t("agents.version.history")} columns={columns}
+          initialSort={{ key: "ordinal", direction: "desc" }} rowActionsWidth="11rem"
+          partial={collection && !collection.complete ? <PartialMore count={versions.length} onMore={loadMore} /> : undefined}
+          empty={<EmptyState compact icon={GitPullRequest} title={t("agents.ui.version.emptyTitle")} description={t("agents.ui.version.emptyBody")} />}
+          rowActions={(row) => <>
+            {row.state === AgentVersionState.Draft && writable && row.canUpdate === true ? <Button className="h-7 px-2.5 text-xs" disabled={locked}
+              onClick={() => onEdit({ definition, version: row, mode: "edit" })}>{t("agents.version.edit")}</Button> : null}
+            {row.state === AgentVersionState.Draft && writable && row.canPublish === true ? <Button className="h-7 px-2.5 text-xs" disabled={locked || versionMissing(row.content).length > 0}
+              onClick={() => onEdit({ definition, version: row, mode: "publish" })}>{t("agents.ui.version.publish")}</Button> : null}
+            {row.state === AgentVersionState.Published && row.canRetire === true ? <MoreMenu disabled={locked}
+              label={t("agents.ui.version.actions", { ordinal: String(row.ordinal) })} items={[
+                { key: "retire", danger: true, label: t("agents.ui.version.retire"), onSelect: () => onEdit({ definition, version: row, mode: "retire" }) },
+              ]} /> : null}
+          </>} />}
+    {source && !source.canCreate && configuration.status === "ok" ? <p className="text-sm text-muted-foreground">{t("agents.ui.version.createUnavailable")}</p> : null}
+  </PageSection>;
 }
 
 function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
@@ -2916,8 +3048,6 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
   const [skillIds, setSkillIds] = useState<string[]>([]);
   const [skillOffsets, setSkillOffsets] = useState([0]);
   const [skillIndex, setSkillIndex] = useState(0);
-  const [offsets, setOffsets] = useState([0]);
-  const [index, setIndex] = useState(0);
   const [intent, setIntent] = useState<ActionCommand | null>(null);
   const [busy, setBusy] = useState(false);
   const [submission, setSubmission] = useState<ActionSubmission | null>(null);
@@ -2933,11 +3063,10 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
     setTriggers(content?.triggerDefaults ?? []); setCapabilities(content?.capabilityRequirements ?? []);
     setToolIds(content?.declaredToolResourceIds ?? []); setToolOffsets([0]); setToolIndex(0);
     setSkillIds(content?.skillVersionAssetIds ?? []); setSkillOffsets([0]); setSkillIndex(0);
-    setOffsets(edit?.configurationOffsets ?? [0]); setIndex((edit?.configurationOffsets.length ?? 1) - 1);
   }, [edit]);
-  const offset = offsets[index] ?? 0;
-  const [configuration, reloadConfiguration] = useLoad(`version-action-sources:${edit?.definition.resourceId ?? "none"}:${edit?.mode ?? "none"}:${offset}`,
-    () => edit && edit.mode !== "retire" ? client.agentVersionConfiguration(edit.definition.resourceId, offset) : Promise.resolve(null));
+  // DD-170: every authorized configuration page as one bounded set (no "configuration pages").
+  const [configuration, reloadConfiguration] = useLoad(`version-action-sources:${edit?.definition.resourceId ?? "none"}:${edit?.definition.resourceVersion ?? 0}:${edit?.mode ?? "none"}`,
+    () => edit && edit.mode !== "retire" ? loadVersionConfiguration(client, edit.definition) : Promise.resolve(null));
   const [tasks, reloadTasks] = useLoad("agent-version-actions-in-flight", client.tasks);
   // Re-read visited directory pages as one snapshot. An unavailable page never
   // becomes an empty set, and pagination never discards a selected reference.
@@ -2967,8 +3096,7 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
     && new Set(selectedSkills.map((version) => version?.skillResourceId)).size === skillIds.length
     && missingSkillCapabilities.length === 0;
   const availableTools = toolPages?.flatMap((page) => page.tools).filter(selectableTool) ?? [];
-  const source = edit && configuration.status === "ok" && configuration.data
-    && validVersionConfiguration(configuration.data, edit.definition, offset) ? configuration.data : null;
+  const source = edit && configuration.status === "ok" ? configuration.data : null;
   const profile = source?.profiles.find((value) => value.key === profileKey);
   const route = source?.routes.find((value) => value.resourceId === routeId);
   const contract = profile?.capabilityContract;
@@ -2982,7 +3110,7 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
   const retiring = edit?.mode === "retire";
   const publishing = edit?.mode === "publish";
   const actionKey = retiring ? "agent.version.retire" : publishing ? "agent.version.publish" : edit?.version ? "agent.version.update" : "agent.version.create";
-  const title: PlatformMessageKey = retiring ? "agents.version.retire" : publishing ? "agents.version.publish" : edit?.version ? "agents.version.edit" : "agents.version.create";
+  const title: PlatformMessageKey = publishing ? "agents.ui.version.publishTitle" : edit?.version ? "agents.version.edit" : "agents.ui.version.create";
   const permitted = retiring ? edit?.version?.state === AgentVersionState.Published && edit.version.canRetire === true
     : !!edit && !!source && source.routes.length > 0
       && (edit.version ? edit.version.state === AgentVersionState.Draft && (publishing ? edit.version.canPublish === true : edit.version.canUpdate === true) : source.canCreate);
@@ -3014,13 +3142,14 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
     };
     setIntent(command); setSubmission(null); setFailure(null); onLocked(true);
   };
-  const submit = async () => {
-    if (!intent || inFlight.current) return;
+  // `frozen` is the exact intent: the review's, or the retire confirmation's just-frozen command.
+  const submit = async (frozen: ActionCommand | null = intent) => {
+    if (!frozen || inFlight.current) return;
     inFlight.current = true; setBusy(true);
     if (!unknown) setFailure(null);
     try {
-      const result = await client.submitAction(intent);
-      if (!result || result.actionKey !== intent.actionKey || typeof result.actionExecutionId !== "string" || !result.actionExecutionId
+      const result = await client.submitAction(frozen);
+      if (!result || result.actionKey !== frozen.actionKey || typeof result.actionExecutionId !== "string" || !result.actionExecutionId
         || typeof result.operationId !== "string" || !result.operationId || !Object.values(ActionGateState).includes(result.gateState)
         || !Object.values(ActionDispatchState).includes(result.dispatchState)
         || (result.reason !== undefined && !Object.values(ReasonCode).includes(result.reason))
@@ -3031,6 +3160,8 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
       if (result.dispatchState !== ActionDispatchState.Unknown && result.gateState !== ActionGateState.Evaluating
         && !(result.gateState === ActionGateState.Allowed && result.dispatchState === ActionDispatchState.NotDispatched)) {
         setIntent(null); onLocked(false); onReset(); onRecorded();
+        // The retire confirmation closes on a settled outcome; the table re-read shows it.
+        if (frozen.actionKey === "agent.version.retire") setSubmission(null);
       }
     } catch (error) {
       if (!unknown) {
@@ -3044,49 +3175,82 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
     else if (!intent && !busy) onLocked(false);
   }, [avatarUploading, intent, busy, onLocked]);
   if (!edit && !intent && !submission && !failure) return null;
+  if (retiring || intent?.actionKey === "agent.version.retire") {
+    // DD-170 §16.6: retiring is destructive — one ConfirmDialog naming the version. Submitting keeps
+    // the dialog open; an UNKNOWN outcome keeps the same frozen command and key and only re-checks it.
+    const target = edit?.version;
+    const confirmRetire = () => {
+      if (busy) return;
+      if (intent) { void submit(); return; }
+      if (!edit?.version || requestBlocked || !permitted) return;
+      const command: ActionCommand = { actionKey: "agent.version.retire", idempotencyKey: newIdempotencyKey(),
+        resourceId: edit.definition.resourceId, resourceVersion: edit.definition.resourceVersion,
+        assetId: edit.version.assetId, assetVersion: edit.version.assetVersion, explicitConfirmation: true };
+      setIntent(command); setSubmission(null); setFailure(null); onLocked(true);
+      void submit(command);
+    };
+    return <ConfirmDialog open testId="agent-version-retire" pending={busy}
+      onOpenChange={(open) => { if (open || busy || unknown) return; setIntent(null); setSubmission(null); setFailure(null); onLocked(false); onReset(); }}
+      title={t("agents.ui.version.retireTitle", { name: edit?.definition.displayName ?? "", ordinal: String(target?.ordinal ?? "") })}
+      description={t("agents.ui.version.retireBody", { ordinal: String(target?.ordinal ?? "") })}
+      confirmLabel={unknown ? t("agents.retry") : t("agents.ui.version.retire")} onConfirm={confirmRetire}>
+      {unknown ? <p role="status" className="break-words text-sm text-warning-text">{t("agents.unknown", { operation: submission?.operationId ?? failure?.operationId ?? "—" })}</p>
+        : failure ? <p role="alert" className="text-sm text-danger-text">{t("agents.rejected", { reason: failureText(failure) })}</p>
+        : submission?.reason ? <p role="alert" className="text-sm text-danger-text">{reasonText(submission.reason)}</p>
+        : !taskRows ? <p role="status" className="text-sm text-muted-foreground">{t("agents.inFlightUnavailable")}</p>
+        : pending.length > 0 ? <p role="status" className="text-sm text-muted-foreground">{t("agents.version.inFlight")}</p> : null}
+    </ConfirmDialog>;
+  }
   return <AgentManagementDialog open title={t(edit || intent ? title : "agents.version.history")}
     dataTestId="agent-version-action" locked={busy || intent !== null || avatarUploading}
     onClose={() => { setSubmission(null); setFailure(null); onReset(); }}
     footer={intent ? <div className="flex w-full flex-wrap justify-end gap-2">
       {!busy && !unknown ? <Button onClick={() => { setIntent(null); onLocked(false); }}>{t("agents.cancel")}</Button> : null}
       <Button disabled={busy} onClick={() => void submit()}>{busy ? t("platform.loading") : unknown ? t("agents.retry") : t("agents.confirm")}</Button>
-    </div> : edit && (retiring || source) ? <div className="flex w-full flex-wrap justify-end gap-2">
+    </div> : edit && source ? <div className="flex w-full flex-wrap justify-end gap-2">
       <Button disabled={avatarUploading} onClick={onReset}>{t("agents.cancel")}</Button>
-      {retiring ? <Button disabled={requestBlocked || !valid} onClick={prepare}>{t("agents.review")}</Button>
-        : <Button type="submit" form={formId} disabled={requestBlocked || !valid}>{t("agents.review")}</Button>}
+      <Button type="submit" form={formId} disabled={requestBlocked || !valid}>{t("agents.review")}</Button>
     </div> : undefined}>
   <section className="flex flex-col gap-3">
-    {edit ? <p className="break-words text-sm">{edit.definition.displayName} · {edit.definition.resourceId} · {t("agents.resourceVersion")}: {edit.definition.resourceVersion}</p> : null}
-    <p className="text-sm text-muted-foreground">{t("agents.version.boundary")}</p>
-    {intent ? <div className="flex flex-col gap-2 text-sm" role="group">
-      <p className="break-words">{intent.actionKey} · {intent.assetId ?? intent.resourceId} · {intent.assetVersion ?? intent.resourceVersion}</p>
-      <p>{t("agents.owner")}: {edit?.version?.ownerPrincipalId ?? t("agents.version.currentHumanOwner")}</p>
-      <p className="break-words">{t("agents.name")}: {name}</p>
-      {avatar ? <p className="break-words">{t("agents.version.avatar")}: {avatar}</p> : null}
-      {description ? <p className="whitespace-pre-wrap break-words">{t("agents.version.description")}: {description}</p> : null}
-      <p className="break-words">{t("agents.version.runtimeProfile")}: {profileKey} · {t("agents.version.modelRoute")}: {routeId}</p>
-      {edit?.version ? <p className="break-all font-mono text-xs">{t("agents.version.hash")}: {edit.version.configHash}</p> : null}
-      <p>{t("agents.version.replyPolicy")}: {reply} · {t("agents.version.parallelism")}: {parallelism}</p>
-      <p>{t("agents.version.idleTimeout")}: {idle} · {t("agents.version.maxDuration")}: {duration}</p>
-      <p>{t("agents.version.coreWrite")}: {coreWrite === AgentMemoryCoreWrite.HumanOnly ? t("agents.version.coreHumanOnly") : t("agents.version.coreApproval")}</p>
-      <p>{t("agents.version.coldWrite")}: {coldWrite === AgentMemoryColdWrite.Disabled ? t("agents.version.coldDisabled") : t("agents.version.coldInvocation")}</p>
-      <p className="break-words">{t("agents.version.capabilities")}: {capabilities.join(", ") || "—"}</p>
-      <p className="break-words">{t("agents.tools.selected")}: {toolIds.join(", ") || "—"}</p>
-      <p className="break-words">{t("agents.version.skillReferences")}: {skillIds.map((id) => {
-        const version = availableSkills.find((value) => value.assetId === id);
-        return version ? `$${version.stableSlug} v${version.ordinal}` : id;
-      }).join(", ") || "—"}</p>
-      <p>{t("agents.version.triggers")}: {triggers.map((trigger) => t(trigger === AgentTrigger.Mention ? "agents.installation.trigger.mention" : "agents.version.manualAssignment")).join(", ") || "—"}</p>
-      <pre className="whitespace-pre-wrap break-words">{instructions}</pre>
-      <p>{t(retiring ? "agents.version.retireReview" : publishing ? "agents.version.publishReview" : "agents.version.saveReview")}</p><p>{t("agents.admission")}</p>
-    </div> : retiring ? <>
-      <p className="break-words text-sm">{edit?.version?.assetId} · {t("agents.version.assetVersion")}: {edit?.version?.assetVersion}</p>
-      <p className="break-words text-sm">{t("agents.owner")}: {edit?.version?.ownerPrincipalId}</p>
-      <p className="break-all font-mono text-xs">{t("agents.version.hash")}: {edit?.version?.configHash}</p>
-      <p className="text-sm">{t("agents.version.retireReview")}</p>
-    </> : edit ? <>
-      {configuration.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
-        : !source ? <AgentReadFailure error={configuration.status === "error" ? configuration.error : undefined} onRetry={reloadConfiguration} />
+    {edit ? <p className="break-words text-sm font-medium">{edit.definition.displayName}{edit.version ? ` · ${t("agents.ui.versionNumber", { ordinal: String(edit.version.ordinal) })}` : ""}</p> : null}
+    <p className="text-sm text-muted-foreground">{t("agents.ui.version.boundary")}</p>
+    {intent ? <div className="flex flex-col gap-3 text-sm" role="group">
+      <KeyValueList testId="agent-version-review" items={[
+        { id: "owner", label: t("agents.owner"), value: edit?.version ? <PrincipalName principalId={edit.version.ownerPrincipalId} /> : t("agents.ui.you") },
+        { id: "name", label: t("agents.name"), value: name },
+        avatar ? { id: "avatar", label: t("agents.ui.kv.avatar"), value: t("agents.ui.avatarSet") } : null,
+        description ? { id: "description", label: t("agents.ui.kv.description"), value: <span className="whitespace-pre-wrap">{description}</span> } : null,
+        { id: "runtime", label: t("agents.ui.kv.runtimeProfile"), value: profileKey || t("kv.notSet") },
+        { id: "route", label: t("agents.ui.kv.modelRoute"), value: routeId ? t("agents.ui.routeConfigured") : t("kv.notSet") },
+        { id: "reply", label: t("agents.ui.kv.replyPolicy"), value: reply || t("kv.notSet") },
+        { id: "limits", label: t("agents.ui.kv.limits"), value: t("agents.ui.limitsValue", { parallelism, idle, duration }) },
+        { id: "memory", label: t("agents.ui.kv.memory"), value: <span className="flex flex-col">
+          <span>{t("agents.ui.coreMemory")}: {coreWrite === AgentMemoryCoreWrite.HumanOnly ? t("agents.version.coreHumanOnly") : t("agents.version.coreApproval")}</span>
+          <span>{t("agents.ui.coldMemory")}: {coldWrite === AgentMemoryColdWrite.Disabled ? t("agents.version.coldDisabled") : t("agents.version.coldInvocation")}</span></span> },
+        { id: "triggers", label: t("agents.ui.kv.triggers"), value: triggers.length ? <TagList items={triggers.map((trigger) =>
+          t(trigger === AgentTrigger.Mention ? "agents.installation.trigger.mention" : "agents.version.manualAssignment"))} /> : t("kv.none") },
+        { id: "capabilities", label: t("agents.ui.kv.capabilities"), value: capabilities.length ? <TagList items={capabilities} /> : t("kv.none") },
+        { id: "tools", label: t("agents.ui.kv.tools"), value: toolIds.length ? <TagList items={toolIds.map((id) => {
+          const tool = availableTools.find((value) => value.resourceId === id);
+          return tool ? (tool.connector ? `${tool.connector.title ?? tool.connector.upstreamName}` : tool.name) : id;
+        })} /> : t("kv.none") },
+        { id: "skills", label: t("agents.ui.kv.skills"), value: skillIds.length ? <TagList items={skillIds.map((id) => {
+          const version = availableSkills.find((value) => value.assetId === id);
+          return version ? `$${version.stableSlug} v${version.ordinal}` : id;
+        })} /> : t("kv.none") },
+      ]} />
+      <div className="flex flex-col gap-1.5"><span className="text-muted-foreground">{t("agents.version.instructions")}</span>
+        <ExpandableText text={instructions} /></div>
+      <p>{t(publishing ? "agents.ui.version.publishReview" : "agents.ui.version.saveReview")}</p>
+      <TechnicalDetails items={[
+        { id: "definition", label: t("agents.ui.tech.definition"), value: intent.resourceId },
+        { id: "version", label: t("agents.ui.tech.version"), value: intent.assetId },
+        { id: "hash", label: t("agents.ui.tech.configHash"), value: edit?.version?.configHash },
+        { id: "route", label: t("agents.ui.tech.route"), value: routeId },
+      ]} />
+    </div> : edit ? <>
+      {configuration.status === "pending" ? <DetailSkeleton lines={4} />
+        : !source ? <ErrorState compact error={configuration.status === "error" ? configuration.error : undefined} onRetry={reloadConfiguration} />
         : <form id={formId} className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
           {avatarHost ? <AvatarHostProvider value={avatarHost(edit.version)}><AgentCreationPreview avatarUrl={avatar || null} label={name.trim() || t("agents.identity.name")}
             assetLabel={t("platform.profile.avatar")} disabled={publishing || !permitted || avatarUploading}
@@ -3112,7 +3276,7 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground" htmlFor={`${formId}-route`}>{t("agents.version.modelRoute")}</label>
               <PersonaDropdownField id={`${formId}-route`} value={routeId} onValueChange={setRouteId} placeholder={t("agents.automation.select")}
-                options={source.routes.map((value) => ({ value: value.resourceId, label: `${value.resourceId} · ${value.resourceVersion} · ${value.nativeRevision}` }))} />
+                options={source.routes.map((value) => ({ value: value.resourceId, label: t("agents.ui.routeOption", { id: shortId(value.resourceId), revision: String(value.nativeRevision) }) }))} />
             </div>
           </fieldset>
             <AgentDefinitionAdvanced key={`${edit.definition.resourceId}:${edit.version?.assetId ?? "new"}:${edit.mode}`}
@@ -3173,7 +3337,8 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
             </fieldset>
             <fieldset className="flex flex-col gap-2 text-sm"><legend>{t("agents.tools.selected")}</legend>
               {toolIds.map((id) => <div key={id} className="flex flex-wrap items-center gap-2">
-                <span className="break-all font-mono text-xs">{id}</span>
+                <span className="break-words">{availableTools.find((tool) => tool.resourceId === id)?.name ?? t("agents.ui.unnamedTool")}</span>
+                <IdText value={id} label={t("agents.ui.tech.tool")} />
                 {!availableTools.some((tool) => tool.resourceId === id) ? <span>{t("agents.tools.unavailable")}</span> : null}
                 <Button onClick={() => setToolIds((values) => values.filter((value) => value !== id))}>{t("agents.tools.remove")}</Button>
               </div>)}
@@ -3187,7 +3352,8 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
                       <label className="flex gap-2" key={tool.resourceId}><input type="checkbox" disabled={!selectableTool(tool)}
                         checked={toolIds.includes(tool.resourceId)} onChange={(event) => setToolIds((values) => event.target.checked
                           ? [...new Set([...values, tool.resourceId])] : values.filter((id) => id !== tool.resourceId))} />
-                        <span className="break-all">{tool.connector ? `${tool.connector.title ?? tool.connector.upstreamName} · ${tool.name}` : tool.name} · {tool.resourceId}</span></label>;
+                        <span className="inline-flex min-w-0 flex-wrap items-center gap-2"><span className="break-words">{tool.connector ? `${tool.connector.title ?? tool.connector.upstreamName} · ${tool.name}` : tool.name}</span>
+                          <IdText value={tool.resourceId} label={t("agents.ui.tech.tool")} /></span></label>;
                     const grouped = groupTools(toolPage.tools);
                     return <>
                       {grouped.native.map(toolOption)}
@@ -3208,8 +3374,6 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
             </fieldset>
             </fieldset>
             </AgentDefinitionAdvanced>
-          <div className="flex gap-2">{index > 0 ? <Button onClick={() => setIndex(index - 1)}>{t("roles.previous")}</Button> : null}
-            {source.nextOffset != null ? <Button onClick={() => { setOffsets((values) => [...values.slice(0, index + 1), source.nextOffset!]); setIndex(index + 1); }}>{t("roles.next")}</Button> : null}</div>
           </div>
         </form>}
     </> : null}
