@@ -348,8 +348,8 @@ func parseDirectoryShare(sh wireDirectoryShare, workspaces map[string]bool) (Kai
 			}
 			subject.WorkspaceID = strings.ToLower(*g.Subject.WorkspaceID)
 		case KailoShareSubjectTenant:
-			if g.Subject.PrincipalID != nil || g.Subject.WorkspaceID != nil || *g.Access != KailoShareAccessRead {
-				// All Tenant members only ever READ (tenant#member reader).
+			// DD-164(4)③ (amended 1c803580): all Tenant members may READ or WRITE.
+			if g.Subject.PrincipalID != nil || g.Subject.WorkspaceID != nil {
 				return share, invalidDirectory("share tenant")
 			}
 		default:
@@ -516,3 +516,34 @@ type KailoDirectoryApplyResult struct {
 // WorkspaceDisplayName is the exported form of workspaceName for the share
 // projection's per-Workspace organisations.
 func (d *KailoMemberDirectory) WorkspaceDisplayName(id string) string { return d.workspaceName(id) }
+
+// KailoShareAdoptionRequest registers one existing native share as a Kailo
+// share (DD-164(4)⑧, contracts/api/component_share_adoption_request.schema.json).
+type KailoShareAdoptionRequest struct {
+	NativeType  string                  `json:"nativeType"`
+	NativeID    string                  `json:"nativeId"`
+	Name        string                  `json:"name"`
+	Owner       KailoShareAdoptionOwner `json:"owner"`
+	WorkspaceID string                  `json:"workspaceId,omitempty"`
+	Grants      []KailoShareGrant       `json:"grants"`
+}
+
+// KailoShareAdoptionOwner is the native owner's Kailo identity.
+type KailoShareAdoptionOwner struct {
+	Issuer  string `json:"issuer"`
+	Subject string `json:"subject"`
+}
+
+// KailoShareAdoptionResult is Core's answer: the Resource now authoritative
+// for the native object, its grants without the owner, and whether this call
+// created it (false: it existed and nothing changed).
+type KailoShareAdoptionResult struct {
+	ResourceID       string            `json:"resourceId"`
+	OwnerPrincipalID string            `json:"ownerPrincipalId"`
+	Adopted          bool              `json:"adopted"`
+	Grants           []KailoShareGrant `json:"grants"`
+}
+
+// ErrKailoShareAdoptionRefused is a definite refusal of an adoption (Core
+// answered 4xx): the native share stays untouched and is reported.
+var ErrKailoShareAdoptionRefused = errors.New("kailo share adoption refused")

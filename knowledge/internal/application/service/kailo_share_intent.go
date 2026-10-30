@@ -59,10 +59,11 @@ func NewKailoShareIntentService(cfg *config.Config, db *gorm.DB) *KailoShareInte
 	return &KailoShareIntentService{cfg: cfg, db: db, http: newKailoServiceHTTPClient(kailoDirectoryReadTimeout)}
 }
 
-// CanShare reports whether caller may share kb natively: the knowledge base
-// lives in the caller's current space and the caller administers that space
-// or created the knowledge base while still holding write access there
-// (contributor+), the same rule as the native share route (OwnedKBOrAdmin).
+// CanShareKnowledgeBase reports whether caller may share kb natively: the
+// knowledge base lives in the caller's current space and the caller
+// administers that space or owns (created) it — an owner keeps sharing their
+// own knowledge base whatever their space role (DD-164(3)), the same rule as
+// the native share route (OwnedKBOrAdmin).
 func CanShareKnowledgeBase(caller types.Caller, kb types.KnowledgeBase) bool {
 	if kb.TenantID == 0 || kb.TenantID != caller.TenantID {
 		return false
@@ -70,7 +71,7 @@ func CanShareKnowledgeBase(caller types.Caller, kb types.KnowledgeBase) bool {
 	if caller.Role.HasPermission(types.TenantRoleAdmin) {
 		return true
 	}
-	return kb.CreatorID != "" && kb.CreatorID == caller.UserID && caller.Role.HasPermission(types.TenantRoleContributor)
+	return kb.CreatorID != "" && kb.CreatorID == caller.UserID
 }
 
 // Request asks Core for a share intent naming knowledge base kbID.

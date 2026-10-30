@@ -203,7 +203,7 @@ func (r *KailoDirectorySyncRunner) SyncOnce(ctx context.Context) bool {
 	}
 	// Mapped spaces carry the deployment's own spelling of the Tenant id.
 	snapshot.Tenant.TenantID = r.tenantID
-	result, err := r.org.ApplyDirectory(ctx, r.issuer, r.tenantName, snapshot)
+	result, err := r.org.ApplyDirectory(ctx, r.issuer, r.tenantName, snapshot, r.client)
 	if err != nil {
 		logger.Errorf(ctx, "[kailo] member directory apply failed, retrying next interval: %v", err)
 		r.report(ctx, snapshot.DirectoryVersion, types.KailoReceiptFailed, time.Now(), []types.KailoReceiptFailure{{
@@ -278,4 +278,57 @@ func (c *kailoDirectoryClient) Receipt(ctx context.Context, body []byte) error {
 		return directoryReadError("Core status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// AdoptShare POSTs one share adoption (DD-164(4)⑧) and returns Core's
+// validated answer. 4xx is a definite refusal; anything else that is not a
+// valid 2xx answer is not definite.
+func (c *kailoDirectoryClient) AdoptShare(
+	ctx context.Context, request *types.KailoShareAdoptionRequest,
+) (*types.KailoShareAdoptionResult, error) {
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	token, err := c.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, kailoDirectoryReadTimeout)
+	defer cancel()
+	endpoint := strings.TrimRight(c.cfg.CoreURL, "/") + "/service/v1/component-directory/bindings/" +
+		url.PathEscape(c.cfg.BindingID) + "/share-adoptions"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, directoryReadError("adoption request")
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, directoryReadError("Core unreachable")
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, directoryReadError("adoption response")
+	}
+	if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusRequestTimeout &&
+		resp.StatusCode != http.StatusTooManyRequests {
+		return nil, types.ErrKailoShareAdoptionRefused
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, directoryReadError("Core status %d", resp.StatusCode)
+	}
+	var result types.KailoShareAdoptionResult
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&result); err != nil || !kailoIntentID.MatchString(result.ResourceID) ||
+		!kailoIntentID.MatchString(result.OwnerPrincipalID) || result.Grants == nil {
+		return nil, directoryReadError("adoption response does not match the contract")
+	}
+	result.ResourceID = strings.ToLower(result.ResourceID)
+	result.OwnerPrincipalID = strings.ToLower(result.OwnerPrincipalID)
+	return &result, nil
 }

@@ -26,10 +26,20 @@ type KailoOrgService interface {
 	// The result also carries the share projection items it skipped
 	// (DD-164(4)) for the receipt; an unchanged version answers with the
 	// recorded result.
+	// adopter registers existing native shares of Kailo-mapped objects as
+	// Kailo shares before shares[] is converged (DD-164(4)⑧); nil skips
+	// adoption, and then no native share is ever removed.
 	ApplyDirectory(ctx context.Context, issuer, fallbackTenantName string,
-		directory *types.KailoMemberDirectory) (*types.KailoDirectoryApplyResult, error)
+		directory *types.KailoMemberDirectory, adopter KailoShareAdopter) (*types.KailoDirectoryApplyResult, error)
 
 	// DirectorySnapshot returns the last completely applied snapshot for the
 	// binding, or nil when no directory has been delivered for it yet.
 	DirectorySnapshot(ctx context.Context, bindingID string) (*types.KailoMemberDirectory, error)
+}
+
+// KailoShareAdopter calls Core's share adoption (DD-164(4)⑧). A definite
+// refusal is types.ErrKailoShareAdoptionRefused; any other error is not
+// definite and stops the convergence until the next read.
+type KailoShareAdopter interface {
+	AdoptShare(ctx context.Context, request *types.KailoShareAdoptionRequest) (*types.KailoShareAdoptionResult, error)
 }

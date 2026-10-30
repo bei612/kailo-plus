@@ -72,7 +72,7 @@ func TestKailoDirectoryProjectsKnowledgeBaseShares(t *testing.T) {
 	}
 	tenantOrg := f.orgID(t, "kailo_tenant_ref", dirTenant)
 	// A native share into the Kailo Tenant organisation made before Kailo
-	// owned sharing: not Kailo authorization, so it is retired.
+	// owned sharing: adopted as a Kailo share, never deleted (DD-164(4)⑧).
 	if err := f.db.Exec("INSERT INTO kb_shares (id, knowledge_base_id, organization_id, shared_by_user_id, "+
 		"source_tenant_id, permission) VALUES ('native-1', ?, ?, ?, ?, 'editor')",
 		shareKBNative, tenantOrg, ada.ID, tenant.ID).Error; err != nil {
@@ -86,7 +86,7 @@ func TestKailoDirectoryProjectsKnowledgeBaseShares(t *testing.T) {
 	shares := []map[string]interface{}{
 		{"resourceId": shareRes, "nativeType": "knowledge_base", "nativeId": shareKB, "ownerPrincipalId": dirAda,
 			"grants": []map[string]interface{}{grant("PRINCIPAL", dirAda, "WRITE"), grant("PRINCIPAL", dirBob, "READ"),
-				grant("TENANT", "", "READ"), grant("WORKSPACE", dirWsB, "WRITE")}},
+				grant("TENANT", "", "WRITE"), grant("WORKSPACE", dirWsB, "WRITE")}},
 		{"resourceId": shareResGone, "nativeType": "knowledge_base", "nativeId": "kb-deleted", "ownerPrincipalId": dirAda,
 			"grants": []map[string]interface{}{grant("PRINCIPAL", dirAda, "WRITE")}},
 		{"resourceId": shareResOther, "nativeType": "folder", "nativeId": "cells-node", "ownerPrincipalId": dirAda,
@@ -99,7 +99,8 @@ func TestKailoDirectoryProjectsKnowledgeBaseShares(t *testing.T) {
 	}
 	wsBOrg := f.orgID(t, "kailo_share_ref", "workspace:"+dirWsB)
 	got := f.kbShares(t, shareKB)
-	if len(got) != 2 || got[tenantOrg].Permission != types.OrgRoleViewer || got[wsBOrg].Permission != types.OrgRoleEditor {
+	// DD-164(4)③: TENANT WRITE is editor on the Tenant organisation.
+	if len(got) != 2 || got[tenantOrg].Permission != types.OrgRoleEditor || got[wsBOrg].Permission != types.OrgRoleEditor {
 		t.Fatalf("projected shares = %+v", got)
 	}
 	for _, row := range got {
@@ -113,9 +114,25 @@ func TestKailoDirectoryProjectsKnowledgeBaseShares(t *testing.T) {
 	if wsB := f.space(t, "workspace:"+dirWsB); len(spaces) != 1 || spaces[0].TenantID != wsB.ID {
 		t.Fatalf("workspace share organisation spaces = %+v", spaces)
 	}
-	if rows := f.kbShares(t, shareKBNative); len(rows) != 0 {
-		t.Fatalf("a native share into a Kailo organisation survived: %+v", rows)
+	adoptedRes := adoptedResourceID(shareKBNative)
+	if rows := f.kbShares(t, shareKBNative); len(rows) != 1 || rows[tenantOrg].KailoResourceRef == nil ||
+		*rows[tenantOrg].KailoResourceRef != adoptedRes || rows[tenantOrg].Permission != types.OrgRoleEditor {
+		t.Fatalf("the native share must be adopted and kept: %+v", rows)
 	}
+	if len(core.adoptions) != 1 {
+		t.Fatalf("adoptions = %v", core.adoptions)
+	}
+	asked := core.adoptions[0]
+	owner, _ := asked["owner"].(map[string]interface{})
+	grants, _ := asked["grants"].([]interface{})
+	if asked["nativeType"] != "knowledge_base" || asked["nativeId"] != shareKBNative || owner["subject"] != "ada" ||
+		len(grants) != 1 || grants[0].(map[string]interface{})["access"] != "WRITE" ||
+		grants[0].(map[string]interface{})["subject"].(map[string]interface{})["kind"] != "TENANT" {
+		t.Fatalf("adoption request = %v", asked)
+	}
+	adoptedShare := map[string]interface{}{"resourceId": adoptedRes, "nativeType": "knowledge_base",
+		"nativeId": shareKBNative, "ownerPrincipalId": dirAda,
+		"grants": []map[string]interface{}{grant("PRINCIPAL", dirAda, "WRITE"), grant("TENANT", "", "WRITE")}}
 	receipt := core.lastReceipt()
 	if receipt == nil || receipt["outcome"] != "APPLIED" || receipt["schema"] != float64(2) {
 		t.Fatalf("receipt = %v", receipt)
@@ -139,14 +156,21 @@ func TestKailoDirectoryProjectsKnowledgeBaseShares(t *testing.T) {
 		t.Fatal("an unchanged snapshot must neither apply nor report again")
 	}
 
-	// Revoking every grant in Kailo removes the projection.
-	core.answer(http.StatusOK, directoryJSON(t, "unshared", dirBinding, dirTenant,
-		map[string]string{dirWsA: "Alpha", dirWsB: "Beta"}, members...))
+	// Revoking every grant of a Kailo share in Kailo removes its projection;
+	// the adopted share, now in shares[], is kept and not adopted again.
+	core.answer(http.StatusOK, directoryJSONWithShares(t, "unshared", dirBinding, dirTenant,
+		map[string]string{dirWsA: "Alpha", dirWsB: "Beta"}, []map[string]interface{}{adoptedShare}, members...))
 	if !runner.SyncOnce(context.Background()) {
 		t.Fatal("unshare snapshot not applied")
 	}
 	if rows := f.kbShares(t, shareKB); len(rows) != 0 {
 		t.Fatalf("revoked shares survived: %+v", rows)
+	}
+	if rows := f.kbShares(t, shareKBNative); len(rows) != 1 || rows[tenantOrg].Permission != types.OrgRoleEditor {
+		t.Fatalf("the adopted share must survive convergence: %+v", rows)
+	}
+	if len(core.adoptions) != 1 {
+		t.Fatal("an adopted share is not adopted again")
 	}
 }
 
@@ -221,14 +245,17 @@ func TestKailoShareIntentNamesTheKnowledgeBaseToKailo(t *testing.T) {
 		sent["workspaceId"] != dirWsA || initiator["issuer"] != kailoTestIssuer || initiator["subject"] != "ada" {
 		t.Fatalf("intent request = %v", sent)
 	}
-	// The creator still holding write access may share; as a viewer not.
-	if _, err := svc.Request(ctx, types.Caller{TenantID: wsA.ID, UserID: bob.ID, Role: types.TenantRoleContributor}, shareKB); err != nil {
-		t.Fatalf("creator intent: %v", err)
+	// The owner shares their own knowledge base whatever their space role
+	// (DD-164(3)); another member without admin does not.
+	for _, role := range []types.TenantRole{types.TenantRoleContributor, types.TenantRoleViewer} {
+		if _, err := svc.Request(ctx, types.Caller{TenantID: wsA.ID, UserID: bob.ID, Role: role}, shareKB); err != nil {
+			t.Fatalf("owner intent as %s: %v", role, err)
+		}
 	}
 	asked := len(core.intents)
 	for name, caller := range map[string]types.Caller{
-		"viewer creator": {TenantID: wsA.ID, UserID: bob.ID, Role: types.TenantRoleViewer},
-		"other member":   {TenantID: wsA.ID, UserID: ada.ID, Role: types.TenantRoleContributor},
+		"other contributor": {TenantID: wsA.ID, UserID: ada.ID, Role: types.TenantRoleContributor},
+		"other viewer":      {TenantID: wsA.ID, UserID: ada.ID, Role: types.TenantRoleViewer},
 	} {
 		if _, err := svc.Request(ctx, caller, shareKB); err != ErrKailoShareForbidden {
 			t.Fatalf("%s: %v", name, err)
@@ -239,5 +266,126 @@ func TestKailoShareIntentNamesTheKnowledgeBaseToKailo(t *testing.T) {
 	}
 	if len(core.intents) != asked {
 		t.Fatal("a refused share must not reach Kailo")
+	}
+}
+
+// Production 2026-10-30: the acceptance knowledge base "r-accept-星河兰花温室"
+// of qa-1 is shared natively to the Kailo Tenant organisation (view only).
+// Switching to schema 2 must keep it (DD-164(4)⑧).
+func TestKailoDirectoryKeepsTheAcceptanceKnowledgeBaseShare(t *testing.T) {
+	f, core, runner := newDirectoryFixture(t)
+	core.answer(http.StatusOK, firstSnapshot(t))
+	runner.SyncOnce(context.Background())
+	tenant := f.space(t, "tenant:"+dirTenant)
+	ada := f.userBySubject(t, "ada")
+	const kb = "kb-r-accept"
+	if err := f.db.Exec("INSERT INTO knowledge_bases (id, name, tenant_id, creator_id) VALUES (?, ?, ?, ?)",
+		kb, "r-accept-星河兰花温室", tenant.ID, ada.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	tenantOrg := f.orgID(t, "kailo_tenant_ref", dirTenant)
+	other := "other-org-0001"
+	if err := f.db.Exec("INSERT INTO organizations (id, name, owner_id, owner_tenant_id, invite_code) VALUES (?, 'native', ?, ?, 'code-1')",
+		other, ada.ID, tenant.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []struct{ id, org, permission string }{{"accept-1", tenantOrg, "viewer"}, {"accept-2", other, "editor"}} {
+		if err := f.db.Exec("INSERT INTO kb_shares (id, knowledge_base_id, organization_id, shared_by_user_id, "+
+			"source_tenant_id, permission) VALUES (?, ?, ?, ?, ?, ?)", row.id, kb, row.org, ada.ID, tenant.ID, row.permission).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	members := []dirMember{
+		{principal: dirAda, sub: "ada", name: "Ada Lovelace", role: "ADMIN"},
+		{principal: dirBob, sub: "bob", name: "Bob", role: "MEMBER", create: true},
+	}
+	wsNames := map[string]string{dirWsA: "Alpha"}
+
+	// Core answers indefinitely: nothing is converged or recorded.
+	core.adopt = func(map[string]interface{}) (int, interface{}) {
+		return http.StatusServiceUnavailable, map[string]string{}
+	}
+	core.answer(http.StatusOK, directoryJSON(t, "schema2-first", dirBinding, dirTenant, wsNames, members...))
+	before := f.recordedVersion(t)
+	if runner.SyncOnce(context.Background()) || f.recordedVersion(t) != before {
+		t.Fatal("an indefinite adoption must stop the convergence")
+	}
+	if r := core.lastReceipt(); r == nil || r["outcome"] != "FAILED" {
+		t.Fatalf("receipt after an indefinite adoption = %v", r)
+	}
+
+	// A definite answer adopts the Tenant share; the share into a native
+	// organisation is not Kailo-mapped and stays untouched.
+	core.adopt = nil
+	if !runner.SyncOnce(context.Background()) {
+		t.Fatal("snapshot not applied after the adoption")
+	}
+	rows := f.kbShares(t, kb)
+	res := adoptedResourceID(kb)
+	if len(rows) != 2 || rows[tenantOrg].KailoResourceRef == nil || *rows[tenantOrg].KailoResourceRef != res ||
+		rows[tenantOrg].Permission != types.OrgRoleViewer || rows[other].KailoResourceRef != nil ||
+		rows[other].Permission != types.OrgRoleEditor {
+		t.Fatalf("shares after adoption = %+v", rows)
+	}
+	last := core.adoptions[len(core.adoptions)-1]
+	if grants := last["grants"].([]interface{}); len(grants) != 1 ||
+		grants[0].(map[string]interface{})["access"] != "READ" || last["name"] != "r-accept-星河兰花温室" {
+		t.Fatalf("adoption request = %v", last)
+	}
+
+	// Core's next snapshot carries the adopted Resource: the share survives.
+	core.answer(http.StatusOK, directoryJSONWithShares(t, "schema2-adopted", dirBinding, dirTenant, wsNames,
+		[]map[string]interface{}{{"resourceId": res, "nativeType": "knowledge_base", "nativeId": kb,
+			"ownerPrincipalId": dirAda, "grants": []map[string]interface{}{grant("PRINCIPAL", dirAda, "WRITE"),
+				grant("TENANT", "", "READ")}}}, members...))
+	if !runner.SyncOnce(context.Background()) {
+		t.Fatal("adopted snapshot not applied")
+	}
+	if rows := f.kbShares(t, kb); len(rows) != 2 || rows[tenantOrg].Permission != types.OrgRoleViewer ||
+		rows[other].Permission != types.OrgRoleEditor {
+		t.Fatalf("the acceptance share did not survive: %+v", rows)
+	}
+}
+
+// A refused adoption or an owner outside the directory leaves the native
+// share untouched and is reported (DD-164(4)⑧).
+func TestKailoDirectoryRefusedAdoptionKeepsTheNativeShare(t *testing.T) {
+	f, core, runner := newDirectoryFixture(t)
+	core.answer(http.StatusOK, firstSnapshot(t))
+	runner.SyncOnce(context.Background())
+	tenant := f.space(t, "tenant:"+dirTenant)
+	ada := f.userBySubject(t, "ada")
+	tenantOrg := f.orgID(t, "kailo_tenant_ref", dirTenant)
+	for _, kb := range []struct{ id, creator string }{{"kb-refused", ada.ID}, {"kb-orphan", "gone-user"}} {
+		if err := f.db.Exec("INSERT INTO knowledge_bases (id, name, tenant_id, creator_id) VALUES (?, ?, ?, ?)",
+			kb.id, kb.id, tenant.ID, kb.creator).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := f.db.Exec("INSERT INTO kb_shares (id, knowledge_base_id, organization_id, shared_by_user_id, "+
+			"source_tenant_id, permission) VALUES (?, ?, ?, ?, ?, 'viewer')", "s-"+kb.id, kb.id, tenantOrg, kb.creator, tenant.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	core.adopt = func(map[string]interface{}) (int, interface{}) { return http.StatusForbidden, map[string]string{} }
+	core.answer(http.StatusOK, directoryJSON(t, "refused", dirBinding, dirTenant, map[string]string{},
+		dirMember{principal: dirAda, sub: "ada", name: "Ada Lovelace", role: "ADMIN"}))
+	if !runner.SyncOnce(context.Background()) {
+		t.Fatal("a definite refusal does not stop the snapshot")
+	}
+	for _, kb := range []string{"kb-refused", "kb-orphan"} {
+		if rows := f.kbShares(t, kb); len(rows) != 1 || rows[tenantOrg].KailoResourceRef != nil {
+			t.Fatalf("%s: native share changed: %+v", kb, rows)
+		}
+	}
+	if len(core.adoptions) != 1 {
+		t.Fatalf("an owner outside the directory must not be adopted: %v", core.adoptions)
+	}
+	reasons := map[string]string{}
+	for _, item := range core.lastReceipt()["failures"].([]interface{}) {
+		m := item.(map[string]interface{})
+		reasons[m["ref"].(string)] = m["reasonCode"].(string)
+	}
+	if reasons["kb-refused"] != "ADOPTION_REFUSED" || reasons["kb-orphan"] != "OWNER_NOT_MEMBER" {
+		t.Fatalf("receipt failures = %v", reasons)
 	}
 }
