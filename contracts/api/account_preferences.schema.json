@@ -22,7 +22,12 @@
       "type": "boolean"
     },
     "locale": {
-      "$ref": "../enums/account_locale.schema.json"
+      "type": "string",
+      "enum": [
+        "en",
+        "zh-CN"
+      ],
+      "description": "Kailo UI language (REQ-08)."
     },
     "componentPreferences": {
       "type": "array",
