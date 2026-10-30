@@ -81,6 +81,16 @@ idp:
     - [./bootstrap.sh, --verify-native-client-profiles]
     - [./bootstrap.sh, --verify-directory-clients]
 
+# DD-165(5)：组件 meter、额度项与默认额度的发布对齐。deploy 在该服务替换并就绪之后、任何其他服务之前（该服务
+# 未替换时在替换其他服务之前）于容器内执行 /usr/local/bin/platform-core <apply>：幂等登记缺失的 meter/feature、
+# 为 Customer ACTIVE 的业务 Tenant 补齐默认 entitlement，已存在者只核对不覆盖；任一缺口非零退出，deploy 中止。
+# verify 阶段执行只读 <verify> 回读三类对象。三个组件由 deploy/components/component-deploy.sh 独立部署，
+# 前置条件是本步已完成且 verify 通过的 Core（.design/07 §4.8.9）。
+metering:
+  service: core-bff
+  apply: align-metering
+  verify: verify-metering
+
 # 运行目录中由 start-core.sh 持久派生的 Compose 叠加文件；存在即参与每一次 Compose 调用，
 # 否则重建 agentgateway 会丢掉其派生配置。
 overlays:

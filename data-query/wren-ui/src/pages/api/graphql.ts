@@ -134,6 +134,7 @@ const bootstrapServer = async () => {
     context: ({ req }): IContext => ({
       kailoUser: requestKailoUser(req.headers),
       kailoUsers: components.kailoUserDirectory.loader(),
+      kailoUsage: components.kailoUsage,
       kailoNativeService: requestIsNativeService(req.headers),
       nativeIdentityScope:
         typeof req.headers['x-kailo-native-identity-scope'] === 'string'

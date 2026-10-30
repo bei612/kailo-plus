@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "domain/tenant_quota_setting.schema.json",
   "title": "TenantQuotaSetting",
-  "description": "DD-123: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit OpenMeter entitlement for the platform feature, resetting monthly.",
+  "description": "DD-123/DD-165: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit OpenMeter entitlement for the platform feature, resetting monthly; memberLimitPerPeriod (only knowledge_answers and data_queries) is the per-member cap kept in the same entitlement's metadata. A setting without it removes the member cap.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -16,13 +16,23 @@
       "enum": [
         "agent_tokens",
         "automation_runs",
-        "agent_memory_writes"
+        "agent_memory_writes",
+        "component_tokens",
+        "knowledge_answers",
+        "data_queries",
+        "file_storage"
       ]
     },
     "limitPerPeriod": {
       "type": "integer",
       "minimum": 0,
       "maximum": 1000000000000
+    },
+    "memberLimitPerPeriod": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000000000,
+      "description": "DD-165(3): per-member cap per period; only for quota items with a member dimension (knowledge_answers, data_queries)."
     }
   }
 }

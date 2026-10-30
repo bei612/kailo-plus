@@ -201,7 +201,7 @@ fn category_wire(category: &contracts::ComponentNotificationCategory) -> String 
 /// `issuer`+`subject` → the ACTIVE HUMAN Principal of this Tenant (ACTIVE
 /// ExternalIdentity, HumanIdentity and TenantMembership), the directory scope
 /// of 07 §4.7.4 before the Workspace `discover` check.
-async fn member(
+pub(crate) async fn member(
     conn: &mut PgConnection,
     tenant: Uuid,
     person: &contracts::ComponentPersonRef,
@@ -231,7 +231,7 @@ fn rate_per_minute() -> i64 {
 }
 
 /// Per-binding serialisation of idempotency and the rate window.
-fn binding_lock(binding: Uuid) -> i64 {
+pub(crate) fn binding_lock(binding: Uuid) -> i64 {
     let bytes = binding.as_bytes();
     i64::from_be_bytes([
         bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],

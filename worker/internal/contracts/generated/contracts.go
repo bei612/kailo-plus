@@ -394,6 +394,21 @@
 //    componentSearchQuery, err := UnmarshalComponentSearchQuery(bytes)
 //    bytes, err = componentSearchQuery.Marshal()
 //
+//    componentUsageAdmission, err := UnmarshalComponentUsageAdmission(bytes)
+//    bytes, err = componentUsageAdmission.Marshal()
+//
+//    componentUsageAdmissionRequest, err := UnmarshalComponentUsageAdmissionRequest(bytes)
+//    bytes, err = componentUsageAdmissionRequest.Marshal()
+//
+//    componentUsagePage, err := UnmarshalComponentUsagePage(bytes)
+//    bytes, err = componentUsagePage.Marshal()
+//
+//    componentUsageReceipt, err := UnmarshalComponentUsageReceipt(bytes)
+//    bytes, err = componentUsageReceipt.Marshal()
+//
+//    componentUsageReport, err := UnmarshalComponentUsageReport(bytes)
+//    bytes, err = componentUsageReport.Marshal()
+//
 //    conversationOpenRequest, err := UnmarshalConversationOpenRequest(bytes)
 //    bytes, err = conversationOpenRequest.Marshal()
 //
@@ -555,6 +570,9 @@
 //
 //    mCPProbedTool, err := UnmarshalMCPProbedTool(bytes)
 //    bytes, err = mCPProbedTool.Marshal()
+//
+//    memberUsagePage, err := UnmarshalMemberUsagePage(bytes)
+//    bytes, err = memberUsagePage.Marshal()
 //
 //    moderationAccessView, err := UnmarshalModerationAccessView(bytes)
 //    bytes, err = moderationAccessView.Marshal()
@@ -2518,6 +2536,56 @@ func (r *ComponentSearchQuery) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalComponentUsageAdmission(data []byte) (ComponentUsageAdmission, error) {
+	var r ComponentUsageAdmission
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentUsageAdmission) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentUsageAdmissionRequest(data []byte) (ComponentUsageAdmissionRequest, error) {
+	var r ComponentUsageAdmissionRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentUsageAdmissionRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentUsagePage(data []byte) (ComponentUsagePage, error) {
+	var r ComponentUsagePage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentUsagePage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentUsageReceipt(data []byte) (ComponentUsageReceipt, error) {
+	var r ComponentUsageReceipt
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentUsageReceipt) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentUsageReport(data []byte) (ComponentUsageReport, error) {
+	var r ComponentUsageReport
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentUsageReport) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalConversationOpenRequest(data []byte) (ConversationOpenRequest, error) {
 	var r ConversationOpenRequest
 	err := json.Unmarshal(data, &r)
@@ -3055,6 +3123,16 @@ func UnmarshalMCPProbedTool(data []byte) (MCPProbedTool, error) {
 }
 
 func (r *MCPProbedTool) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalMemberUsagePage(data []byte) (MemberUsagePage, error) {
+	var r MemberUsagePage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *MemberUsagePage) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -7508,6 +7586,8 @@ type ComponentNotificationDelivery struct {
 //
 // 组件以 OIDC issuer + subject 指称 Kailo 成员（与 07 §4.7.4 成员目录 identities[] 同值）；Core 只在该 binding
 // 当前目录范围内解析。
+//
+// count meter 必填、file_storage_bytes 不得出现；须在该 binding 当前目录范围内。
 type ComponentPersonRef struct {
 	Issuer  string `json:"issuer"`
 	Subject string `json:"subject"`
@@ -7650,6 +7730,73 @@ type ComponentSearchQuery struct {
 	Limit  *int64  `json:"limit,omitempty"`
 	Locale *string `json:"locale,omitempty"`
 	Q      string  `json:"q"`
+}
+
+// DD-165(3)：额度准入结论。OpenMeter 不可读时 Core 以 503 回应而不给出结论，组件不得放行。组件可把 ALLOWED 缓存至多 60 秒。
+type ComponentUsageAdmission struct {
+	Decision ComponentUsageDecision `json:"decision"`
+	// 该额度项当前周期的结束时刻（RFC3339）；没有 entitlement 时不给出。
+	PeriodResetAt *string `json:"periodResetAt,omitempty"`
+}
+
+// DD-165、07 §4.8.9：组件在动作开始前向 POST
+// /service/v1/component-usage/bindings/{bindingId}/admission 询问额度。身份、前提与 meter
+// 类别规则同上报；未知字段整体拒绝。
+type ComponentUsageAdmissionRequest struct {
+	// count meter 必填、file_storage_bytes 不得出现；须在该 binding 当前目录范围内。
+	Member   *ComponentPersonRef `json:"member,omitempty"`
+	MeterKey ComponentUsageMeter `json:"meterKey"`
+}
+
+// DD-165(4)：GET /api/v1/usage/components?from=&to=，Tenant 在区间内按组件（binding）拆分的 committed
+// usage。调用方须持有 Tenant audit permission，每次 fresh Check。数值直接读 OpenMeter（group_by
+// component_binding_id），不复制成账本；缺失事实以确定状态表达。
+type ComponentUsagePage struct {
+	// RFC3339，含
+	From   string                `json:"from"`
+	Meters []ComponentMeterUsage `json:"meters"`
+	// RFC3339，不含
+	To string `json:"to"`
+}
+
+type ComponentMeterUsage struct {
+	// 原生 meter 的聚合方式原文
+	Aggregation *string                 `json:"aggregation,omitempty"`
+	Bindings    []ComponentBindingUsage `json:"bindings"`
+	// 随 Core 固定的组件 meter 键
+	MeterKey string          `json:"meterKey"`
+	State    MeterUsageState `json:"state"`
+}
+
+type ComponentBindingUsage struct {
+	BindingID          string              `json:"bindingId"`
+	NativePageCategory *NativePageCategory `json:"nativePageCategory,omitempty"`
+	// OpenMeter 返回的十进制原文
+	Quantity string `json:"quantity"`
+	// Workspace 级 binding 的 Workspace；Tenant 级 binding 不给出
+	WorkspaceID *string `json:"workspaceId,omitempty"`
+}
+
+// DD-165：上报回执。新建 201、同键同内容重复 200（duplicate=true）。usageEventId 是 Core UsageEvent 与 OpenMeter
+// event 的同一 ID；回执不表示 OpenMeter 已存储。
+type ComponentUsageReceipt struct {
+	Duplicate    bool   `json:"duplicate"`
+	UsageEventID string `json:"usageEventId"`
+}
+
+// DD-165、07 §4.8.9：组件以其成员目录 client 的 client-credentials 令牌向 Core 服务监听面 POST
+// /service/v1/component-usage/bindings/{bindingId}/reports 上报的一条已发生用量。Core 写
+// COMPONENT_REPORT UsageEvent；不建立 ActionExecution、不授予权限；未知字段整体拒绝。
+type ComponentUsageReport struct {
+	// 1–128 个字母、数字、. _ : -，在该 binding 内唯一；同键同内容返回首次结果，同键异内容 409。
+	IdempotencyKey string `json:"idempotencyKey"`
+	// count meter 必填、file_storage_bytes 不得出现；须在该 binding 当前目录范围内。
+	Member   *ComponentPersonRef `json:"member,omitempty"`
+	MeterKey ComponentUsageMeter `json:"meterKey"`
+	// RFC3339，不晚于 Core 当前时刻 5 分钟，不早于 7 天前。
+	OccurredAt string `json:"occurredAt"`
+	// 非负整数；count meter 恰为 1，file_storage_bytes 为字节数且不超过 10^15。
+	Quantity int64 `json:"quantity"`
 }
 
 type ConversationPage struct {
@@ -8572,6 +8719,22 @@ type MCPOauthStartRequest struct {
 	Transport       MCPConnectionTransport `json:"transport"`
 }
 
+// DD-165(4)：GET /api/v1/usage/me，当前会话成员本人的用量（「我的用量」）。只列带成员维度的额度项；数值直接读 OpenMeter（按 Customer
+// 与本人 member_principal_id 过滤），不含组织上限与组织已用。
+type MemberUsagePage struct {
+	Items []MemberUsageView `json:"items"`
+}
+
+type MemberUsageView struct {
+	Feature TenantQuotaFeature `json:"feature"`
+	// 本人每期上限；未设置成员上限时不给出。
+	MemberLimitPerPeriod *int64           `json:"memberLimitPerPeriod,omitempty"`
+	PeriodResetAt        *string          `json:"periodResetAt,omitempty"`
+	State                MemberUsageState `json:"state"`
+	// 本人本期已用（OpenMeter committed）；state 为 UNAVAILABLE 时不给出。
+	Used *float64 `json:"used,omitempty"`
+}
+
 // GET /api/v1/moderation/access（DD-125(2)）：原版只对 Community owner/admin 显示的审核入口在 Kailo 对应
 // Tenant manage。canModerate 是与 moderation.ban 准入同一条 fresh 判定（目录开放、非 Platform Catalog、scope
 // guard 与 tenant manage）的提示，不是授权票据，提交时仍完整重新准入；它不读取任何限制或队列事实。
@@ -9238,11 +9401,16 @@ type TenantProfileInput struct {
 
 // 仅 tenant.quota.set（DD-123）
 //
-// DD-123: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
-// OpenMeter entitlement for the platform feature, resetting monthly.
+// DD-123/DD-165: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
+// OpenMeter entitlement for the platform feature, resetting monthly; memberLimitPerPeriod
+// (only knowledge_answers and data_queries) is the per-member cap kept in the same
+// entitlement's metadata. A setting without it removes the member cap.
 type TenantQuotaSetting struct {
 	Feature        TenantQuotaFeature `json:"feature"`
 	LimitPerPeriod int64              `json:"limitPerPeriod"`
+	// DD-165(3): per-member cap per period; only for quota items with a member dimension
+	// (knowledge_answers, data_queries).
+	MemberLimitPerPeriod *int64 `json:"memberLimitPerPeriod,omitempty"`
 }
 
 // 仅 workspace.canvas.set 且必带（DD-125(4)）：目标 Workspace 由 workspaceId 给出，须带
@@ -10178,8 +10346,8 @@ type TenantProfileView struct {
 	Version            int64   `json:"version"`
 }
 
-// DD-123: platform quota items of the Tenant read from OpenMeter (the only authority).
-// Tenant admin and auditor only.
+// DD-123/DD-165: platform quota items of the Tenant read from OpenMeter (the only
+// authority). Tenant admin and auditor only.
 type TenantQuotaPage struct {
 	Quotas []TenantQuotaView `json:"quotas"`
 	// Present only when the caller may set quotas now (Tenant manage); auditors read without it.
@@ -10191,8 +10359,11 @@ type TenantQuotaView struct {
 	HardLimit      bool               `json:"hardLimit"`
 	HasAccess      bool               `json:"hasAccess"`
 	LimitPerPeriod *int64             `json:"limitPerPeriod,omitempty"`
-	PeriodResetAt  *string            `json:"periodResetAt,omitempty"`
-	Usage          *float64           `json:"usage,omitempty"`
+	// DD-165(3): per-member cap kept in the entitlement metadata; absent when no member cap is
+	// set.
+	MemberLimitPerPeriod *int64   `json:"memberLimitPerPeriod,omitempty"`
+	PeriodResetAt        *string  `json:"periodResetAt,omitempty"`
+	Usage                *float64 `json:"usage,omitempty"`
 }
 
 // PUT /api/v1/user-state/threads 的请求体（DD-40、DD-125(1)、03
@@ -11692,9 +11863,9 @@ const (
 type NativePageCategory string
 
 const (
-	DataQuery   NativePageCategory = "data_query"
-	FileStorage NativePageCategory = "file_storage"
-	Knowledge   NativePageCategory = "knowledge"
+	DataQuery                     NativePageCategory = "data_query"
+	Knowledge                     NativePageCategory = "knowledge"
+	NativePageCategoryFileStorage NativePageCategory = "file_storage"
 )
 
 // DD-138(6)：管理面的可写性（07 §4.8.5）。EDITABLE 为组件自有、页内可改的设置；READ_ONLY 为由 Kailo
@@ -12361,12 +12532,12 @@ const (
 type ActionGateState string
 
 const (
+	ActionGateStateALLOWED    ActionGateState = "ALLOWED"
 	ActionGateStateDENIED     ActionGateState = "DENIED"
 	ActionGateStateEVALUATING ActionGateState = "EVALUATING"
 	ActionGateStateEXPIRED    ActionGateState = "EXPIRED"
 	ActionGateStateREVOKED    ActionGateState = "REVOKED"
 	ActionGateStateWAITING    ActionGateState = "WAITING"
-	Allowed                   ActionGateState = "ALLOWED"
 )
 
 // TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close
@@ -12614,6 +12785,43 @@ type ComponentSearchSourceState string
 const (
 	Answered                              ComponentSearchSourceState = "ANSWERED"
 	ComponentSearchSourceStateUNAVAILABLE ComponentSearchSourceState = "UNAVAILABLE"
+)
+
+// DD-165(3)：组件额度准入结论（CHECK，不预留）。TENANT_QUOTA_EXHAUSTED：该 Tenant
+// 的额度项无访问；MEMBER_QUOTA_EXHAUSTED：设置了成员上限且本人本期已用不小于它。两者组件都拒绝该动作且不产生原生副作用。QUOTA_NOT_CONFIGURED：该
+// Tenant 的额度项还没有 entitlement（发布对齐未完成，DD-165(5)），组件同样拒绝并提示额度尚未在 Kailo 中完成登记。
+type ComponentUsageDecision string
+
+const (
+	ComponentUsageDecisionALLOWED ComponentUsageDecision = "ALLOWED"
+	MemberQuotaExhausted          ComponentUsageDecision = "MEMBER_QUOTA_EXHAUSTED"
+	QuotaNotConfigured            ComponentUsageDecision = "QUOTA_NOT_CONFIGURED"
+	TenantQuotaExhausted          ComponentUsageDecision = "TENANT_QUOTA_EXHAUSTED"
+)
+
+// DD-165、07 §4.8.9：组件可上报或询问准入的平台 meter，随 Core 固定。knowledge_answer_count 只属 knowledge
+// 呈现类别、data_query_count 只属 data_query、file_storage_bytes 只属
+// file_storage；component_model_tokens 只来自 Gateway durable usage，不可上报。
+type ComponentUsageMeter string
+
+const (
+	DataQueryCount       ComponentUsageMeter = "data_query_count"
+	FileStorageBytes     ComponentUsageMeter = "file_storage_bytes"
+	KnowledgeAnswerCount ComponentUsageMeter = "knowledge_answer_count"
+)
+
+// 一个已登记 meter 在所选区间内的 OpenMeter committed usage 查询结论（.design/11 §7）。COMMITTED：原生查询返回该
+// Customer 的聚合值；NO_COMMITTED_USAGE：原生查询成功且区间内没有已存储事件；WORKSPACE_DIMENSION_UNAVAILABLE：原生
+// meter 未声明 workspace_id 维度，不能按 Workspace 归因；METER_NOT_REGISTERED：动作登记的 meter 在 OpenMeter
+// 中不存在或不唯一；UNAVAILABLE：查询失败或结果不可查证。后三者都不显示数值。
+type MeterUsageState string
+
+const (
+	MeterNotRegistered            MeterUsageState = "METER_NOT_REGISTERED"
+	MeterUsageStateCOMMITTED      MeterUsageState = "COMMITTED"
+	MeterUsageStateUNAVAILABLE    MeterUsageState = "UNAVAILABLE"
+	NoCommittedUsage              MeterUsageState = "NO_COMMITTED_USAGE"
+	WorkspaceDimensionUnavailable MeterUsageState = "WORKSPACE_DIMENSION_UNAVAILABLE"
 )
 
 type ConversationViewState string
@@ -12904,6 +13112,30 @@ const (
 	MCPOauthAttemptStatePENDING   MCPOauthAttemptState = "PENDING"
 )
 
+type TenantQuotaFeature string
+
+const (
+	AgentMemoryWrites             TenantQuotaFeature = "agent_memory_writes"
+	AgentTokens                   TenantQuotaFeature = "agent_tokens"
+	AutomationRuns                TenantQuotaFeature = "automation_runs"
+	ComponentTokens               TenantQuotaFeature = "component_tokens"
+	DataQueries                   TenantQuotaFeature = "data_queries"
+	KnowledgeAnswers              TenantQuotaFeature = "knowledge_answers"
+	TenantQuotaFeatureFileStorage TenantQuotaFeature = "file_storage"
+)
+
+// DD-165(4)：成员本人在一个额度项上的当前状态。AVAILABLE：可用；MEMBER_LIMIT_REACHED：本人已达成员上限；TENANT_EXHAUSTED：组织额度已用完（不显示组织数字）；UNAVAILABLE：OpenMeter
+// 不可读或映射不唯一，不显示数值。NOT_CONFIGURED：该额度项尚未在 Kailo 中完成登记（DD-165(5)），不显示数值。
+type MemberUsageState string
+
+const (
+	MemberLimitReached            MemberUsageState = "MEMBER_LIMIT_REACHED"
+	MemberUsageStateAVAILABLE     MemberUsageState = "AVAILABLE"
+	MemberUsageStateNOTCONFIGURED MemberUsageState = "NOT_CONFIGURED"
+	MemberUsageStateUNAVAILABLE   MemberUsageState = "UNAVAILABLE"
+	TenantExhausted               MemberUsageState = "TENANT_EXHAUSTED"
+)
+
 // 原 Buzz NIP-56 举报类型（buzz-relay handlers/report.rs::REPORT_TYPES，SF-BUZ-52）。线格式即 kind 1984
 // 目标标签第三元素，Relay 只接受这七个值（DD-125(2)）。
 type ModerationReportType string
@@ -13029,14 +13261,6 @@ type ModerationResolutionStatus string
 const (
 	ModerationResolutionStatusDismissed ModerationResolutionStatus = "dismissed"
 	ModerationResolutionStatusResolved  ModerationResolutionStatus = "resolved"
-)
-
-type TenantQuotaFeature string
-
-const (
-	AgentMemoryWrites TenantQuotaFeature = "agent_memory_writes"
-	AgentTokens       TenantQuotaFeature = "agent_tokens"
-	AutomationRuns    TenantQuotaFeature = "automation_runs"
 )
 
 // DD-158(2)：运营方分拣状态 NEW→TRIAGED→CLOSED；超过 180 天的 CLOSED 记录由 Core 清除。
@@ -13234,8 +13458,8 @@ const (
 type PushAvailability string
 
 const (
-	Configured    PushAvailability = "CONFIGURED"
-	NotConfigured PushAvailability = "NOT_CONFIGURED"
+	Configured                    PushAvailability = "CONFIGURED"
+	PushAvailabilityNOTCONFIGURED PushAvailability = "NOT_CONFIGURED"
 )
 
 // DD-151(1)：设备推送登记的提供方。APNS 为 iOS，FCM 为 Android。
@@ -13413,20 +13637,6 @@ const (
 	UsageCustomerStateNOTPROVISIONED UsageCustomerState = "NOT_PROVISIONED"
 	UsageCustomerStateREVOKED        UsageCustomerState = "REVOKED"
 	UsageCustomerStateUNAVAILABLE    UsageCustomerState = "UNAVAILABLE"
-)
-
-// 一个已登记 meter 在所选区间内的 OpenMeter committed usage 查询结论（.design/11 §7）。COMMITTED：原生查询返回该
-// Customer 的聚合值；NO_COMMITTED_USAGE：原生查询成功且区间内没有已存储事件；WORKSPACE_DIMENSION_UNAVAILABLE：原生
-// meter 未声明 workspace_id 维度，不能按 Workspace 归因；METER_NOT_REGISTERED：动作登记的 meter 在 OpenMeter
-// 中不存在或不唯一；UNAVAILABLE：查询失败或结果不可查证。后三者都不显示数值。
-type MeterUsageState string
-
-const (
-	MeterNotRegistered            MeterUsageState = "METER_NOT_REGISTERED"
-	MeterUsageStateCOMMITTED      MeterUsageState = "COMMITTED"
-	MeterUsageStateUNAVAILABLE    MeterUsageState = "UNAVAILABLE"
-	NoCommittedUsage              MeterUsageState = "NO_COMMITTED_USAGE"
-	WorkspaceDimensionUnavailable MeterUsageState = "WORKSPACE_DIMENSION_UNAVAILABLE"
 )
 
 // 原 Buzz 频道消息语义。缺省 STREAM 保持旧请求；不允许调用者提交任意事件 kind。
