@@ -1947,7 +1947,7 @@ export const platformMessages = {
   "platform.tab.members": { en: "Members", "zh-CN": "成员" },
   "members.search": { en: "Search members", "zh-CN": "搜索成员" },
   "members.noMatch": { en: "No members match your search.", "zh-CN": "没有匹配的成员。" },
-  "members.description": { en: "People in this channel and their verified protocol identities.", "zh-CN": "当前频道的成员与已验证协议身份。" },
+  "members.description": { en: "Members of this workspace and their verified identities.", "zh-CN": "此工作区的成员及其已验证的身份。" },
   "members.openProfile": { en: "Open profile for {name}", "zh-CN": "打开{name}的资料" },
   "members.actions": { en: "Actions for {name}", "zh-CN": "管理{name}" },
   "channelMembers.view": { en: "View channel members ({count})", "zh-CN": "查看频道成员（{count}）" },
