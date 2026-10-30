@@ -1,8 +1,5 @@
 import { useState, useCallback } from 'react';
-import {
-  REDSHIFT_AUTH_METHOD,
-  DATABRICKS_AUTH_METHOD,
-} from '@/utils/enum';
+import { REDSHIFT_AUTH_METHOD, DATABRICKS_AUTH_METHOD } from '@/utils/enum';
 import { useSaveDataSourceMutation } from '@/apollo/client/graphql/dataSource.generated';
 import { DataSourceName } from '@/apollo/client/graphql/__types__';
 

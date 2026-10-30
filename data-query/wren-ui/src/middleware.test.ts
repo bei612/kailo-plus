@@ -1596,9 +1596,7 @@ describe('native instance identity boundary', () => {
     '/_next/static/chunks/pages/kailo-admin/modeling.js',
     '/kailo/kailo-embed.js',
   ])('leaves %s to the original identity boundary', async (path) => {
-    const response = await middleware(
-      request(path, `Bearer ${await token()}`),
-    );
+    const response = await middleware(request(path, `Bearer ${await token()}`));
     expect(response.status).not.toBe(307);
   });
 

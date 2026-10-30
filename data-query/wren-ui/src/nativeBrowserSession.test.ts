@@ -312,11 +312,7 @@ integration('native browser OIDC and original Next admission', () => {
     const callback = await login(request);
     expect([302, 303]).toContain(callback.status);
     expect(callback.headers.get('set-cookie')).toContain('HttpOnly');
-    for (const path of [
-      '/home',
-      '/api/graphql',
-      '/_next/static/test.js',
-    ]) {
+    for (const path of ['/home', '/api/graphql', '/_next/static/test.js']) {
       const result = await request(path, {
         headers: {
           'sec-fetch-mode': 'same-origin',
