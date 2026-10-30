@@ -256,6 +256,15 @@ pub fn router(state: ServiceState) -> Router {
             "/service/v1/component-directory/bindings/{binding}/members",
             axum::routing::get(crate::component_directory::members),
         )
+        // DD-164(4)②⑥, 07 §4.7.4: share intents and convergence receipts, same identity.
+        .route(
+            "/service/v1/component-directory/bindings/{binding}/share-intents",
+            post(crate::governance::component_share::create_intent),
+        )
+        .route(
+            "/service/v1/component-directory/bindings/{binding}/receipt",
+            axum::routing::put(crate::governance::component_share::put_receipt),
+        )
         // DD-138(4), 07 §4.8.3: notification delivery into the Kailo inbox
         // with the same directory-client service identity.
         .route(

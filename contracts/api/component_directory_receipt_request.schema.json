@@ -14,9 +14,7 @@
   ],
   "properties": {
     "schema": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2
+      "type": "integer"
     },
     "directoryVersion": {
       "type": "string",
@@ -31,7 +29,6 @@
     },
     "failures": {
       "type": "array",
-      "maxItems": 100,
       "items": {
         "title": "ComponentReceiptFailure",
         "type": "object",

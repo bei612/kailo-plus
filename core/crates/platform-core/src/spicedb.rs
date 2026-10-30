@@ -64,6 +64,9 @@ pub enum Subject {
     Principal(String),
     /// `tenant:<tenant_id>#member`
     TenantMembers(String),
+    /// `workspace:<workspace_id>#member`：DD-164(4) 只写在 `component.shared_object` 的
+    /// reader/editor 上，代表该 Workspace 的每个成员。
+    WorkspaceMembers(String),
 }
 
 impl Subject {
@@ -75,6 +78,11 @@ impl Subject {
             }
             Self::TenantMembers(tenant) => {
                 let object = serde_json::json!({ "objectType": "tenant", "objectId": tenant });
+                serde_json::json!({ "object": object, "optionalRelation": MEMBER_RELATION })
+            }
+            Self::WorkspaceMembers(workspace) => {
+                let object =
+                    serde_json::json!({ "objectType": "workspace", "objectId": workspace });
                 serde_json::json!({ "object": object, "optionalRelation": MEMBER_RELATION })
             }
         }
@@ -94,6 +102,7 @@ impl Subject {
         match (kind, set) {
             ("principal", None) => Ok(Some(Self::Principal(id.to_owned()))),
             ("tenant", Some(MEMBER_RELATION)) => Ok(Some(Self::TenantMembers(id.to_owned()))),
+            ("workspace", Some(MEMBER_RELATION)) => Ok(Some(Self::WorkspaceMembers(id.to_owned()))),
             (_, None) => Ok(None),
             (_, Some(_)) => Err(SpiceDbError::Unavailable("未知主体集".into())),
         }
@@ -105,6 +114,12 @@ impl Subject {
         if let Some(id) = text.strip_prefix("principal:") {
             return canonical(id).then(|| Self::Principal(id.to_owned()));
         }
+        if let Some(id) = text
+            .strip_prefix("workspace:")
+            .and_then(|rest| rest.strip_suffix("#member"))
+        {
+            return canonical(id).then(|| Self::WorkspaceMembers(id.to_owned()));
+        }
         let id = text.strip_prefix("tenant:")?.strip_suffix("#member")?;
         canonical(id).then(|| Self::TenantMembers(id.to_owned()))
     }
@@ -115,6 +130,9 @@ impl std::fmt::Display for Subject {
         match self {
             Self::Principal(id) => write!(f, "principal:{id}"),
             Self::TenantMembers(tenant) => write!(f, "tenant:{tenant}#{MEMBER_RELATION}"),
+            Self::WorkspaceMembers(workspace) => {
+                write!(f, "workspace:{workspace}#{MEMBER_RELATION}")
+            }
         }
     }
 }
@@ -143,7 +161,7 @@ impl Relationship {
     pub fn principal(&self) -> Option<&str> {
         match &self.subject {
             Subject::Principal(id) => Some(id.as_str()),
-            Subject::TenantMembers(_) => None,
+            Subject::TenantMembers(_) | Subject::WorkspaceMembers(_) => None,
         }
     }
 
@@ -1169,6 +1187,16 @@ mod tests {
         let set = read(members("t")).unwrap().unwrap();
         assert_eq!(set.subject, Subject::TenantMembers("t".into()));
         assert_eq!(set.principal(), None);
+        // DD-164(4)：component.shared_object 的 Workspace 成员授予
+        let workspace_set = json!({
+            "object": { "objectType": "workspace", "objectId": "w" },
+            "optionalRelation": "member",
+        });
+        let set = read(workspace_set.clone()).unwrap().unwrap();
+        assert_eq!(set.subject, Subject::WorkspaceMembers("w".into()));
+        assert_eq!(set.principal(), None);
+        assert_eq!(set.subject.to_json(), workspace_set);
+        assert_eq!(set.to_string(), "resource:tool#consumer@workspace:w#member");
         // object 箭头不是授予主体，读者不拿到它
         assert!(read(object("tenant", "t")).unwrap().is_none());
         assert!(read(object("workspace", "w")).unwrap().is_none());
@@ -1193,6 +1221,7 @@ mod tests {
         for subject in [
             Subject::Principal("p".into()),
             Subject::TenantMembers("t".into()),
+            Subject::WorkspaceMembers("w".into()),
         ] {
             assert_eq!(Subject::parse(&subject.to_string()), Some(subject));
         }
@@ -1202,7 +1231,10 @@ mod tests {
             "tenant:t",
             "tenant:t#admin",
             "tenant:#member",
-            "workspace:w#member",
+            // DD-164(4)：Workspace 只有成员主体集
+            "workspace:w",
+            "workspace:w#admin",
+            "workspace:#member",
         ] {
             assert_eq!(Subject::parse(bad), None, "{bad}");
         }

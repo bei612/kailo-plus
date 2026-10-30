@@ -531,6 +531,8 @@ export enum ProtocolSessionMode {
 }
 
 /**
+ * Kailo UI language (REQ-08).
+ *
  * 系统通知文案的语言；通知不含正文。
  */
 export enum ProtocolSessionLocale {
@@ -905,12 +907,14 @@ export interface AccountPreferences {
      */
     accent?: string;
     /**
-     * DD-138 contributed preference values by key (07 §4.8.2 key format): boolean or an option
-     * value of 1-32 [A-Za-z0-9._-]. At most 64 keys.
+     * DD-138 contributed preference values, at most 64, ordered by key.
      */
-    componentPreferences: { [key: string]: AccountPreferencesComponentPreference };
+    componentPreferences: AccountComponentPreference[];
     followSystem?:        boolean;
-    locale?:              ProtocolSessionLocale;
+    /**
+     * Kailo UI language (REQ-08).
+     */
+    locale?: ProtocolSessionLocale;
     /**
      * Theme name, 1-64 of [a-z0-9-].
      */
@@ -922,23 +926,41 @@ export interface AccountPreferences {
     version: number;
 }
 
-export type AccountPreferencesComponentPreference = boolean | string;
+export interface AccountComponentPreference {
+    /**
+     * 07 §4.8.2 preference key.
+     */
+    key: string;
+    /**
+     * BOOLEAN as true/false, ENUM as the option value (1-32 [A-Za-z0-9._-]).
+     */
+    value: string;
+}
 
 /**
  * PUT /api/v1/account/preferences (DD-164(7)): compare-and-swap on version; absent fields
- * are unchanged, componentPreferences entries are merged by key and a null value removes
- * the key. 409 returns the current AccountPreferences.
+ * are unchanged, componentPreferences entries are merged by key and an entry without value
+ * removes the key. 409 returns the current AccountPreferences.
  */
 export interface AccountPreferencesUpdate {
     accent?:               string;
-    componentPreferences?: { [key: string]: AccountPreferencesUpdateComponentPreference };
+    componentPreferences?: AccountComponentPreferenceChange[];
     expectedVersion:       number;
     followSystem?:         boolean;
-    locale?:               ProtocolSessionLocale;
-    theme?:                string;
+    /**
+     * Kailo UI language (REQ-08).
+     */
+    locale?: ProtocolSessionLocale;
+    theme?:  string;
 }
 
-export type AccountPreferencesUpdateComponentPreference = boolean | null | string;
+export interface AccountComponentPreferenceChange {
+    key: string;
+    /**
+     * Absent removes the key.
+     */
+    value?: string;
+}
 
 /**
  * GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
@@ -3875,19 +3897,17 @@ export enum ComponentReceiptOutcome {
  * (DD-164(4)⑥): the latest receipt compared with the current directory version.
  */
 export interface ComponentDirectoryReceiptView {
-    appliedAt?:      string;
-    bindingId:       string;
+    appliedAt?: string;
+    bindingId:  string;
+    /**
+     * The directory version last served to the component for the reported schema.
+     */
     currentVersion?: string;
     failures?:       ComponentReceiptFailureView[];
     receiptVersion?: string;
     receivedAt?:     string;
     schema?:         number;
-    /**
-     * CONVERGED: receipt APPLIED for the current version; PENDING: different version for at
-     * most two read intervals; NOT_CONVERGED: different for longer; FAILED: latest receipt
-     * FAILED; NO_RECEIPT: never reported.
-     */
-    state: ComponentDirectoryReceiptViewState;
+    state:           ComponentDirectoryReceiptState;
 }
 
 export interface ComponentReceiptFailureView {
@@ -3897,11 +3917,12 @@ export interface ComponentReceiptFailureView {
 }
 
 /**
- * CONVERGED: receipt APPLIED for the current version; PENDING: different version for at
- * most two read intervals; NOT_CONVERGED: different for longer; FAILED: latest receipt
- * FAILED; NO_RECEIPT: never reported.
+ * DD-164(4)⑥: CONVERGED: the latest receipt is APPLIED for the version last served to the
+ * component; PENDING: a newer version was served within two read intervals; NOT_CONVERGED:
+ * the component has not applied what it was served for longer, or stopped reading for more
+ * than two intervals; FAILED: the latest receipt is FAILED; NO_RECEIPT: never reported.
  */
-export enum ComponentDirectoryReceiptViewState {
+export enum ComponentDirectoryReceiptState {
     Converged = "CONVERGED",
     Failed = "FAILED",
     NoReceipt = "NO_RECEIPT",
@@ -3998,7 +4019,7 @@ export interface ComponentMemberDirectoryV2 {
     directoryVersion: string;
     members:          ComponentDirectoryV2Member[];
     /**
-     * Always 2 (quicktype rejects const).
+     * Always 2.
      */
     schema: number;
     /**
