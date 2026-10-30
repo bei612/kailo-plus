@@ -1,3 +1,5 @@
+// DD-122 / DD-170 (.design/20 §16.6): granting and revoking read access confirm in a dialog
+// that names the pair; an UNKNOWN outcome keeps the exact command for a re-check only.
 import {
   ActionDispatchState, ActionGateState, AgentInstallationState, AgentInstallationViewAgentPrincipalState, ApplicationReadResourceDirection,
   ReasonCode, ResourceGrantPermission, ResourceState,
@@ -13,6 +15,9 @@ import { TransportError, writeFailure, type WriteFailure } from "../transport";
 import { useBffClient, useFailureText, useReasonText, useT } from "./context";
 import { TaskDetail } from "./governance";
 import { Button, Notice, ReadFailure } from "./ui";
+import { ConfirmDialog } from "./confirm-dialog";
+import { RefreshButton } from "./page-layout";
+import { OutcomeNotice, PRIMARY_ACTION_CLASS, UnknownInDialog } from "./roles";
 import { useLoad } from "./use-load";
 
 const text = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
@@ -146,11 +151,12 @@ export function ServiceReadPermissions({binding,onLocked,onBack}: {
   const [intent,setIntent] = useState<ActionCommand|null>(null); const [receipt,setReceipt] = useState<ActionSubmission|null>(null);
   const [failure,setFailure] = useState<WriteFailure|null>(null); const [busy,setBusy] = useState(false);
   const [revision,setRevision] = useState(0); const [task,setTask] = useState<string|null>(null);
+  const [dialog,setDialog] = useState(false);
   const sending = useRef(false); const epoch = useRef(0);
   const currentClient = useRef(client); currentClient.current = client;
   const intentClient = useRef<BffClient|null>(null);
   useEffect(() => {
-    epoch.current++; intentClient.current=null; sending.current=false; setSource(null); setReceiver(null); setIntent(null); setReceipt(null); setFailure(null); setBusy(false); setTask(null); onLocked(false);
+    epoch.current++; intentClient.current=null; sending.current=false; setSource(null); setReceiver(null); setIntent(null); setDialog(false); setReceipt(null); setFailure(null); setBusy(false); setTask(null); onLocked(false);
     setReceiverKind("service"); setAgent(null); setPermission(ResourceGrantPermission.Read);
     return () => { epoch.current++; };
   }, [client,binding.bindingId,onLocked]);
@@ -158,6 +164,7 @@ export function ServiceReadPermissions({binding,onLocked,onBack}: {
     || receipt?.gateState === ActionGateState.Evaluating
     || receipt?.gateState === ActionGateState.Allowed && receipt.dispatchState === ActionDispatchState.NotDispatched;
   const locked = !!intent || busy;
+  const grant = intent?.actionKey === "resource.grant_read";
   const toAgent = receiverKind === "agent";
   const compatible = !!source && source.owner === client && (toAgent ? !!agent && agent.owner === client
     : !!receiver && receiver.owner === client
@@ -175,7 +182,7 @@ export function ServiceReadPermissions({binding,onLocked,onBack}: {
     if (!command) return;
     intentClient.current=client;
     setReceipt(null); setFailure(null); onLocked(true);
-    setIntent({...command,...(grant?{}:{explicitConfirmation:true})});
+    setIntent({...command,...(grant?{}:{explicitConfirmation:true})}); setDialog(true);
   };
   const submit = async () => {
     if (!intent || sending.current || intentClient.current !== client) return;
@@ -195,12 +202,12 @@ export function ServiceReadPermissions({binding,onLocked,onBack}: {
       setReceipt(next); setFailure(null);
       if (next.dispatchState !== ActionDispatchState.Unknown && next.gateState !== ActionGateState.Evaluating
         && !(next.gateState === ActionGateState.Allowed && next.dispatchState === ActionDispatchState.NotDispatched)) {
-        setIntent(null); onLocked(false); setRevision(value=>value+1);
+        setIntent(null); setDialog(false); onLocked(false); setRevision(value=>value+1);
       }
     } catch(error) {
       if (epoch.current === captured && currentClient.current === client && !unknown) {
         const next = writeFailure(error); setFailure(next);
-        if (next.kind !== "unknown") { setIntent(null); onLocked(false); }
+        if (next.kind !== "unknown") { setIntent(null); setDialog(false); onLocked(false); }
       }
     } finally { if (epoch.current === captured) { sending.current=false; setBusy(false); } }
   };
@@ -227,28 +234,31 @@ export function ServiceReadPermissions({binding,onLocked,onBack}: {
         </label> : null}
         <ResourcePicker binding={binding} direction={ApplicationReadResourceDirection.Source} locked={locked} revision={revision} onSelected={setSource}/>
       </fieldset>
-      {intent ? <div role="group" aria-label={t("bindings.review")} className="my-3 flex flex-col gap-2">
-        <p className="text-sm">{t(intent.actionKey==="resource.grant_read"?"bindings.read.approval"
-          :intent.grantPermission?"bindings.read.agentRevokeWarning":"bindings.read.revokeWarning")}</p>
-        <p className="break-all text-sm">{source?.resource.nativeRef} → {intent.grantPermission
+      <div className="my-3 flex flex-wrap gap-2">
+        <Button className={PRIMARY_ACTION_CLASS} disabled={locked||!compatible} onClick={()=>prepare(true)}>{t(toAgent?"bindings.read.agentGrant":"bindings.read.grant")}</Button>
+        <Button className="text-danger-text" disabled={locked||!compatible} onClick={()=>prepare(false)}>{t(toAgent?"bindings.read.agentRevoke":"bindings.read.revoke")}</Button>
+      </div>
+      {intent && unknown ? <OutcomeNotice tone="alert" action={<Button disabled={busy} onClick={()=>void submit()}>{t("agents.retry")}</Button>}>
+        {t("agents.unknown",{operation:failure?.kind==="unknown"?failure.operationId??receipt?.operationId??"—":receipt?.operationId??"—"})}
+      </OutcomeNotice> : null}
+      <ConfirmDialog open={dialog && intent !== null} testId="service-read-dialog" pending={busy} tone={grant ? "default" : "danger"}
+        onOpenChange={(next)=>{ if (next) return; setDialog(false); if (!unknown) { setIntent(null); onLocked(false); } }}
+        title={t(grant?"adminArea.read.grantTitle":"adminArea.read.revokeTitle")}
+        description={intent ? t(grant?"bindings.read.approval":intent.grantPermission?"bindings.read.agentRevokeWarning":"bindings.read.revokeWarning") : ""}
+        confirmLabel={unknown ? t("agents.retry") : t(grant?"adminArea.read.grantConfirm":"adminArea.read.revokeConfirm")}
+        onConfirm={()=>void submit()}>
+        {intent ? <p className="break-all rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">{source?.resource.nativeRef} → {intent.grantPermission
           ? `${agent ? agentName(agent.installation) : intent.principalId} · ${t(grantPermissionLabels[intent.grantPermission])}`
-          : receiver?.resource.nativeRef}</p>
-        <div className="flex gap-2"><Button disabled={busy} onClick={()=>void submit()}>{t(busy?"platform.loading":unknown?"agents.retry":"platform.confirm")}</Button>
-          {!unknown ? <Button disabled={busy} onClick={()=>{setIntent(null);onLocked(false);}}>{t("platform.cancel")}</Button> : null}</div>
-      </div> : <div className="my-3 flex gap-2">
-        <Button disabled={busy||!compatible} onClick={()=>prepare(true)}>{t(toAgent?"bindings.read.agentGrant":"bindings.read.grant")}</Button>
-        <Button disabled={busy||!compatible} onClick={()=>prepare(false)}>{t(toAgent?"bindings.read.agentRevoke":"bindings.read.revoke")}</Button>
-      </div>}
+          : receiver?.resource.nativeRef}</p> : null}
+        {unknown ? <UnknownInDialog operation={failure?.kind==="unknown"?failure.operationId??receipt?.operationId:receipt?.operationId} /> : null}
+      </ConfirmDialog>
       {!locked && !toAgent && source && receiver && !compatible ? <ReadFailure error={undefined} onRetry={()=>setRevision(value=>value+1)}/> : null}
-      {receipt ? <div role="status" className="break-all text-sm">
-        <p>{unknown?t("agents.unknown",{operation:receipt.operationId}):t("bindings.recorded",{operation:receipt.operationId})}
-          {receipt.reason?` · ${reasonText(receipt.reason)}`:""}</p>
-        <Button onClick={()=>setTask(receipt.actionExecutionId)}>{t("bindings.task")}</Button>
-      </div> : null}
-      {failure ? <p role={failure.kind==="unknown"?"status":"alert"}>{failure.kind==="unknown"
-        ? t("agents.unknown",{operation:failure.operationId??receipt?.operationId??"—"}):failureText(failure)}</p> : null}
-      <div className="mt-3 flex gap-2"><Button disabled={locked} onClick={()=>setRevision(value=>value+1)}>{t("platform.refresh")}</Button>
-        <Button disabled={locked} onClick={onBack}>{t("platform.back")}</Button></div>
+      {receipt && !unknown ? <OutcomeNotice tone="status" action={<Button onClick={()=>setTask(receipt.actionExecutionId)}>{t("bindings.task")}</Button>}>
+        {t("bindings.recorded",{operation:receipt.operationId})}{receipt.reason?` · ${reasonText(receipt.reason)}`:""}
+      </OutcomeNotice> : null}
+      {failure && failure.kind!=="unknown" ? <OutcomeNotice tone="alert">{failureText(failure)}</OutcomeNotice> : null}
+      <div className="mt-3 flex items-center gap-2"><Button disabled={locked} onClick={onBack}>{t("platform.back")}</Button>
+        {locked ? null : <RefreshButton onClick={()=>setRevision(value=>value+1)}/>}</div>
     </div>
   </section>;
 }

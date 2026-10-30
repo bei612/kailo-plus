@@ -2872,6 +2872,27 @@ describe("WorkspaceMembersPage", () => {
   });
 });
 
+async function adminMenuAction(host: HTMLElement, name: string, label: string) {
+  const trigger = host.querySelector<HTMLButtonElement>(`button[aria-label="Actions for ${name}"], button[aria-label="${name} 的操作"]`);
+  if (!trigger) throw new Error(`no row menu for ${name}`);
+  await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  await settle();
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((node) => node.textContent === label);
+  if (!item) throw new Error(`no menu item ${label}`);
+  await click(item);
+}
+async function adminMenuItems(host: HTMLElement, name: string) {
+  const trigger = host.querySelector<HTMLButtonElement>(`button[aria-label="Actions for ${name}"]`);
+  if (!trigger) throw new Error(`no row menu for ${name}`);
+  await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  await settle();
+  const items = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+  await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  await settle();
+  return items.map((node) => ({ label: node.textContent, disabled: node.hasAttribute("data-disabled") }));
+}
+const adminDialog = (id: string) => document.querySelector<HTMLElement>(`[data-testid=${id}]`);
+
 describe("LegacySecretRefManagement", () => {
   const binding = {
     principalId: "00000000-0000-0000-0000-000000000009",
@@ -2879,17 +2900,37 @@ describe("LegacySecretRefManagement", () => {
     kind: "HUMAN",
   };
 
-  it("无 Tenant manage 时入口不出现；读失败不伪装为空列表", async () => {
+  it("无 Tenant manage 时说明需要的角色；未发布时说明未开放；读失败不伪装为空列表", async () => {
     const denied = await mount(transport(() => ({ status: 403, body: {} })), <LegacySecretRefManagement />);
     await settle();
     expect(denied.querySelector("[data-testid=legacy-secret-ref-management]")).toBeNull();
+    expect(denied.querySelector("[data-testid=permission-state]")?.textContent).toContain("Only organization admins can move legacy identity keys.");
     const unpublished = await mount(transport(() => ({ status: 404, body: {} })), <LegacySecretRefManagement />);
     await settle();
     expect(unpublished.querySelector("[data-testid=legacy-secret-ref-management]")).toBeNull();
+    expect(unpublished.textContent).toContain("Not available here");
     const down = await mount(transport(() => ({ status: 503, body: {} })), <LegacySecretRefManagement />);
     await settle();
-    expect(down.textContent).toContain("the result is unknown");
-    expect(down.textContent).not.toContain("No legacy identity references");
+    expect(down.querySelector("[data-testid=error-state]")).not.toBeNull();
+    expect(down.textContent).not.toContain("No legacy identity keys");
+    const empty = await mount(transport(() => ({ status: 200, body: { bindings: [] } })), <LegacySecretRefManagement />, "zh-CN");
+    await settle();
+    expect(empty.querySelector("[data-testid=empty-state]")?.textContent).toContain("没有需要归位的旧身份");
+    expect(empty.textContent).not.toContain("租户");
+  });
+
+  it("读到游标末页后整表分页；公钥缩写显示、身份类型为译文", async () => {
+    const second = { ...binding, principalId: "00000000-0000-0000-0000-000000000010", pubkey: "b".repeat(64), kind: "CONTROL" };
+    const cursor = "c".repeat(64);
+    const t = transport((r) => ({ status: 200, body: r.path.includes("cursor=") ? { bindings: [second] } : { bindings: [binding], nextCursor: cursor } }));
+    const host = await mount(t, <LegacySecretRefManagement />);
+    await settle();
+    expect(host.querySelector("[data-testid=list-total]")?.textContent).toBe("2 total");
+    expect(host.textContent).toContain("Member");
+    expect(host.textContent).toContain("Control identity");
+    expect(host.textContent).not.toContain("CONTROL");
+    expect(host.textContent).not.toContain(binding.pubkey);
+    expect(host.querySelector(`[title="${binding.pubkey}"]`)).not.toBeNull();
   });
 
   it("显式确认后经语义命令提交；结果不明重试复用同一幂等键", async () => {
@@ -2913,10 +2954,13 @@ describe("LegacySecretRefManagement", () => {
     await settle();
     await click(button(host, "Move reference"));
     expect(t.send.mock.calls.filter(([r]) => r.method === "POST")).toHaveLength(0);
-    expect(host.textContent).toContain(binding.pubkey);
-    await click(button(host, "Confirm"));
-    expect(host.textContent).toContain("outcome unknown");
-    await click(button(host, "Confirm"));
+    const dialog = adminDialog("secret-rehome-dialog")!;
+    expect(dialog.textContent).toContain("Move this key reference?");
+    expect(dialog.textContent).toContain(binding.pubkey);
+    await click(button(dialog, "Move reference"));
+    expect(host.textContent).toContain("outcome is unknown");
+    expect(adminDialog("secret-rehome-dialog")?.textContent).toContain("The result is unknown");
+    await click(button(adminDialog("secret-rehome-dialog")!, "Retry same request"));
     const submitted = t.send.mock.calls
       .map(([r]) => r)
       .filter((r) => r.method === "POST");
@@ -2929,6 +2973,7 @@ describe("LegacySecretRefManagement", () => {
     expect((submitted[0]?.body as { idempotencyKey: string }).idempotencyKey)
       .toBe((submitted[1]?.body as { idempotencyKey: string }).idempotencyKey);
     expect(host.textContent).toContain("Check Tasks for the final result");
+    expect(adminDialog("secret-rehome-dialog")).toBeNull();
   });
 });
 
@@ -2977,10 +3022,17 @@ describe("RoleMembers", () => {
     await settle();
     expect(host.textContent).toContain("Ada");
     expect(host.textContent).toContain("Bo");
-    expect(host.textContent).toContain("LAST_TENANT_ADMIN");
-    expect(button(host, "Revoke").disabled).toBe(true);
-    await click(button(host, "Grant"));
-    await click(button(host, "Confirm"));
+    expect(host.querySelector("[data-testid=list-total]")?.textContent).toBe("2 total");
+    // 徽标与操作分开：角色列只有状态，操作在行末菜单里
+    expect(host.textContent).toContain("Only admin");
+    expect(host.textContent).not.toContain("LAST_TENANT_ADMIN");
+    expect(host.textContent).not.toContain("—");
+    expect(await adminMenuItems(host, "Ada")).toEqual([{ label: "Revoke organization admin", disabled: true }]);
+    await adminMenuAction(host, "Bo", "Make organization admin");
+    const dialog = adminDialog("role-change-dialog")!;
+    expect(dialog.textContent).toContain("Make Bo an organization admin?");
+    expect(t.send.mock.calls.some(([r]) => r.method === "POST")).toBe(false);
+    await click(button(dialog, "Grant"));
     expect(t.send).toHaveBeenCalledWith(expect.objectContaining({
       method: "POST",
       path: "/api/v1/actions",
@@ -2990,21 +3042,38 @@ describe("RoleMembers", () => {
       }),
     }));
     expect(host.textContent).toContain("Check Tasks for its final result");
+    expect(adminDialog("role-change-dialog")).toBeNull();
   });
 
-  it("角色关系读取失败不变成空角色；无管理权时整节不出现", async () => {
+  it("撤销组织管理员走危险确认，问句点名成员；取消不提交", async () => {
+    const admin = { ...members[1], principalId: "p-3", displayName: "Cy", tenantAdmin: true, canGrantTenantAdmin: false, canRevokeTenantAdmin: true };
+    const t = transport(() => ({ status: 200, body: { members: [members[0], admin] } }));
+    const host = await mount(t, <RoleMembers />, "zh-CN");
+    await settle();
+    await adminMenuAction(host, "Cy", "撤销组织管理员");
+    const dialog = adminDialog("role-change-dialog")!;
+    expect(dialog.textContent).toContain("撤销 Cy 的组织管理员角色？");
+    expect(button(dialog, "撤销").className).toContain("bg-danger");
+    await click(button(dialog, "取消"));
+    expect(adminDialog("role-change-dialog")).toBeNull();
+    expect(t.send.mock.calls.some(([r]) => r.method === "POST")).toBe(false);
+    expect(host.textContent).toContain("组织管理员");
+    expect(host.textContent).not.toContain("租户");
+  });
+
+  it("角色关系读取失败不变成空角色；无管理权时说明需要的角色", async () => {
     const down = await mount(transport(() => ({ status: 503, body: {} })), <RoleMembers />);
     await settle();
-    expect(down.textContent).toContain("result is unknown");
+    expect(down.querySelector("[data-testid=error-state]")).not.toBeNull();
     const denied = await mount(transport(() => ({ status: 403, body: {} })), <RoleMembers />);
     await settle();
-    expect(denied.textContent).toBe("");
+    expect(denied.querySelector("[data-testid=permission-state]")?.textContent).toContain("Only organization or workspace admins can manage admin roles.");
   });
 
   it("角色管理的 200 响应缺字段时显示读取失败，不当作空列表", async () => {
     const host = await mount(transport(() => ({ status: 200, body: { members: [null] } })), <RoleMembers />);
     await settle();
-    expect(host.textContent).toContain("result is unknown");
+    expect(host.querySelector("[data-testid=error-state]")).not.toBeNull();
     expect(host.textContent).not.toContain("No members");
   });
 
@@ -3024,9 +3093,32 @@ describe("RoleMembers", () => {
     expect(t.send).toHaveBeenCalledWith({
       method: "GET", path: "/api/v1/role-members?workspaceId=w-admin",
     });
-    expect(button(host, "Grant").disabled).toBe(false);
+    expect(await adminMenuItems(host, "Bo")).toEqual([{ label: "Make workspace admin", disabled: false }]);
     // 没有给出动作键就不渲染暂停/恢复入口
     expect(host.querySelector("[data-testid=workspace-lifecycle]")).toBeNull();
+    expect(host.querySelector('button[aria-label="Actions for Managed only"]')).toBeNull();
+  });
+
+  it("角色页分区：管理员角色与工作区各自成节，只有一个刷新入口，创建工作区折叠在按钮后", async () => {
+    const t = transport((r) =>
+      r.path.startsWith("/api/v1/role-workspaces")
+        ? { status: 200, body: { createActionKey: "workspace.create", workspaces: [
+          { id: "w-1", name: "Ops", state: "ACTIVE" }, { id: "w-2", name: "Paused", state: "SUSPENDED", lifecycleActionKey: "workspace.restore" }] } }
+        : r.path.startsWith("/api/v1/role-members") ? { status: 200, body: { members } } : { status: 200, body: [] },
+    );
+    const host = await mount(t, <RoleManagement />, "zh-CN");
+    await settle();
+    const headings = [...host.querySelectorAll("h2")].map((h) => h.textContent);
+    expect(headings).toEqual(["管理员角色", "工作区"]);
+    expect([...host.querySelectorAll("button")].filter((b) => b.textContent === "刷新")).toHaveLength(0);
+    expect(host.querySelectorAll('button[aria-label="刷新"]')).toHaveLength(1);
+    expect(host.querySelector("#create-workspace-name")).toBeNull();
+    await click(button(host, "创建工作区"));
+    expect(host.querySelector("#create-workspace-name")).not.toBeNull();
+    await click(button(host, "取消"));
+    expect(host.querySelector("#create-workspace-name")).toBeNull();
+    expect(host.textContent).not.toContain("租户");
+    expect(host.textContent).toContain("组织管理员");
   });
 });
 
@@ -3045,6 +3137,7 @@ describe("Workspace 暂停与恢复", () => {
             ? { status: 200, body: { members: [] } }
             : { status: 200, body: [] },
     );
+  const lifecycleDialog = () => adminDialog("workspace-lifecycle-dialog");
 
   it("只在给出暂停键时提供入口；受理回应只说已登记，不说成功", async () => {
     const t = roleRoutes(
@@ -3054,9 +3147,10 @@ describe("Workspace 暂停与恢复", () => {
     const host = await mount(t, <RoleManagement />);
     await settle();
     expect(host.querySelector("[data-testid=workspace-state]")?.textContent).toContain("Active");
-    await click(button(host, "Suspend"));
-    expect(host.textContent).toContain("Suspend workspace Ops?");
-    await click(button(host, "Confirm"));
+    await adminMenuAction(host, "Ops", "Suspend");
+    expect(lifecycleDialog()?.textContent).toContain("Suspend workspace Ops?");
+    expect(button(lifecycleDialog()!, "Suspend").className).toContain("bg-danger");
+    await click(button(lifecycleDialog()!, "Suspend"));
     const post = t.send.mock.calls.map(([r]) => r).find((r) => r.path === "/api/v1/actions");
     expect(post?.body).toMatchObject({ actionKey: "workspace.suspend", workspaceId: "w-1" });
     expect(Object.keys(post?.body ?? {}).sort()).toEqual(["actionKey", "idempotencyKey", "workspaceId"]);
@@ -3064,9 +3158,10 @@ describe("Workspace 暂停与恢复", () => {
     expect(status).toContain("Request recorded");
     expect(status).toContain("op-9");
     expect(status).not.toMatch(/succe/i);
+    expect(lifecycleDialog()).toBeNull();
   });
 
-  it("结果不明时保留原幂等键重查，不另发一笔也不能取消", async () => {
+  it("结果不明时保留原幂等键重查，不另发一笔；关闭对话框不放下意图", async () => {
     let calls = 0;
     const t = roleRoutes(
       { id: "w-1", name: "Ops", state: "ACTIVE", lifecycleActionKey: "workspace.suspend" },
@@ -3079,11 +3174,13 @@ describe("Workspace 暂停与恢复", () => {
     );
     const host = await mount(t, <RoleManagement />);
     await settle();
-    await click(button(host, "Suspend"));
-    await click(button(host, "Confirm"));
+    await adminMenuAction(host, "Ops", "Suspend");
+    await click(button(lifecycleDialog()!, "Suspend"));
     expect(host.querySelector("[data-testid=workspace-lifecycle] [role=alert]")?.textContent).toContain("op-u");
-    expect([...host.querySelectorAll("[data-testid=workspace-lifecycle] button")].map((b) => b.textContent))
-      .not.toContain("Cancel");
+    expect(lifecycleDialog()?.textContent).toContain("The result is unknown");
+    await click(button(lifecycleDialog()!, "Cancel"));
+    expect(lifecycleDialog()).toBeNull();
+    expect(host.querySelector<HTMLButtonElement>('button[aria-label="Actions for Ops"]')?.disabled).toBe(true);
     await click(button(host, "Retry same request"));
     const posts = t.send.mock.calls.map(([r]) => r).filter((r) => r.path === "/api/v1/actions");
     expect(posts).toHaveLength(2);
@@ -3102,8 +3199,9 @@ describe("Workspace 暂停与恢复", () => {
     expect(host.querySelector("[data-testid=workspace-state]")?.textContent).toContain("已暂停");
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/role-members" });
     expect(t.send).not.toHaveBeenCalledWith({ method: "GET", path: "/api/v1/role-members?workspaceId=w-2" });
-    await click(button(host, "恢复"));
-    expect(host.textContent).toContain("恢复工作区 Paused？");
+    await adminMenuAction(host, "Paused", "恢复");
+    expect(lifecycleDialog()?.textContent).toContain("恢复工作区 Paused？");
+    expect(button(lifecycleDialog()!, "恢复").className).not.toContain("bg-danger");
   });
 
   it("派发中止显示原因并放下意图；未派发按结果不明保留原幂等键", async () => {
@@ -3114,13 +3212,14 @@ describe("Workspace 暂停与恢复", () => {
     );
     const host = await mount(aborted, <RoleManagement />);
     await settle();
-    await click(button(host, "Suspend"));
-    await click(button(host, "Confirm"));
+    await adminMenuAction(host, "Ops", "Suspend");
+    await click(button(lifecycleDialog()!, "Suspend"));
     const alert = host.querySelector("[data-testid=workspace-lifecycle] [role=alert]")?.textContent ?? "";
     expect(alert).toContain("not carried out");
     expect(alert).toContain("ABORTED");
     expect(alert).toContain("op-a");
     expect(host.textContent).not.toContain("Retry same request");
+    expect(lifecycleDialog()).toBeNull();
 
     let calls = 0;
     const pending = roleRoutes(
@@ -3135,11 +3234,11 @@ describe("Workspace 暂停与恢复", () => {
     );
     const again = await mount(pending, <RoleManagement />);
     await settle();
-    await click(button(again, "Suspend"));
-    await click(button(again, "Confirm"));
+    await adminMenuAction(again, "Ops", "Suspend");
+    await click(button(lifecycleDialog()!, "Suspend"));
     expect(again.querySelector("[data-testid=workspace-lifecycle] [role=alert]")?.textContent).toContain("op-p");
     expect(again.textContent).not.toContain("Request recorded");
-    await click(button(again, "Retry same request"));
+    await click(button(lifecycleDialog()!, "Retry same request"));
     const posts = pending.send.mock.calls.map(([r]) => r).filter((r) => r.path === "/api/v1/actions");
     expect((posts[1]?.body as { idempotencyKey: string }).idempotencyKey)
       .toBe((posts[0]?.body as { idempotencyKey: string }).idempotencyKey);
@@ -3152,14 +3251,21 @@ describe("Workspace 暂停与恢复", () => {
     const host = await mount(t, <RoleManagement />);
     await settle();
     expect(host.querySelector("[data-testid=role-scope-tenant]")?.textContent).toContain("whole organization");
-    expect(button(host, "Suspend").disabled).toBe(false);
+    expect(await adminMenuItems(host, "Broken")).toEqual([{ label: "Suspend", disabled: false }]);
   });
 
   it("状态不合契约时显示读取失败", async () => {
     const t = roleRoutes({ id: "w-3", name: "Odd", state: "DELETED" }, () => recorded("workspace.suspend"));
     const host = await mount(t, <RoleManagement />);
     await settle();
-    expect(host.textContent).toContain("result is unknown");
+    expect(host.querySelector("[data-testid=error-state]")).not.toBeNull();
+    expect(host.textContent).not.toContain("DELETED");
+  });
+
+  it("无角色管理权时说明需要的角色，不留空白", async () => {
+    const host = await mount(transport(() => ({ status: 403, body: { class: ErrorClass.Denied, reason: ReasonCode.PermissionDenied } })), <RoleManagement />);
+    await settle();
+    expect(host.querySelector("[data-testid=permission-state]")).not.toBeNull();
   });
 });
 
