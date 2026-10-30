@@ -41,21 +41,22 @@ func init() {
 }
 
 // readKailoShareNode reads a node by UUID in the admin tree as the system
-// user (like the Workspace folders): existence, type and display name only.
-func readKailoShareNode(ctx context.Context, nodeUUID string) (bool, bool, string, error) {
+// user (like the Workspace folders): existence, type, name and datasource path.
+func readKailoShareNode(ctx context.Context, nodeUUID string) (auth.NativeOIDCNode, error) {
 	ctx = context.WithValue(ctx, common.PydioContextUserKey, common.PydioSystemUsername)
 	r, err := compose.UuidClient(nodes.AsAdmin()).ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: nodeUUID}})
 	if err != nil {
 		if cerrors.Is(err, cerrors.NodeNotFound) || cerrors.Is(err, cerrors.StatusNotFound) {
-			return false, false, "", nil
+			return auth.NativeOIDCNode{}, nil
 		}
-		return false, false, "", err
+		return auth.NativeOIDCNode{}, err
 	}
 	n := r.GetNode()
 	if n == nil || n.GetUuid() != nodeUUID {
-		return false, false, "", nil
+		return auth.NativeOIDCNode{}, nil
 	}
-	return true, n.GetType() == tree.NodeType_COLLECTION, path.Base(strings.Trim(n.GetPath(), "/")), nil
+	p := strings.Trim(n.GetPath(), "/")
+	return auth.NativeOIDCNode{Exists: true, Folder: n.GetType() == tree.NodeType_COLLECTION, Label: path.Base(p), Path: p}, nil
 }
 
 // kailoShareTarget is what the user's own view says about the folder.

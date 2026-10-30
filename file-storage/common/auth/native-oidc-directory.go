@@ -511,9 +511,13 @@ type nativeOIDCDirectoryState struct {
 	Applied    int64                      `json:"applied"`
 	// Schema of the applied snapshot; 0 in a state written before schema 2.
 	Schema int `json:"schema,omitempty"`
-	// Failures of the last apply (shares whose native object was missing);
-	// while present the same version is applied again every period.
+	// Failures of the last apply, reported in the receipt.
 	Failures []NativeOIDCReceiptFailure `json:"failures,omitempty"`
+	// Retry: some failure can resolve without a new snapshot (missing folder,
+	// pending adoption or retirement); the same version is applied again.
+	Retry bool `json:"retry,omitempty"`
+	// Adopted native Cells (Cell workspace UUID → Kailo Resource) not yet retired.
+	Adopted map[string]nativeOIDCAdoption `json:"adopted,omitempty"`
 	index    map[string]*nativeOIDCDirectoryEntry
 }
 
@@ -1054,7 +1058,7 @@ func directoryPicture(raw string) string {
 // snapshot and records it. It holds the provisioning lock for the whole run.
 // It returns the per-item failures (shares whose native object is missing),
 // which are reported in the receipt and do not stop the rest of the snapshot.
-func ApplyNativeOIDCDirectory(ctx context.Context, snapshot *NativeOIDCDirectorySnapshot, workspaceRoot string) ([]NativeOIDCReceiptFailure, error) {
+func ApplyNativeOIDCDirectory(ctx context.Context, snapshot *NativeOIDCDirectorySnapshot, workspaceRoot string, adopt NativeOIDCShareAdopter) ([]NativeOIDCReceiptFailure, error) {
 	nativeOIDCProvisioning.Lock()
 	defer nativeOIDCProvisioning.Unlock()
 	c, err := loadNativeOIDCConnector(ctx)
@@ -1172,12 +1176,40 @@ func ApplyNativeOIDCDirectory(ctx context.Context, snapshot *NativeOIDCDirectory
 	if err := retireNativeOIDCWorkspaces(ctx, snapshot.Workspaces); err != nil {
 		return nil, err
 	}
-	// DD-164(4): shares after the accounts and Workspace roles they grant to.
-	failures, err := convergeNativeOIDCShares(ctx, c, snapshot, group.GetUuid())
+	// DD-164(4)⑧: existing native Cells are adopted first; shares[] (after the
+	// accounts and Workspace roles they grant to) converge and adopted Cells
+	// retire only once every adoption has a definite answer.
+	var previous map[string]nativeOIDCAdoption
+	if before, err := loadNativeOIDCDirectoryState(); err == nil && before != nil && before.BindingID == state.BindingID {
+		previous = before.Adopted
+	}
+	adopted, failures, definite, err := adoptNativeOIDCShares(ctx, adopt, c, snapshot, workspaceRoot, group.GetUuid(), previous)
 	if err != nil {
 		return nil, err
 	}
+	if definite {
+		shareFailures, err := convergeNativeOIDCShares(ctx, c, snapshot, group.GetUuid())
+		if err != nil {
+			return nil, err
+		}
+		failed := map[string]bool{}
+		for _, f := range shareFailures {
+			failed[f.Ref] = true
+		}
+		retireFailures, err := retireAdoptedNativeCells(ctx, adopted, snapshot, failed)
+		if err != nil {
+			return nil, err
+		}
+		failures = append(append(failures, shareFailures...), retireFailures...)
+	}
+	state.Adopted = adopted
 	state.Failures = failures
+	for _, f := range failures {
+		switch f.ReasonCode {
+		case NativeOIDCReasonObjectMissing, NativeOIDCReasonAdoptionPending, NativeOIDCReasonRetirePending:
+			state.Retry = true
+		}
+	}
 	state.Applied = time.Now().Unix()
 	return failures, saveNativeOIDCDirectoryState(state)
 }
@@ -1199,10 +1231,10 @@ func SyncNativeOIDCDirectory(ctx context.Context, cfg *NativeOIDCDirectoryConfig
 		return false, err
 	}
 	if applied != nil && applied.Version == snapshot.Version && applied.BindingID == strings.ToLower(snapshot.BindingID) &&
-		applied.Schema == NativeOIDCDirectorySchema && len(applied.Failures) == 0 {
+		applied.Schema == NativeOIDCDirectorySchema && !applied.Retry {
 		return false, nil
 	}
-	failures, err := ApplyNativeOIDCDirectory(ctx, snapshot, cfg.WorkspaceRoot)
+	failures, err := ApplyNativeOIDCDirectory(ctx, snapshot, cfg.WorkspaceRoot, cfg.AdoptShare)
 	if err != nil {
 		cfg.queueReceipt(nativeOIDCFailedReceipt(snapshot, err))
 		return false, err

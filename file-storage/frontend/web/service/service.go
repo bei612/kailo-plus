@@ -100,6 +100,8 @@ func init() {
 			// DD-138(4), 07 §4.8.3: Kailo notification delivery, same directory
 			// client; nothing starts outside Kailo mode or without that client.
 			service.AfterServe(startKailoNotify),
+			// DD-164(3): owner records of content created under Kailo Workspace roots.
+			service.AfterServe(startKailoOwners),
 			// DD-165, 07 §4.8.9: hourly Kailo storage snapshot, same directory
 			// client; nothing starts outside Kailo mode or without that client.
 			service.AfterServe(startKailoUsage),
