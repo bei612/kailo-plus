@@ -1,0 +1,14 @@
+# 07 §2.1 热目录定时保留；由 tools/ci/retention/setup.sh install 安装，改动先改仓库。
+[Unit]
+Description=Kailo CI hot directory retention (07 §2.1)
+After=docker.service local-fs.target
+RequiresMountsFor=/var/lib/kailo-ci /volumes/data/kailo/check-cache
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I -B /volumes/kailo/ci/hot-retention/hot-retention.py --policy /volumes/kailo/ci/hot-retention/policy.json
+Nice=19
+IOSchedulingClass=idle
+CPUQuota=50%
+MemoryMax=512M
+TimeoutStartSec=1h

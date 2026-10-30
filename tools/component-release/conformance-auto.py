@@ -55,7 +55,8 @@ import urllib.request
 import uuid
 
 DOCKER = ["sudo", "-n", "docker"]
-RUN_ROOT = "/volumes/data/kailo/conformance/runs"
+# 07 §2.1：一致性运行是高频随机写（隔离 Postgres、OpenBao、组件实例），放在 NVMe 热数据根，不放 SMR 的 /volumes/data
+RUN_ROOT = "/var/lib/kailo-ci/conformance/runs"
 HEX64 = re.compile(r"[0-9a-f]{64}")
 STATE_FILE = "auto-state.json"
 

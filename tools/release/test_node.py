@@ -296,6 +296,7 @@ class DeployOrder(unittest.TestCase):
             r.readback_config = lambda svc, d, h: dict(service=svc)
             r.compose = lambda *args, **kw: events.append(args[0] + " " + args[-1])
             r.retention = lambda: events.append("retention") or dict(deleted=[])
+            r.components_state = lambda: []
             saved = node.containers, node.running_containers, node.container_file
             node.containers, node.running_containers, node.container_file = \
                 (lambda project: live), (lambda: {}), (lambda cid, target: None)
@@ -1779,6 +1780,279 @@ class PublicConfigResume(unittest.TestCase):
             with patch.object(orch, "compute_plan", return_value=next_plan):
                 self.assertEqual(release.plan(), next_plan)
                 self.assertEqual(release.state.data["plan"], next_plan)
+
+
+# ---- 组件实例（ADR-20 §12）------------------------------------------------------------
+
+REGISTRY = "127.0.0.1:55000"
+OLD_HEX, NEW_HEX = "3" * 64, "6" * 64
+CELLS_PIN = dict(key="CELLS_IMAGE", artifact="file-storage-service", form="reference", repository=None,
+                 digest="sha256:" + NEW_HEX)
+APP_PIN = dict(key="KNOWLEDGE_APP_DIGEST", artifact="knowledge-service", form="digest",
+               repository="KNOWLEDGE_APP_REPOSITORY", digest="sha256:" + NEW_HEX)
+CELLS_ENV = (f"# instance env\nCELLS_COMPOSE_PROJECT=kailo-cells-native\nCELLS_DB_PASSWORD_FILE=/s/db\n"
+             f"CELLS_IMAGE={REGISTRY}/file-storage-service@sha256:{OLD_HEX}\nCELLS_EXTERNAL='http://x:1'\n")
+
+
+def cctr(name, artifact, hex_, running=True, health="healthy", restart="unless-stopped"):
+    ref = f"{REGISTRY}/{artifact}@sha256:{hex_}" if artifact else "postgres@sha256:" + "f" * 64
+    return dict(id="id-" + name, name=name, image_ref=ref, image_id="sha256:" + hex_, running=running,
+                exit_code=0, health=health, restart=restart)
+
+
+class ComponentPinStates(unittest.TestCase):
+    """实例 env 声明键相对 pin 的状态：只给状态不给值；缺失、重复、占位与换仓库一律拒绝。"""
+
+    def states(self, text, pins=(CELLS_PIN, APP_PIN)):
+        with tempfile.NamedTemporaryFile("w", suffix=".env", delete=False) as stream:
+            stream.write(text)
+        try:
+            return node.component_pin_states(node.read_env_file(stream.name), list(pins), REGISTRY)
+        finally:
+            os.unlink(stream.name)
+
+    def test_equal_differs_and_quotes(self):
+        text = (f"CELLS_IMAGE=\"{REGISTRY}/file-storage-service@sha256:{NEW_HEX}\"\n"
+                f"KNOWLEDGE_APP_REPOSITORY={REGISTRY}/knowledge-service\nKNOWLEDGE_APP_DIGEST={OLD_HEX}\n")
+        self.assertEqual(self.states(text), {"CELLS_IMAGE": "equal", "KNOWLEDGE_APP_DIGEST": "differs"})
+
+    def test_refused_states(self):
+        text = (f"CELLS_IMAGE={REGISTRY}/other@sha256:{OLD_HEX}\nKNOWLEDGE_APP_REPOSITORY={REGISTRY}/knowledge-service\n"
+                f"KNOWLEDGE_APP_DIGEST={OLD_HEX}\nKNOWLEDGE_APP_DIGEST={OLD_HEX}\n")
+        self.assertEqual(self.states(text), {"CELLS_IMAGE": "repository", "KNOWLEDGE_APP_DIGEST": "duplicate"})
+        text = (f"CELLS_IMAGE={REGISTRY}/file-storage-service@sha256:<to-fill:file-storage-service>\n"
+                f"KNOWLEDGE_APP_REPOSITORY=elsewhere/knowledge-service\nKNOWLEDGE_APP_DIGEST={OLD_HEX}\n")
+        self.assertEqual(self.states(text), {"CELLS_IMAGE": "invalid", "KNOWLEDGE_APP_DIGEST": "repository"})
+        self.assertEqual(self.states("OTHER=1\n"), {"CELLS_IMAGE": "missing", "KNOWLEDGE_APP_DIGEST": "missing"})
+        for refused in ("missing", "duplicate", "invalid", "repository"):
+            self.assertEqual(node.component_action(dict(installed=True, env={"K": refused}, problems=[])), "refuse")
+
+    def test_actions(self):
+        self.assertEqual(node.component_action(dict(installed=False)), "not_installed")
+        self.assertEqual(node.component_action(dict(installed=True, env={"K": "equal"}, problems=[])), "current")
+        self.assertEqual(node.component_action(dict(installed=True, env={"K": "differs"}, problems=[])), "deploy")
+        self.assertEqual(node.component_action(dict(installed=True, env={"K": "equal"}, problems=["x 未运行"])), "deploy")
+        self.assertEqual(node.component_action(dict(installed=True, error="e", env={}, problems=["e"])), "refuse")
+
+    def test_repository_of_a_reference_keeps_the_registry_port(self):
+        self.assertEqual(node.image_repository(f"{REGISTRY}/a@sha256:{OLD_HEX}"), f"{REGISTRY}/a")
+        self.assertEqual(node.image_repository(f"{REGISTRY}/a:tag@sha256:{OLD_HEX}"), f"{REGISTRY}/a")
+        self.assertEqual(node.image_repository("postgres:16"), "postgres")
+
+    def test_project_from_the_instance_env(self):
+        self.assertEqual(node.component_project({}, "kailo-knowledge"), "kailo-knowledge")
+        self.assertEqual(node.component_project({"P": ["kailo-cells-native"]}, "${P}"), "kailo-cells-native")
+        for values in ({}, {"P": ["a", "b"]}, {"P": ["Bad Name"]}):
+            with self.assertRaises(node.NodeError):
+                node.component_project(values, "${P}")
+
+
+class ComponentEnvRewrite(unittest.TestCase):
+    """只改写声明键，其余行逐字保留；临时文件 + 原子替换，权限不变；journal 与输出不含值；先备份且备份保留原文。"""
+
+    def release(self, tmp, env_path):
+        r = node.Release.__new__(node.Release)
+        r.commit, r.backups = "c" * 40, os.path.join(tmp, "backups", "c" * 40)
+        r.decl = {"node": {"journal": os.path.join(tmp, "journal")}}
+        r.cfg = {"environment": {"REGISTRY": REGISTRY}}
+        os.makedirs(r.decl["node"]["journal"])
+        return r
+
+    def test_render_changes_only_declared_lines(self):
+        new, keys = node.render_component_env(CELLS_ENV, {"CELLS_IMAGE": "V", "CELLS_EXTERNAL": "W"})
+        self.assertEqual(keys, ["CELLS_EXTERNAL", "CELLS_IMAGE"])
+        self.assertEqual(new.split("\n"), ["# instance env", "CELLS_COMPOSE_PROJECT=kailo-cells-native",
+                                           "CELLS_DB_PASSWORD_FILE=/s/db", "CELLS_IMAGE=V", "CELLS_EXTERNAL='W'", ""])
+        with self.assertRaises(node.NodeError):
+            node.render_component_env(CELLS_ENV, {"ABSENT": "x"})
+
+    def test_backup_then_atomic_rewrite_without_values_in_output(self):
+        import contextlib
+        import io
+        with tempfile.TemporaryDirectory() as tmp:
+            env_path = os.path.join(tmp, "deploy.env")
+            with open(env_path, "w") as stream:
+                stream.write(CELLS_ENV)
+            os.chmod(env_path, 0o600)
+            inode = os.stat(env_path).st_ino
+            r = self.release(tmp, env_path)
+            inst = dict(name="file-storage", env=env_path, project="${CELLS_COMPOSE_PROJECT}", pins=[CELLS_PIN])
+            backup = r.backup_component_env(inst)
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                actions = r.apply_component_env(inst)
+            self.assertEqual(actions, {"CELLS_IMAGE": "changed"})
+            with open(env_path) as stream:
+                text = stream.read()
+            self.assertEqual(text, CELLS_ENV.replace(OLD_HEX, NEW_HEX))
+            self.assertNotEqual(os.stat(env_path).st_ino, inode)  # 原子替换，不是原地截断
+            self.assertEqual(os.stat(env_path).st_mode & 0o777, 0o600)
+            self.assertEqual(sorted(os.listdir(tmp)), ["backups", "deploy.env", "journal"])  # 无临时文件残留
+            with open(os.path.join(r.backups, backup["file"])) as stream:
+                self.assertEqual(stream.read(), CELLS_ENV)
+            self.assertEqual(os.stat(os.path.join(r.backups, backup["file"])).st_mode & 0o777, 0o600)
+            with open(os.path.join(r.decl["node"]["journal"], node.COMPONENT_ENV_JOURNAL)) as stream:
+                journal = stream.read()
+            for leaked in (OLD_HEX, NEW_HEX, "/s/db", "http://x:1"):
+                self.assertNotIn(leaked, err.getvalue() + journal)
+            self.assertIn('"key": "CELLS_IMAGE"', journal)
+            # 重跑：已等于 pin，不再改写；已有的备份仍是发布前原文
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(r.apply_component_env(inst), {"CELLS_IMAGE": "unchanged"})
+            self.assertEqual(r.backup_component_env(inst)["sha256"], backup["sha256"])
+
+    def test_refused_keys_are_not_rewritten(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env_path = os.path.join(tmp, "deploy.env")
+            with open(env_path, "w") as stream:
+                stream.write(CELLS_ENV + f"CELLS_IMAGE={REGISTRY}/file-storage-service@sha256:{OLD_HEX}\n")
+            r = self.release(tmp, env_path)
+            inst = dict(name="file-storage", env=env_path, project="x", pins=[CELLS_PIN])
+            with self.assertRaises(node.NodeError) as caught:
+                r.apply_component_env(inst)
+            self.assertIn("CELLS_IMAGE duplicate", str(caught.exception))
+            self.assertNotIn(OLD_HEX, str(caught.exception))
+
+
+class ComponentReadback(unittest.TestCase):
+    def test_pins_running_and_health(self):
+        found = {"cells": [cctr("cells-1", "file-storage-service", NEW_HEX)], "cells-db": [cctr("db-1", None, "f" * 64)],
+                 "seed": [cctr("seed-1", "file-storage-service", OLD_HEX, running=False, restart="no")]}
+        self.assertEqual(node.component_readback_problems(found, [CELLS_PIN], REGISTRY), [])
+        found["cells"] = [cctr("cells-1", "file-storage-service", OLD_HEX)]
+        self.assertEqual(node.component_readback_problems(found, [CELLS_PIN], REGISTRY),
+                         ["cells-1：运行镜像不是 file-storage-service 的 pin"])
+        found["cells"] = [cctr("cells-1", "file-storage-service", NEW_HEX, health="starting")]
+        found["cells-db"] = [cctr("db-1", None, "f" * 64, running=False)]
+        self.assertEqual(node.component_readback_problems(found, [CELLS_PIN], REGISTRY),
+                         ["cells-1 健康状态 starting", "db-1 未运行"])
+        self.assertEqual(node.component_readback_problems({}, [CELLS_PIN], REGISTRY),
+                         ["file-storage-service：实例中没有运行该产物的容器"])
+
+
+class ComponentDeployOrder(unittest.TestCase):
+    """组件实例在全部平台服务（含替换后的漂移收敛）之后部署；未安装与已一致的跳过；一个实例失败不影响其余实例，
+    deploy 以 FAILED 报告且不执行发布树保留；部署对象实例的容器不计为附带损伤。"""
+
+    def run_deploy(self, components, fail=()):
+        events = []
+
+        class Model:
+            converge_plan = staticmethod(load_model().converge_plan)
+            prerequisites = staticmethod(lambda services, svc: [])
+
+            @staticmethod
+            def idp_declaration(decl):
+                return dict(wait="keycloak")
+
+        class Idp:
+            def apply(self, commit):
+                events.append("idp")
+                return dict(applied=False, native_clients_declared=True, state="unchanged", commands=[])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "backups"))
+            open(os.path.join(tmp, "backups", "manifest.json"), "w").close()
+            r = node.Release.__new__(node.Release)
+            r.model, r.decl, r.commit, r.journal, r.backups = Model, dict(DECL, overlays=[]), "c" * 40, tmp, \
+                os.path.join(tmp, "backups")
+            svcs = services(**{"keycloak": ("kc", []), "worker": ("worker", [])})
+            r.services, r.managed, r.cfg, r.ci_env = svcs, {"worker": "worker"}, dict(compose_project="p"), {}
+            r.operated, r.delivery = {}, None
+            r.lock = lambda: open(os.devnull)
+            r.normalize_tree = lambda: 0
+            r.apply_env = lambda: {}
+            r.desired = lambda: (rendered(keycloak={}, worker={}), {"keycloak": H1, "worker": H1})
+            r.check_rendered = lambda doc: None
+            r.targets = lambda found: ["worker"]
+            r.migration_plan = lambda found: []
+            r.apply_config_oneoffs = lambda: []
+            r.wait_ready = lambda svc: None
+            r.idp_step = lambda: Idp()
+            r.readback = lambda svc: dict(service=svc)
+            r.readback_config = lambda svc, d, h: dict(service=svc)
+            r.compose = lambda *args, **kw: events.append(args[0] + " " + args[-1])
+            r.retention = lambda: events.append("retention") or dict(deleted=[])
+            r.components_state = lambda: components
+
+            def deploy_component(inst):
+                events.append("component " + inst["name"])
+                if inst["name"] in fail:
+                    raise node.NodeError(f"组件实例 {inst['name']}：component-deploy.sh 退出 1")
+                return dict(component=inst["name"], images={"a": "sha256:" + NEW_HEX})
+            r.deploy_component = deploy_component
+            live = {"keycloak": [ctr("k", H1)], "worker": [ctr("w", H1)]}
+            before = {"id-cells-1": "cells-1", "id-other": "other"}
+            saved = node.containers, node.running_containers, node.container_file, node.long_running
+            node.containers, node.container_file = (lambda project: live), (lambda cid, target: None)
+            # 组件实例的容器在部署中被重建（ID 变化、同名不再出现也不算附带损伤）；无关容器保持运行
+            node.running_containers = lambda: {"id-other": "other", "id-cells-2": "cells-1"} if events else before
+            node.long_running = lambda found, disposable=(): dict(found)
+            try:
+                try:
+                    journal, error = r.deploy(), None
+                except node.NodeError as caught:
+                    journal, error = None, caught
+                with open(os.path.join(tmp, "deploy.json"), encoding="utf-8") as stream:
+                    saved_journal = node.json.load(stream)
+            finally:
+                node.containers, node.running_containers, node.container_file, node.long_running = saved
+        return events, journal, error, saved_journal
+
+    def component(self, name, action):
+        return dict(name=name, action=action, project="kailo-" + name, ids=["id-cells-1"] if name == "file-storage" else [],
+                    env={}, installed=action != "not_installed")
+
+    def test_components_follow_the_platform_and_skip_current_or_absent(self):
+        comps = [self.component("file-storage", "deploy"), self.component("knowledge", "current"),
+                 self.component("data-query", "not_installed")]
+        events, journal, error, _ = self.run_deploy(comps)
+        self.assertIsNone(error)
+        self.assertEqual(events, ["pull worker", "idp", "up worker", "component file-storage", "retention"])
+        self.assertEqual([(c["component"], c["action"], c.get("state")) for c in journal["components"]],
+                         [("file-storage", "deploy", "SUCCEEDED"), ("knowledge", "current", None),
+                          ("data-query", "not_installed", None)])
+        self.assertEqual(journal["unrelated_stopped"], [])
+        self.assertEqual(journal["state"], "SUCCEEDED")
+
+    def test_one_failed_instance_does_not_stop_the_others_and_fails_the_stage(self):
+        comps = [self.component("file-storage", "deploy"), self.component("knowledge", "deploy"),
+                 dict(self.component("data-query", "refuse"), env={"WREN_UI_IMAGE": "missing"})]
+        events, journal, error, saved = self.run_deploy(comps, fail=("file-storage",))
+        self.assertEqual(events, ["pull worker", "idp", "up worker", "component file-storage", "component knowledge"])
+        self.assertIn("平台服务已部署并回读", str(error))
+        self.assertIn("file-storage", str(error))
+        self.assertIn("WREN_UI_IMAGE missing", str(error))
+        self.assertEqual([c.get("state") for c in saved["components"]], ["FAILED", "SUCCEEDED", "FAILED"])
+        self.assertEqual(saved["state"], "FAILED")
+        self.assertNotIn("retention", saved)
+
+
+class RepositoryComponentDeclaration(unittest.TestCase):
+    """The checked-in release.yaml: the four component instances resolve to recorded image digests."""
+
+    def test_release_declaration_is_consistent(self):
+        model = _model()
+        instances = model.component_instances()
+        self.assertEqual([i["name"] for i in instances], ["file-storage", "document-editor", "knowledge", "data-query"])
+        pins = {p["key"]: p for i in instances for p in i["pins"]}
+        self.assertEqual(pins["CELLS_IMAGE"]["artifact"], "file-storage-service")
+        self.assertEqual(pins["KNOWLEDGE_APP_DIGEST"]["form"], "digest")
+        self.assertTrue(all(model.DIGEST.fullmatch(p["digest"]) for p in pins.values()))
+
+    def test_invalid_declarations_are_refused(self):
+        model = _model()
+        units = model.units()
+        base = dict(env="/x/a.env", project="kailo-a", pins={"A_IMAGE": "file-storage-service"})
+        for broken in (dict(base, env="relative.env"), dict(base, project="Bad"), dict(base, pins={}),
+                       dict(base, pins={"A_IMAGE": "core"}), dict(base, pins={"A_IMAGE": "no-such-artifact"}),
+                       dict(base, pins={"A_D": {"artifact": "knowledge-service", "repository": "A_D"}}),
+                       dict(base, extra=1)):
+            with self.assertRaises(model.ReleaseError):
+                model.component_instances(dict(components={"file-storage": broken}), units)
+        with self.assertRaises(model.ReleaseError):
+            model.component_instances(dict(components={"not-a-component": base}), units)
+        self.assertEqual(model.component_instances(dict(components={}), units), [])
 
 
 if __name__ == "__main__":

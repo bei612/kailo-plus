@@ -27,7 +27,7 @@
 #   OPENBAO_CONFORMANCE_NAME          kailo-openbao-conformance-<id> (container, volume, setup network)
 #   OPENBAO_CONFORMANCE_IMAGE         <repo>@sha256:<digest>, the platform OpenBao digest
 #   OPENBAO_CONFORMANCE_PORT          free 127.0.0.1 port for the operator-side setup API
-#   OPENBAO_CONFORMANCE_STATE_DIR     empty 0700 directory under /volumes/data before `up`
+#   OPENBAO_CONFORMANCE_STATE_DIR     empty 0700 directory under /var/lib/kailo-ci (NVMe) or /volumes/data before `up`
 #   OPENBAO_CONFORMANCE_NETWORK       the run's kailo-conformance-* network (alias conformance-openbao)
 #   OPENBAO_CONFORMANCE_ADAPTER_CONFIG rendered adapter configuration (adapter-delivery.py config)
 #   OPENBAO_CONFORMANCE_SECRETS       space-separated secretKey=/abs/owner-only-value-file, one per SecretRef
@@ -55,8 +55,8 @@ state=$OPENBAO_CONFORMANCE_STATE_DIR
 [[ $name =~ ^kailo-openbao-conformance-[a-z0-9-]+$ ]] || { echo 'OPENBAO_CONFORMANCE_NAME must be kailo-openbao-conformance-*' >&2; exit 2; }
 [[ $OPENBAO_CONFORMANCE_NETWORK =~ ^kailo-conformance-[a-z0-9-]+$ ]] || { echo 'dedicated kailo-conformance-* network required' >&2; exit 2; }
 [[ $OPENBAO_CONFORMANCE_IMAGE =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]] || { echo 'OpenBao image must be digest-pinned' >&2; exit 2; }
-[[ $state == /volumes/data/* && -d $state && ! -L $state && $(stat -c '%a' -- "$state") == 700 ]] \
-  || { echo 'OPENBAO_CONFORMANCE_STATE_DIR must be an existing 0700 directory under /volumes/data' >&2; exit 2; }
+[[ ( $state == /var/lib/kailo-ci/* || $state == /volumes/data/* ) && -d $state && ! -L $state && $(stat -c '%a' -- "$state") == 700 ]] \
+  || { echo 'OPENBAO_CONFORMANCE_STATE_DIR must be an existing 0700 directory under /var/lib/kailo-ci or /volumes/data' >&2; exit 2; }
 read -r -a docker <<<"${OPENBAO_CONFORMANCE_DOCKER:-sudo -n docker}"
 ADAPTER_AGENT_IMAGE=$OPENBAO_CONFORMANCE_IMAGE
 ADAPTER_AGENT_PLATFORM_NETWORK=$OPENBAO_CONFORMANCE_NETWORK

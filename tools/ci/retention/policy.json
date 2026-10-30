@@ -1,0 +1,12 @@
+{
+  "comment": "07 §2.1 热目录定时保留：直接子项 grace_seconds 内有活动、被进程或容器使用、或属于未结束的 CI 任务即保留；其余超过 max_idle_seconds 才删除",
+  "grace_seconds": 7200,
+  "ci_config": "/volumes/kailo/ci/config.json",
+  "roots": [
+    {"path": "/home/ubuntu/scratch", "max_idle_seconds": 86400},
+    {"path": "/home/ubuntu/branch-core", "max_idle_seconds": 86400},
+    {"path": "/var/lib/kailo-ci/tmp", "max_idle_seconds": 86400},
+    {"path": "/var/lib/kailo-ci/branch", "max_idle_seconds": 86400},
+    {"path": "/volumes/data/kailo/check-cache", "max_idle_seconds": 1209600}
+  ]
+}

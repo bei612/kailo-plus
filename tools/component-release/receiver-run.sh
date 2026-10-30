@@ -38,7 +38,7 @@
 #
 # receiver.env (absolute 0600 regular file, operator-delivered, no secret values inline):
 #   RECEIVER_SOURCE            fixed release tree of the production commit (/volumes/kailo/ci/sources/<commit>/apps)
-#   RECEIVER_RUN_DIR           0700 directory under /volumes/data (empty before `platform`)
+#   RECEIVER_RUN_DIR           0700 directory under /var/lib/kailo-ci (NVMe) or /volumes/data (empty before `platform`)
 #   RECEIVER_PROJECT           kailo-receiver-<id>
 #   RECEIVER_NETWORK           kailo-conformance-<id> internal network shared with the production Worker
 #                              for the registration window only
@@ -86,8 +86,9 @@ done
 [[ $RECEIVER_PROJECT =~ ^kailo-receiver-[a-z0-9-]+$ ]] || { echo 'RECEIVER_PROJECT must be kailo-receiver-*' >&2; exit 2; }
 [[ $RECEIVER_NETWORK =~ ^kailo-conformance-[a-z0-9-]+$ ]] || { echo 'dedicated kailo-conformance-* network required' >&2; exit 2; }
 [[ $RECEIVER_NODE_IMAGE =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]] || { echo 'Node SDK image must be digest-pinned' >&2; exit 2; }
-[[ $RECEIVER_RUN_DIR == /volumes/data/* && -d $RECEIVER_RUN_DIR && $(stat -c '%a' -- "$RECEIVER_RUN_DIR") == 700 ]] \
-  || { echo 'RUN_DIR must be an existing 0700 directory under /volumes/data' >&2; exit 2; }
+[[ ( $RECEIVER_RUN_DIR == /var/lib/kailo-ci/* || $RECEIVER_RUN_DIR == /volumes/data/* ) && -d $RECEIVER_RUN_DIR \
+   && $(stat -c '%a' -- "$RECEIVER_RUN_DIR") == 700 ]] \
+  || { echo 'RUN_DIR must be an existing 0700 directory under /var/lib/kailo-ci or /volumes/data' >&2; exit 2; }
 src=$RECEIVER_SOURCE
 run=$RECEIVER_RUN_DIR
 platform=$run/apps/deploy/local

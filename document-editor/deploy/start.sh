@@ -73,7 +73,7 @@ try:
         secrets.append(value)
     require(secrets[0] != secrets[1], 'token and cache signing secrets must be independent')
     data = pathlib.Path(env['DOCUMENT_EDITOR_DATA_DIR'])
-    require(data.is_absolute() and data.is_dir() and data.resolve() == data and str(data).startswith('/volumes/data/'), 'dedicated Data state directory required')
+    require(data.is_absolute() and data.is_dir() and data.resolve() == data and str(data).startswith(('/volumes/data/', '/var/lib/kailo-ci/')), 'dedicated Data state directory required')
     info = data.stat()
     require(info.st_uid == DS_UID and info.st_gid == DS_GID and not info.st_mode & 0o007, 'state directory must belong to 101:102 (image ds) and not be world-accessible')
     local = pathlib.Path(env['DOCUMENT_EDITOR_LOCAL_CONFIG_FILE'])

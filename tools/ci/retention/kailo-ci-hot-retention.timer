@@ -1,0 +1,11 @@
+# 07 §2.1 热目录定时保留：每小时一次；错过的（关机期间）开机后补跑。
+[Unit]
+Description=Hourly Kailo CI hot directory retention
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target

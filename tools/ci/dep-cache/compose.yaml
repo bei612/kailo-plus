@@ -1,0 +1,70 @@
+# Kailo CI 依赖下载缓存：npm（Verdaccio）与 Go 模块（Athens）。用途、数据位置与回源方式见 07-运行与运维基线.md §2.1。
+# 由 tools/ci/dep-cache/setup.sh up 安装到运行副本目录并启动；改配置先改本仓库。
+name: kailo-dep-cache
+x-hardening: &hardening
+  restart: unless-stopped
+  # 以数据目录属主运行；host 网络只监听回环地址（与 registry-mirror 同理：bridge 出口经 wg-game 无 MSS clamping，
+  # 下载极慢）。BuildKit 的 RUN 步骤在 host 网络中执行，因此构建内 127.0.0.1 即本缓存。
+  user: "${DEP_CACHE_USER:-1000:1000}"
+  network_mode: host
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 512
+  logging:
+    driver: json-file
+    options:
+      max-size: 20m
+      max-file: "5"
+services:
+  npm:
+    <<: *hardening
+    image: verdaccio/verdaccio@sha256:82f4decaf1c9eff885bf7a1227335f78581ff715288d5f38898e67e28b3bfbdd  # 6.11.1
+    environment:
+      VERDACCIO_ADDRESS: 127.0.0.1
+      VERDACCIO_PORT: ${NPM_CACHE_PORT:-55002}
+      VERDACCIO_PROTOCOL: http
+      # 上游出口：CI 依赖下载代理；为空时直连 registry.npmjs.org。Verdaccio 从环境读取 https_proxy/no_proxy。
+      https_proxy: ${DEP_CACHE_UPSTREAM_PROXY:-}
+      http_proxy: ${DEP_CACHE_UPSTREAM_PROXY:-}
+      no_proxy: localhost,127.0.0.1,::1
+    volumes:
+      - ./verdaccio.yaml:/verdaccio/conf/config.yaml:ro
+      - ${DEP_CACHE_DATA:-/var/lib/kailo-ci/dep-cache}/npm:/verdaccio/storage
+    tmpfs: [/tmp]
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 2.0
+    healthcheck:
+      test: ["CMD", "wget", "-Y", "off", "-q", "-O", "/dev/null", "http://127.0.0.1:${NPM_CACHE_PORT:-55002}/-/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+  go:
+    <<: *hardening
+    image: gomods/athens@sha256:3620ce7230c723bdeac51f112541a659bf44923416b02f69cabf981fd9c0324a  # v0.20.0
+    environment:
+      ATHENS_PORT: 127.0.0.1:${GO_CACHE_PORT:-55003}
+      ATHENS_STORAGE_TYPE: disk
+      ATHENS_DISK_STORAGE_ROOT: /var/lib/athens
+      # 未命中时 Athens 以 go mod download 经原站取模块；校验和仍由客户端按 go.sum 核对
+      ATHENS_GO_BINARY_ENV_VARS: GOPROXY=https://proxy.golang.org,direct
+      ATHENS_GOGET_WORKERS: "8"
+      ATHENS_LOG_LEVEL: warning
+      HOME: /tmp
+      HTTPS_PROXY: ${DEP_CACHE_UPSTREAM_PROXY:-}
+      HTTP_PROXY: ${DEP_CACHE_UPSTREAM_PROXY:-}
+      NO_PROXY: localhost,127.0.0.1,::1
+    volumes:
+      - ${DEP_CACHE_DATA:-/var/lib/kailo-ci/dep-cache}/go:/var/lib/athens
+    tmpfs: ["/tmp:size=4g"]
+    mem_limit: 2g
+    memswap_limit: 2g
+    cpus: 2.0
+    healthcheck:
+      test: ["CMD", "wget", "-Y", "off", "-q", "-O", "/dev/null", "http://127.0.0.1:${GO_CACHE_PORT:-55003}/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

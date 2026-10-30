@@ -7,6 +7,9 @@
 FROM golang:1.25-bookworm@sha256:3b4a11519ad929d1e1d261a12cff056f0c85b735253d7d861346b9c6f8b36437 AS builder
 WORKDIR /build
 COPY worker/go.mod worker/go.sum ./
+# 依赖下载缓存（07 §2.1）：构建入口在 CI 节点投递 GOPROXY=<本机缓存>|https://proxy.golang.org,direct，缓存任何错误
+# 即回退原站；只作用于本构建阶段，模块内容仍按 go.sum 校验，不进入运行镜像。
+ARG GOPROXY=https://proxy.golang.org,direct
 RUN go mod download
 COPY worker ./
 ARG PLATFORM_BUILD_ID
