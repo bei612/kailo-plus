@@ -13976,8 +13976,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
   ),
   PlatformMessageKey.quotaTitle: ('Organization quotas', '组织额度'),
   PlatformMessageKey.quotaExplain: (
-    'Monthly limits on this organization\'s Agent tokens, automation runs, memory writes and its components (model tokens, knowledge answers, data queries, file storage), read from OpenMeter. Knowledge answers and data queries can also carry a per-member limit. Only admins and auditors see this section; Core rechecks permission when a limit is set.',
-    '本组织每月的 Agent token、自动化运行、记忆写入以及组件（模型 token、知识库问答、问数查询、云盘存储）上限，读自 OpenMeter。知识库问答与问数查询还可设成员上限。仅管理员与审计员可见；设置时 Core 重新核对权限。',
+    'Monthly limits on this organization\'s Agent tokens, automation runs, memory writes and its components (model tokens, Knowledge Engineering answers, Data Modeling queries, file storage), read from OpenMeter. Knowledge Engineering answers and Data Modeling queries can also carry a per-member limit. Only admins and auditors see this section; Core rechecks permission when a limit is set.',
+    '本组织每月的 Agent token、自动化运行、记忆写入以及组件（模型 token、知识工程问答、数据建模查询、云盘存储）上限，读自 OpenMeter。知识工程问答与数据建模查询还可设成员上限。仅管理员与审计员可见；设置时 Core 重新核对权限。',
   ),
   PlatformMessageKey.quotaFeatureAgentTokens: ('Agent tokens', 'Agent token'),
   PlatformMessageKey.quotaFeatureAutomationRuns: ('Automation runs', '自动化运行'),
@@ -14040,22 +14040,25 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '组件模型 token',
   ),
   PlatformMessageKey.quotaFeatureKnowledgeAnswers: (
-    'Knowledge answers',
-    '知识库问答',
+    'Knowledge Engineering answers',
+    '知识工程问答',
   ),
-  PlatformMessageKey.quotaFeatureDataQueries: ('Data queries', '问数查询'),
+  PlatformMessageKey.quotaFeatureDataQueries: (
+    'Data Modeling queries',
+    '数据建模查询',
+  ),
   PlatformMessageKey.quotaFeatureFileStorage: ('File storage', '云盘存储'),
   PlatformMessageKey.quotaExhaustedComponentTokens: (
-    'The component model token quota is used up: model calls from Files, Knowledge and Data Q&A are being rejected until the limit is raised or the period resets.',
-    '组件模型 token 额度已用完：云盘、知识库与问数的模型调用正在被拒绝，调高上限或本期重置后恢复。',
+    'The component model token quota is used up: model calls from Files, Knowledge Engineering and Data Modeling are being rejected until the limit is raised or the period resets.',
+    '组件模型 token 额度已用完：云盘、知识工程与数据建模的模型调用正在被拒绝，调高上限或本期重置后恢复。',
   ),
   PlatformMessageKey.quotaExhaustedKnowledgeAnswers: (
-    'The knowledge answer quota is used up: new questions in Knowledge are being rejected until the limit is raised or the period resets.',
-    '知识库问答额度已用完：知识库新的提问正在被拒绝，调高上限或本期重置后恢复。',
+    'The Knowledge Engineering answer quota is used up: new questions in Knowledge Engineering are being rejected until the limit is raised or the period resets.',
+    '知识工程问答额度已用完：知识工程新的提问正在被拒绝，调高上限或本期重置后恢复。',
   ),
   PlatformMessageKey.quotaExhaustedDataQueries: (
-    'The data query quota is used up: new questions in Data Q&A are being rejected until the limit is raised or the period resets.',
-    '问数查询额度已用完：问数新的提问正在被拒绝，调高上限或本期重置后恢复。',
+    'The Data Modeling query quota is used up: new questions in Data Modeling are being rejected until the limit is raised or the period resets.',
+    '数据建模查询额度已用完：数据建模新的提问正在被拒绝，调高上限或本期重置后恢复。',
   ),
   PlatformMessageKey.quotaExhaustedFileStorage: (
     'The file storage quota is used up. Raise the limit or free space in Files.',
@@ -14107,8 +14110,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
   ),
   PlatformMessageKey.usageComponentsTitle: ('Usage by component', '按组件用量'),
   PlatformMessageKey.usageComponentsExplain: (
-    'Committed usage of Files, Knowledge and Data Q&A in this period, split by component and read from OpenMeter.',
-    '本区间内云盘、知识库与问数已入账的用量，按组件拆分，读自 OpenMeter。',
+    'Committed usage of Files, Knowledge Engineering and Data Modeling in this period, split by component and read from OpenMeter.',
+    '本区间内云盘、知识工程与数据建模已入账的用量，按组件拆分，读自 OpenMeter。',
   ),
   PlatformMessageKey.usageComponentsComponent: ('Component', '组件'),
   PlatformMessageKey.usageComponentsScope: ('Scope', '范围'),
@@ -14125,12 +14128,12 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '模型 token',
   ),
   PlatformMessageKey.usageComponentsMeterKnowledgeAnswers: (
-    'Knowledge answers',
-    '知识库问答次数',
+    'Knowledge Engineering answers',
+    '知识工程问答次数',
   ),
   PlatformMessageKey.usageComponentsMeterDataQueries: (
-    'Data queries',
-    '问数查询次数',
+    'Data Modeling queries',
+    '数据建模查询次数',
   ),
   PlatformMessageKey.usageComponentsMeterFileStorageBytes: (
     'Stored data (latest snapshot)',
