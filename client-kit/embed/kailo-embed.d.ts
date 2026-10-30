@@ -122,6 +122,11 @@ export interface KailoEmbedRuntime {
   onAction(listener: (id: string, selection?: KailoFileSelection) => void): () => void;
   /** DD-157: shown by Kailo; false at top level (show your own Kailo-styled toast). */
   toast(toast: KailoToast): boolean;
+  /**
+   * DD-164(4): ask Kailo to open its share dialog for a ComponentShareIntent the component
+   * service registered with Kailo. False at top level or when intentId is not a UUID.
+   */
+  requestShare(intentId: string): boolean;
   /** DD-157: Kailo's confirmation dialog; null at top level (use your own Kailo-styled dialog). */
   confirm(options: KailoConfirm): Promise<boolean> | null;
   /** Null unless the host announced "confirm-option"; `option` is false on a cancel. */

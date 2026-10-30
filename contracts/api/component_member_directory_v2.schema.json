@@ -17,7 +17,9 @@
   "properties": {
     "schema": {
       "type": "integer",
-      "const": 2
+      "minimum": 2,
+      "maximum": 2,
+      "description": "Always 2 (quicktype rejects const)."
     },
     "bindingId": {
       "type": "string",
