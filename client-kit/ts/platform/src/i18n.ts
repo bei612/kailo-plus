@@ -517,6 +517,8 @@ export const platformMessages = {
   "messages.reactions.you": {en:"You","zh-CN":"你"},
   "messages.reactions.youRemove": {en:"You (click to remove)","zh-CN":"你（点击移除）"},
   "messages.reactions.reactedWith": {en:"reacted with","zh-CN":"使用了表情"},
+  "messages.task.completed": { en: "Completed task", "zh-CN": "已完成的任务" },
+  "messages.task.incomplete": { en: "Incomplete task", "zh-CN": "未完成的任务" },
   "messages.reactions.failed": {en:"Failed to update the reaction.","zh-CN":"未能更新回应。"},
   "messages.actions.label": {en:"Message action","zh-CN":"消息操作"},
   "messages.actions.dismiss": {en:"Dismiss message actions","zh-CN":"关闭消息操作"},

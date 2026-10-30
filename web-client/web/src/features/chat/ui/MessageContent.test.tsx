@@ -665,6 +665,34 @@ describe("MessageContent", () => {
     expect(html).toContain("@Unknown and <code>@Alex</code>");
   });
 
+  it("renders the original block Markdown: lists, headings, quotes, tables, rules and read-only task checkboxes", () => {
+    const html = renderToStaticMarkup(
+      <MessageContent
+        content={"## Plan\n\n- one\n- two\n\n1. first\n\n> quoted\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n---\n\n- [x] done\n- [ ] todo"}
+        workspaceId={WORKSPACE}
+      />,
+    );
+    expect(html).toMatch(/<h2 class="[^"]*text-lg[^"]*">Plan<\/h2>/);
+    expect(html).toMatch(/<ul class="list-disc [^"]*pl-6/);
+    expect(html).toMatch(/<ol class="list-decimal [^"]*pl-6/);
+    expect(html).toMatch(/<blockquote class="border-l-2 [^"]*"/);
+    expect(html).toContain("<th");
+    expect(html).toMatch(/<hr class="border-border/);
+    // Original MarkdownInput: GFM task items are the read-only Checkbox, labelled by state.
+    expect(html).toContain('role="checkbox"');
+    expect(html).toContain('aria-label="Completed task"');
+    expect(html).toContain('aria-label="Incomplete task"');
+    expect(html).not.toContain('type="checkbox"');
+  });
+
+  it("reveals a masked link destination like the original ExternalLinkAnchor, never for a bare URL", () => {
+    const render = (content: string) => renderToStaticMarkup(<MessageContent content={content} workspaceId={WORKSPACE} />);
+    // The tooltip trigger marks the anchor; a bare autolink keeps the plain anchor.
+    expect(render("[click here](https://evil.example/login)")).toMatch(/<a [^>]*data-state="closed"[^>]*href="https:\/\/evil.example\/login"|<a [^>]*href="https:\/\/evil.example\/login"[^>]*data-state="closed"/);
+    expect(render("https://example.com/path")).not.toContain('data-state="closed"');
+    expect(render("[https://example.com/path](https://example.com/path)")).not.toContain('data-state="closed"');
+  });
+
   it("only gives resolved mentions a profile affordance when a real host consumer is provided", () => {
     const render = (interactive: boolean) => renderToStaticMarkup(<MessageContent workspaceId={WORKSPACE} content="@Alex" mediaTags={[["p", PERSON]]}
       mentions={[{pubkey:PERSON, name:"Alex", isAgent:false, ...(interactive ? {

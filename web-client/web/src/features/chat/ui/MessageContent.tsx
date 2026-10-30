@@ -27,6 +27,8 @@ import { Children, isValidElement } from "react";
 import { classifyChildren, hasBlockMedia, isImageOnlyParagraph } from "@client-kit/platform/react/composer/shared/ui/markdownMedia";
 import { toast } from "sonner";
 import { MarkdownMentionChip } from "@client-kit/platform/react/messages/MarkdownMentionChip";
+import { MaskedLinkTooltip } from "@client-kit/platform/react/messages/MaskedLinkTooltip";
+import { MarkdownInput } from "@client-kit/platform/react/messages/MarkdownInput";
 import { resolveMentionProps } from "@client-kit/platform/react/messages/resolveMentionNames";
 import { type ComponentProps, type ReactNode, createContext, useContext, useEffect, useRef, useState } from "react";
 import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
@@ -311,10 +313,13 @@ const MarkdownLink: NonNullable<Components["a"]> = ({ href, children }) => {
   }
   const media = href ? mediaByUrl.get(href) : undefined;
   if (!media) {
+    // Original ExternalLinkAnchor: a masked `[text](url)` reveals its real destination on hover.
     return (
-      <a href={href} target="_blank" rel="noreferrer noopener">
-        {children}
-      </a>
+      <MaskedLinkTooltip href={href} label={getReactNodeText(children)}>
+        <a href={href} target="_blank" rel="noreferrer noopener">
+          {children}
+        </a>
+      </MaskedLinkTooltip>
     );
   }
   const entry = {
@@ -439,6 +444,7 @@ const MARKDOWN_COMPONENTS = {
   code: MarkdownCode,
   img: MarkdownImage,
   a: MarkdownLink,
+  input: MarkdownInput,
   mention: MarkdownMention,
   span: function MarkdownSpan({children, node: _node, ...props}) {
     const { leadingInlineContent } = useMarkdownRenderContext();
