@@ -12,6 +12,22 @@ import (
 	"github.com/pydio/cells/v5/common/proto/rest"
 )
 
+// kailoShareRefused (DD-164(1)(4), 07 §4.7.4): in Kailo mode Kailo is the
+// only share authority. A user request that creates or edits a Cell, a public
+// link or share policies, or removes a Kailo-managed shared workspace, is
+// refused here; the page offers Kailo's share action instead and the grants
+// come back through the member directory (common/auth/native-oidc-shares.go).
+// Governed adapter writers (native proof) keep their own admitted path.
+func kailoShareRefused(req *restful.Request) error {
+	if !auth.NativeKailoMode() {
+		return nil
+	}
+	if _, proof, err := auth.TakeNativeProof(req.Request); err != nil || proof {
+		return err
+	}
+	return errors.WithMessage(errors.StatusForbidden, "sharing is managed in Kailo")
+}
+
 // Creation and policy editing retain the independent native implementation;
 // the governed share release is not complete until those writers are admitted.
 func nativeShareUnsupported(req *restful.Request) error {

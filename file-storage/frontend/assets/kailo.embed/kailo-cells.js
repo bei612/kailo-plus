@@ -269,6 +269,7 @@
             emptyRecycle: '清空回收站？', emptyRecycleBody: '回收站中的所有项目将被永久删除，无法恢复。',
             deleteShares: '删除全部分享？', deleteSharesBody: '公开链接和共享成员将立即失去访问权限。',
             dropTo: '松开即可上传到「{0}」', uploadFailed: '未能开始上传',
+            shareFolderOnly: '只能分享文件夹', shareUnavailable: '暂时无法分享，请稍后重试',
         },
         en: {
             home: 'Home', files: 'All files', bookmarks: 'Favorites', search: 'Search results',
@@ -281,6 +282,7 @@
             emptyRecycle: 'Empty the recycle bin?', emptyRecycleBody: 'Every item in the recycle bin is deleted permanently and cannot be restored.',
             deleteShares: 'Delete all shares?', deleteSharesBody: 'Public links and shared members lose access immediately.',
             dropTo: 'Drop to upload to "{0}"', uploadFailed: 'Could not start the upload',
+            shareFolderOnly: 'Only folders can be shared', shareUnavailable: 'Sharing is not available right now. Try again later.',
         }
     };
 
@@ -582,7 +584,7 @@
             }
             if (shareOpener && action(controller, 'share')) {
                 editorActions.push({id: 'share', label: text('share'), variant: 'secondary', icon: 'share'});
-                handlers.share = function () { shareOpener(file); };
+                handlers.share = function () { openShare(file); };
             }
             return {
                 title: clip(editor.title || (file.getLabel && file.getLabel()) || '', 120),
@@ -643,7 +645,7 @@
         }
         if (parts.length && action(controller, 'share') && shareOpener) {
             actions.push({id: 'share', label: text('shareFolder'), variant: 'menu', icon: 'share'});
-            handlers.share = function () { shareOpener(node); };
+            handlers.share = function () { openShare(node); };
         }
         if (action(controller, 'refresh')) {
             actions.push({id: 'refresh', label: text('refresh'), variant: 'menu', icon: 'refresh'});
@@ -658,6 +660,74 @@
 
     // Opens the native share dialog for one node (set by the GUI, which owns the data model).
     var shareOpener = null;
+
+    // DD-164(4)② (07 §4.7.2 `share`): in Kailo mode sharing is Kailo's. The
+    // folder is offered to this instance's share intent endpoint with the
+    // user's own session token; the opaque intent goes to the Kailo host,
+    // which opens Kailo's share dialog. Grants come back through the member
+    // directory; the native share dialog is never opened in Kailo mode.
+    var SHARE_INTENT_PATH = '/auth/kailo/share-intent';
+    var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    function nodeUuid(node) {
+        var meta = node && node.getMetadata && node.getMetadata();
+        var value = meta && meta.get ? meta.get('uuid') : '';
+        return typeof value === 'string' && UUID.test(value) ? value : '';
+    }
+
+    function authToken() {
+        var api = window.PydioApi;
+        if (!api || typeof api.getRestClient !== 'function') {
+            return Promise.reject(new Error('no session'));
+        }
+        return Promise.resolve(api.getRestClient().getAuthToken());
+    }
+
+    // Returns true when Kailo mode handled the share request (whatever its
+    // outcome); false outside Kailo mode, where the native dialog applies.
+    function kailoShare(node) {
+        if (!kailoMode()) {
+            return false;
+        }
+        var uuid = nodeUuid(node);
+        if (!uuid || (node.isLeaf && node.isLeaf())) {
+            toast('info', text('shareFolderOnly'));
+            return true;
+        }
+        var fail = function () { toast('error', text('shareUnavailable')); };
+        if (!embed || typeof embed.requestShare !== 'function' || !embedState().embedded) {
+            fail();
+            return true;
+        }
+        authToken().then(function (token) {
+            if (typeof token !== 'string' || !token) {
+                throw new Error('no session');
+            }
+            return window.fetch(SHARE_INTENT_PATH, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
+                body: JSON.stringify({nodeUuid: uuid}),
+            });
+        }).then(function (response) {
+            if (!response || !response.ok) {
+                throw new Error('refused');
+            }
+            return response.json();
+        }).then(function (body) {
+            var intent = body && typeof body.intentId === 'string' && UUID.test(body.intentId) ? body.intentId : '';
+            if (!intent || embed.requestShare(intent) !== true) {
+                fail();
+            }
+        }).catch(fail);
+        return true;
+    }
+
+    function openShare(node) {
+        if (!kailoShare(node) && shareOpener) {
+            shareOpener(node);
+        }
+    }
 
     function syncPage() {
         pageTimer = null;
@@ -977,6 +1047,8 @@
         // The native "logout" entry is shown only outside a Kailo frame.
         showLogout: function () { return !embedState().embedded && (!!logoutUrl() || !params().sso); },
         kailoMode: kailoMode,
+        // DD-164(4): the share action of one node in Kailo mode; false outside it.
+        kailoShare: kailoShare,
         // DD-138: personal/global-shell entries (account dashboard, password,
         // about, admin console switch, rail theme toggle, notification bell,
         // rail user menu) render only outside Kailo mode; Kailo provides them.

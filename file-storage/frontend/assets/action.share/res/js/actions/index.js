@@ -6,6 +6,13 @@ const pydio = Pydio.getInstance()
 class Callbacks{
 
     static share(){
+        // DD-164(4): in Kailo mode sharing is Kailo's (KailoCells.kailoShare
+        // hands the folder to the Kailo share dialog); never the native dialog.
+        const kailo = window.KailoCells;
+        if(kailo && kailo.kailoMode && kailo.kailoMode() && kailo.kailoShare){
+            kailo.kailoShare(pydio.getUserSelection().getUniqueNode());
+            return;
+        }
         const props = {pydio:pydio, selection:pydio.getUserSelection()};
         if(DOMUtils.getViewportWidth() < 700) {
             props.dialogSize = 'md';

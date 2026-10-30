@@ -29,8 +29,10 @@ import (
 
 	restful "github.com/emicklei/go-restful/v3"
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
 	claimpkg "github.com/pydio/cells/v5/common/auth/claim"
 	grpcclient "github.com/pydio/cells/v5/common/client/grpc"
+	"github.com/pydio/cells/v5/common/config/mock"
 	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/proto/idm"
 	serviceproto "github.com/pydio/cells/v5/common/proto/service"
@@ -115,6 +117,11 @@ func TestGetCellRequiresReadAccess(t *testing.T) {
 }
 
 func withClaims(ctx context.Context, user string) context.Context {
+	// The native share handlers read the service configuration (governed
+	// delivery) from the context; an empty in-memory store means none.
+	if withConfig, err := mock.RegisterMockConfig(ctx); err == nil {
+		ctx = withConfig
+	}
 	return claimpkg.ToContext(ctx, claimpkg.Claims{Name: user, Subject: user, Profile: common.PydioProfileStandard})
 }
 
@@ -186,4 +193,34 @@ func (s *wsSearchClientStream) buildResults() []*idm.SearchWorkspaceResponse {
 		}
 	}
 	return nil
+}
+
+// DD-164(1)(4): in Kailo mode a user cannot create a Cell, a public link or
+// edit share policies natively; Kailo's share action replaces them.
+func TestKailoModeRefusesNativeSharing(t *testing.T) {
+	cachehelper.SetStaticResolver("pm://", &gocache.URLOpener{})
+	grpcclient.RegisterMock(common.ServiceUserGRPC, &idm.UserServiceStub{UserServiceServer: &shareWriteOwner{}})
+	previous := auth.NativeKailoMode
+	auth.NativeKailoMode = func() bool { return true }
+	defer func() { auth.NativeKailoMode = previous }()
+	h := NewSharesHandler()
+	for name, call := range map[string]struct {
+		body string
+		run  func(*restful.Request, *restful.Response) error
+	}{
+		"cell":     {`{"Room":{"RootNodes":[{"Uuid":"n1"}]}}`, h.PutCell},
+		"link":     {`{"ShareLink":{"RootNodes":[{"Uuid":"n1"}]}}`, h.PutShareLink},
+		"policies": {`{"Uuid":"w1","Policies":[]}`, h.UpdateSharePolicies},
+	} {
+		request := httptest.NewRequest("PUT", "/a/share/"+name, strings.NewReader(call.body))
+		request.Header.Set("Content-Type", restful.MIME_JSON)
+		request = request.WithContext(withClaims(request.Context(), "native-owner"))
+		recorder := httptest.NewRecorder()
+		if err := call.run(restful.NewRequest(request), restful.NewResponse(recorder)); err == nil || !errors.Is(err, errors.StatusForbidden) {
+			t.Errorf("%s: native sharing in Kailo mode not refused: %v", name, err)
+		}
+		if recorder.Body.Len() != 0 {
+			t.Errorf("%s: refused native share returned a result: %s", name, recorder.Body.String())
+		}
+	}
 }

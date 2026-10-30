@@ -20,21 +20,55 @@ import (
 // binding service accounts, accounts of another Tenant or created before the
 // Tenant group) keep the native default policy "profile:standard READ", so
 // the resource policies alone would list them; the native REST user handler
-// narrows the query with this scope. Native administrators are not narrowed.
+// narrows the query with this scope. Only local operator administrators (no
+// Kailo identity link) are not narrowed: a Kailo Tenant administrator is a
+// native admin profile too (07 §4.7.4 role derivation), but it is a person of
+// this Tenant and finds only its Tenant (V-SCN-205, DD-164(1)).
 
 // NativeOIDCPeopleScope returns the Tenant group path a caller's people
 // lookups are restricted to, and false when no restriction applies: no Kailo
-// Tenant organisation is configured, or the caller is a native administrator.
-// A caller without claims is restricted.
+// Tenant organisation is configured, or the caller is a native administrator
+// account that is not a Kailo account. A caller without claims, or whose
+// account cannot be read, is restricted.
 func NativeOIDCPeopleScope(ctx context.Context) (string, bool) {
 	c, err := loadNativeOIDCConnector(ctx)
 	if err != nil || !c.ProvisionUsers || c.Organization == nil || c.Organization.Tenant.ID == "" {
 		return "", false
 	}
-	if claims, ok := claim.FromContext(ctx); ok && claims.Profile == common.PydioProfileAdmin {
+	scope := NativeOIDCTenantGroupPath(c.Organization.Tenant.ID)
+	if claims, ok := claim.FromContext(ctx); ok && claims.Profile == common.PydioProfileAdmin && !nativeOIDCKailoCaller(ctx, c, claims, scope) {
 		return "", false
 	}
-	return NativeOIDCTenantGroupPath(c.Organization.Tenant.ID), true
+	return scope, true
+}
+
+// nativeOIDCKailoCaller tells whether an admin-profile caller is a Kailo
+// account: inside the Tenant group, carrying the Kailo identity link, or an
+// explicitly linked connector account. Unknown means yes (fail closed).
+func nativeOIDCKailoCaller(ctx context.Context, c NativeOIDCConnector, claims claim.Claims, scope string) bool {
+	if gp := path.Join("/", claims.GroupPath); claims.GroupPath != "" && (gp == scope || strings.HasPrefix(gp, scope+"/")) {
+		return true
+	}
+	q := &idm.UserSingleQuery{Login: claims.Name}
+	if claims.Subject != "" {
+		q = &idm.UserSingleQuery{Uuid: claims.Subject}
+	} else if claims.Name == "" {
+		return true
+	}
+	found, err := searchNativeUsers(ctx, q)
+	if err != nil || len(found) != 1 || found[0].GetIsGroup() {
+		return true
+	}
+	u := found[0]
+	if u.GetAttributes()[NativeOIDCIssuerAttribute] != "" || u.GetAttributes()[NativeOIDCSubjectAttribute] != "" {
+		return true
+	}
+	for _, link := range c.Users {
+		if link.UserUUID == u.GetUuid() {
+			return true
+		}
+	}
+	return NativeOIDCPeopleVisible(u, scope)
 }
 
 // ScopeNativeOIDCPeopleQuery returns query narrowed to the accounts inside

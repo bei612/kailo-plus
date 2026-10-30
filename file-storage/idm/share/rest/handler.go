@@ -113,6 +113,9 @@ func (h *SharesHandler) PutCell(req *restful.Request, rsp *restful.Response) err
 		}
 		return rsp.WriteEntity(output)
 	}
+	if err := kailoShareRefused(req); err != nil {
+		return err
+	}
 
 	// Init Root Nodes and check permissions
 	hasReadonly, err := h.sc.ParseRootNodes(ctx, shareRequest.Room, shareRequest.CreateEmptyRoot)
@@ -179,6 +182,12 @@ func (h *SharesHandler) DeleteCell(req *restful.Request, rsp *restful.Response) 
 
 	ctx := req.Request.Context()
 	id := req.PathParameter("Uuid")
+	if ws, err := h.sc.GetCellWorkspace(ctx, id); err == nil && auth.IsNativeOIDCShareWorkspace(ws) {
+		// A Kailo-managed shared workspace leaves only through Kailo.
+		if err := kailoShareRefused(req); err != nil {
+			return err
+		}
+	}
 	if err := h.sc.DeleteCell(ctx, id, ""); err != nil {
 		return err
 	} else {
@@ -190,6 +199,9 @@ func (h *SharesHandler) DeleteCell(req *restful.Request, rsp *restful.Response) 
 // PutShareLink creates or updates a link to a shared item.
 func (h *SharesHandler) PutShareLink(req *restful.Request, rsp *restful.Response) error {
 	if err := nativeShareUnsupported(req); err != nil {
+		return err
+	}
+	if err := kailoShareRefused(req); err != nil {
 		return err
 	}
 
@@ -260,6 +272,9 @@ func (h *SharesHandler) DeleteShareLink(req *restful.Request, rsp *restful.Respo
 // UpdateSharePolicies updates policies associated to the underlying workspace
 func (h *SharesHandler) UpdateSharePolicies(req *restful.Request, rsp *restful.Response) error {
 	if err := nativeShareUnsupported(req); err != nil {
+		return err
+	}
+	if err := kailoShareRefused(req); err != nil {
 		return err
 	}
 	var input rest.UpdateSharePoliciesRequest
