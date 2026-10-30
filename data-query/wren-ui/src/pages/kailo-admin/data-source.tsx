@@ -103,7 +103,6 @@ function DataSourceManager() {
 
   const onDelete = async (row: DataSourceRow) => {
     const confirmed = await confirm({
-      id: `delete-data-source-${row.id}`,
       tone: 'danger',
       title: t('deleteNamedTitle', {
         item: t('dataSources.title'),

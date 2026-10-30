@@ -12,7 +12,7 @@ import {
 } from '../services/connectionCredentials';
 import { isKailoAdmin, kailoActor } from '../services/kailoUserService';
 import { isGovernedQueryMode } from '../services/nativeQueryMode';
-import { ProjectResolver, validDisplayName } from './projectResolver';
+import { ProjectResolver } from './projectResolver';
 
 // DD-169: data source management. One data source is one native project
 // (one connection, its own models, threads and dashboards).
