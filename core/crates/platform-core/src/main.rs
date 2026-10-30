@@ -53,6 +53,7 @@ mod component_directory;
 mod component_notification;
 mod component_release;
 mod component_search;
+mod component_secret;
 mod component_task;
 mod conversations;
 mod custom_emoji;

@@ -790,6 +790,35 @@ impl SecretStore {
         self.destroy_version_one(&reference.locator, unbound).await
     }
 
+    /// DD-168(5)、`07` §4.8.11：组件凭据托管的每个 secret 独占一个 CAS=0 locator
+    /// （`component-secret/<binding-id>/<secret-id>`）。撤销与登记失败后的收敛只销毁这一
+    /// 形状的 version 1；不扩大其他前缀的删除权。`unbound` 为 true 时允许销毁从未写成的
+    /// 意图（写入结果不明后的收敛）。
+    pub async fn retire_component_secret(
+        &self,
+        tenant_id: Uuid,
+        reference: &SecretRef,
+        unbound: bool,
+    ) -> Result<(), SecretError> {
+        let prefix = self.tenant_locator(tenant_id, "component-secret/");
+        let Some(rest) = reference.locator.strip_prefix(&prefix) else {
+            return Err(SecretError::Refused);
+        };
+        let canonical = |id: &str| {
+            Uuid::parse_str(id)
+                .map(|parsed| parsed.to_string() == id)
+                .unwrap_or(false)
+        };
+        let shaped = match rest.split_once('/') {
+            Some((binding, secret)) => canonical(binding) && canonical(secret),
+            None => false,
+        };
+        if reference.version != 1 || reference.audience != self.identity || !shaped {
+            return Err(SecretError::Refused);
+        }
+        self.destroy_version_one(&reference.locator, unbound).await
+    }
+
     /// DD-151(1)：设备推送令牌的每个版本独占一个 CAS=0 locator（`push-token/<uuid>`）。
     /// 令牌更换、设备撤销与成员撤销只销毁这一形状的 version 1；不扩大其他前缀的删除权。
     /// `unbound` 为 true 时允许销毁从未写成的意图（写入结果不明后的收敛）。
@@ -1367,6 +1396,7 @@ impl SecretStore {
              path \"{mount}/destroy/buzz-control/*\" {{ capabilities = [\"update\"] }}\n\
              path \"{mount}/destroy/automation-webhook/*\" {{ capabilities = [\"update\"] }}\n\
              path \"{mount}/destroy/mcp-connection/*\" {{ capabilities = [\"update\"] }}\n\
+             path \"{mount}/destroy/component-secret/*\" {{ capabilities = [\"update\"] }}\n\
              path \"{mount}/destroy/buzz-ref-rehome/*\" {{ capabilities = [\"update\"] }}\n",
             mount = self.tenant.mount
         );
