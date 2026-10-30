@@ -23,12 +23,19 @@ var oidcLocalePattern = regexp.MustCompile(`^[A-Za-z]{2,3}([-_][A-Za-z0-9]{2,8})
 // claims onto the native account on every login (Kailo DD-133 §3): display
 // name, email, avatar and locale. The identity key stays iss+sub; none of
 // these fields is used to find or link an account.
-func (s *userService) refreshOIDCProfile(ctx context.Context, user *types.User, info *types.OIDCUserInfo) error {
+//
+// directoryManaged: the person is in the applied Kailo member directory, whose
+// display name is the Kailo display name and wins (DD-164(9)); the directory
+// sync keeps it, so the IdP `name` claim never overwrites it at login.
+func (s *userService) refreshOIDCProfile(ctx context.Context, user *types.User, info *types.OIDCUserInfo,
+	directoryManaged bool) error {
 	changed := false
 
-	if name := s.oidcDisplayName(ctx, user, info); name != "" && name != user.Username {
-		user.Username = name
-		changed = true
+	if !directoryManaged {
+		if name := s.oidcDisplayName(ctx, user, info); name != "" && name != user.Username {
+			user.Username = name
+			changed = true
+		}
 	}
 
 	// 07 §4.7.3: email is profile data only and is written only when the

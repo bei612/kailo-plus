@@ -281,13 +281,17 @@ func EvaluateOwnershipOrRole(
 func ownershipRequestFromContext(ctx context.Context, cfg *config.Config) access.OwnershipRequest {
 	caller := types.CallerFromContext(ctx)
 	_, apiKey := types.TenantAPIKeyScopeFromContext(ctx)
-	return access.OwnershipRequest{
+	request := access.OwnershipRequest{
 		UserID:               caller.UserID,
 		Role:                 caller.Role,
 		APIKey:               apiKey,
 		CrossTenantSuperuser: IsCrossTenantSuperuser(ctx, cfg),
 		Enforce:              rbacEnforcementEnabled(cfg),
 	}
+	if cfg != nil && cfg.KailoEnabled() {
+		request.CreatorMinRole = types.TenantRoleContributor
+	}
+	return request
 }
 
 func logOwnershipDecision(

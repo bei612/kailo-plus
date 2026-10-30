@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isKailoMode } from '@/kailo/runtime';
 import { ref, onMounted, onUnmounted, watch, reactive, computed, nextTick } from "vue";
 import { MessagePlugin } from "tdesign-vue-next";
 import DocContent from "@/components/doc-content.vue";
@@ -297,10 +298,15 @@ const isViaShare = computed(() => !!currentSharedKb.value);
 //
 // hasRole('contributor') is intentionally NOT here — being a Contributor
 // in a tenant does not by itself grant edit on someone else's KB.
+// Kailo mode (DD-164(3)): a member without Kailo `create` on this space is a
+// viewer and no longer writes what they created here; the server refuses it
+// (creator path requires contributor), so the entries disappear instead.
+const ownerStillWrites = computed(() => !isKailoMode() || authStore.hasRole('contributor'));
+
 const canEdit = computed(() => {
   if (!hasCurrentKb.value) return false;
   if (isViaShare.value) return orgStore.canEditKB(kbId.value, false);
-  if (isOwner.value) return true;
+  if (isOwner.value) return ownerStillWrites.value;
   if (authStore.hasRole('admin')) return true;
   return orgStore.canEditKB(kbId.value, false);
 });
@@ -311,7 +317,7 @@ const canEdit = computed(() => {
 const canManage = computed(() => {
   if (!hasCurrentKb.value) return false;
   if (isViaShare.value) return orgStore.canManageKB(kbId.value, false);
-  if (isOwner.value) return true;
+  if (isOwner.value) return ownerStillWrites.value;
   if (authStore.hasRole('admin')) return true;
   return orgStore.canManageKB(kbId.value, false);
 });
@@ -329,7 +335,7 @@ const canManage = computed(() => {
 const canMutateKnowledge = computed(() => {
   if (!canEdit.value) return false;
   if (isViaShare.value) return true;
-  if (isOwner.value) return true;
+  if (isOwner.value) return ownerStillWrites.value;
   if (authStore.hasRole('admin')) return true;
   return authStore.hasRole('contributor');
 });

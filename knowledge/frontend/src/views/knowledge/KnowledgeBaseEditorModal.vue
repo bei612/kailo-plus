@@ -447,7 +447,9 @@
 
       <!-- 共享设置（仅编辑模式） -->
       <div v-if="editorMode === 'edit' && activeKbId && currentSection === 'share'" class="section">
-        <KBShareSettings :kb-id="activeKbId" :can-share="canShareKB" />
+        <!-- DD-164(4)②: in Kailo mode sharing happens in Kailo's share dialog. -->
+        <KailoShareEntry v-if="kailoShareMode" :kb-id="activeKbId" :can-share="canShareKB" />
+        <KBShareSettings v-else :kb-id="activeKbId" :can-share="canShareKB" />
       </div>
 
       <!-- 活动记录（仅编辑模式，KB 所属租户内 Owner/Admin） -->
@@ -521,6 +523,8 @@ import KBAdvancedSettings from './settings/KBAdvancedSettings.vue'
 import ModelSelector from '@/components/ModelSelector.vue'
 import GraphSettings from './settings/GraphSettings.vue'
 import KBShareSettings from './settings/KBShareSettings.vue'
+import KailoShareEntry from '@/kailo/KailoShareEntry.vue'
+import { isKailoMode } from '@/kailo/runtime'
 import DataSourceSettings from './settings/DataSourceSettings.vue'
 import KnowledgeBaseActivitySettings from './settings/KnowledgeBaseActivitySettings.vue'
 import { useI18n } from 'vue-i18n'
@@ -614,10 +618,12 @@ const kbTenantId = ref<number>(0)
 // shares. Org-admins on a shared KB do NOT pass this guard, so they
 // would only see 403s if we let them try. Mirror the matrix here so
 // the buttons disappear instead of failing.
+const kailoShareMode = isKailoMode()
 const canShareKB = computed(() => {
   if (!activeKbId.value) return false
   const userId = authStore.user?.id || ''
-  if (kbCreatorId.value && userId && kbCreatorId.value === userId) return true
+  // Kailo mode (DD-164(3)): a creator who became a viewer no longer shares.
+  if (kbCreatorId.value && userId && kbCreatorId.value === userId) return !kailoShareMode || authStore.hasRole('contributor')
   return authStore.hasRole('admin')
 })
 

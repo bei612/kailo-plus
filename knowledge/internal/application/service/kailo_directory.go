@@ -31,6 +31,20 @@ type kailoMemberDirectoryRow struct {
 	DirectoryVersion string    `gorm:"column:directory_version"`
 	Snapshot         string    `gorm:"column:snapshot"`
 	AppliedAt        time.Time `gorm:"column:applied_at"`
+	// ReceiptFailures is the JSON array of items this snapshot could not
+	// converge (migration 000111), reported in the receipt (DD-164(4)⑥).
+	ReceiptFailures string `gorm:"column:receipt_failures"`
+}
+
+func (row *kailoMemberDirectoryRow) failures() []types.KailoReceiptFailure {
+	failures := []types.KailoReceiptFailure{}
+	if row == nil || row.ReceiptFailures == "" {
+		return failures
+	}
+	if err := json.Unmarshal([]byte(row.ReceiptFailures), &failures); err != nil {
+		return []types.KailoReceiptFailure{}
+	}
+	return failures
 }
 
 func (kailoMemberDirectoryRow) TableName() string { return "kailo_member_directory" }
@@ -61,7 +75,7 @@ func (s *kailoOrgService) DirectorySnapshot(ctx context.Context, bindingID strin
 		// A snapshot recorded for another binding says nothing about this one.
 		return nil, err
 	}
-	snapshot, err := types.ParseKailoMemberDirectory([]byte(row.Snapshot))
+	snapshot, err := types.ParseRecordedKailoMemberDirectory([]byte(row.Snapshot))
 	if err != nil {
 		return nil, fmt.Errorf("recorded member directory is unreadable: %w", err)
 	}
@@ -73,27 +87,27 @@ func (s *kailoOrgService) ApplyDirectory(
 	ctx context.Context,
 	issuer, fallbackTenantName string,
 	directory *types.KailoMemberDirectory,
-) (bool, error) {
+) (*types.KailoDirectoryApplyResult, error) {
 	if directory == nil || strings.TrimSpace(issuer) == "" {
-		return false, errors.New("kailo directory sync needs a snapshot and the OIDC issuer")
+		return nil, errors.New("kailo directory sync needs a snapshot and the OIDC issuer")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	recorded, err := s.recordedDirectory(s.db.WithContext(ctx))
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	if recorded != nil && strings.EqualFold(recorded.BindingID, directory.BindingID) &&
 		recorded.DirectoryVersion == directory.DirectoryVersion {
-		return false, nil
+		return &types.KailoDirectoryApplyResult{AppliedAt: recorded.AppliedAt, Failures: recorded.failures()}, nil
 	}
 
 	// Every space the snapshot names exists (and carries the directory name)
 	// whether or not anybody is in it yet.
 	tenantRef := types.KailoScopeRefTenantPrefix + directory.Tenant.TenantID
 	if _, err := s.ensureSpace(ctx, tenantRef, directory.TenantName(fallbackTenantName)); err != nil {
-		return false, err
+		return nil, err
 	}
 	for _, ws := range directory.Workspaces {
 		name := types.NormaliseKailoName(ws.Name)
@@ -101,7 +115,7 @@ func (s *kailoOrgService) ApplyDirectory(
 			name = ws.WorkspaceID
 		}
 		if _, err := s.ensureSpace(ctx, types.KailoWorkspaceScopeRef(ws.WorkspaceID), name); err != nil {
-			return false, err
+			return nil, err
 		}
 	}
 
@@ -115,38 +129,99 @@ func (s *kailoOrgService) ApplyDirectory(
 			}
 			user, err := s.directoryUser(ctx, identity, member.DisplayName)
 			if err != nil {
-				return false, err
+				return nil, err
 			}
 			if user == nil {
 				continue
 			}
+			if err := s.refreshDirectoryProfile(ctx, user, identity, member.DisplayName); err != nil {
+				return nil, err
+			}
 			if _, err := s.syncLocked(ctx, user, membership); err != nil {
-				return false, err
+				return nil, err
 			}
 			keep[user.ID] = true
 		}
 	}
 	if err := s.removeAbsent(ctx, keep); err != nil {
-		return false, err
+		return nil, err
 	}
 	if err := s.linkDirectorySpaces(ctx, directory); err != nil {
-		return false, err
+		return nil, err
+	}
+	failures, err := s.applyKnowledgeBaseShares(ctx, issuer, directory)
+	if err != nil {
+		return nil, err
+	}
+	if len(failures) > types.KailoReceiptMaxFailures {
+		failures = failures[:types.KailoReceiptMaxFailures]
 	}
 
 	raw, err := json.Marshal(directory)
 	if err != nil {
-		return false, fmt.Errorf("encode member directory: %w", err)
+		return nil, fmt.Errorf("encode member directory: %w", err)
+	}
+	failuresRaw, err := json.Marshal(failures)
+	if err != nil {
+		return nil, fmt.Errorf("encode directory receipt failures: %w", err)
 	}
 	row := kailoMemberDirectoryRow{ID: 1, BindingID: directory.BindingID,
-		DirectoryVersion: directory.DirectoryVersion, Snapshot: string(raw), AppliedAt: time.Now()}
+		DirectoryVersion: directory.DirectoryVersion, Snapshot: string(raw), AppliedAt: time.Now(),
+		ReceiptFailures: string(failuresRaw)}
 	if err := s.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"binding_id", "directory_version", "snapshot", "applied_at"}),
+		Columns: []clause.Column{{Name: "id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"binding_id", "directory_version", "snapshot", "applied_at",
+			"receipt_failures"}),
 	}).Create(&row).Error; err != nil {
-		return false, fmt.Errorf("record member directory: %w", err)
+		return nil, fmt.Errorf("record member directory: %w", err)
 	}
-	logger.Infof(ctx, "[kailo] member directory applied: %d members", len(directory.Members))
-	return true, nil
+	logger.Infof(ctx, "[kailo] member directory applied: %d members, %d shares, %d share items skipped",
+		len(directory.Members), len(directory.Shares), len(failures))
+	return &types.KailoDirectoryApplyResult{Applied: true, AppliedAt: row.AppliedAt, Failures: failures}, nil
+}
+
+// refreshDirectoryProfile keeps the native display name and avatar of a
+// directory member equal to Kailo's (DD-164(9)): the directory's display
+// name wins over the IdP name; a name another account already shows gets
+// the short identity digest appended, and if that is taken too the current
+// name stays.
+func (s *kailoOrgService) refreshDirectoryProfile(
+	ctx context.Context,
+	user *types.User,
+	identity types.KailoDirectoryIdentity,
+	displayName string,
+) error {
+	updates := map[string]interface{}{}
+	if base := normaliseDisplayName(displayName); base != "" && base != user.Username {
+		digest := sha256.Sum256([]byte(identity.Issuer + "\x00" + identity.Subject))
+		short := hex.EncodeToString(digest[:])
+		for _, candidate := range []string{base, truncateRunes(base, usernameMaxRunes-11) + " (" + short[:8] + ")"} {
+			var n int64
+			if err := s.db.WithContext(ctx).Unscoped().Model(&types.User{}).
+				Where("username = ? AND id <> ?", candidate, user.ID).Count(&n).Error; err != nil {
+				return fmt.Errorf("check directory display name: %w", err)
+			}
+			if n == 0 {
+				if candidate != user.Username {
+					updates["username"] = candidate
+					user.Username = candidate
+				}
+				break
+			}
+		}
+	}
+	if avatar := oidcAvatar(map[string]interface{}{"picture": identity.Picture}); avatar != user.Avatar {
+		updates["avatar"] = avatar
+		user.Avatar = avatar
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	updates["updated_at"] = time.Now()
+	if err := s.db.WithContext(ctx).Model(&types.User{}).Where("id = ?", user.ID).Updates(updates).Error; err != nil {
+		return fmt.Errorf("refresh directory profile: %w", err)
+	}
+	return nil
 }
 
 // directoryUser returns the native account of identity, pre-provisioning it

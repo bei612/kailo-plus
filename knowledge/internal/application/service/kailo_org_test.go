@@ -85,11 +85,21 @@ func newKailoFixture(t *testing.T) *kailoFixture {
 	if err := db.Exec("DROP INDEX idx_users_oidc_identity; ALTER TABLE users DROP COLUMN oidc_subject; ALTER TABLE users DROP COLUMN oidc_issuer; " +
 		"DROP INDEX idx_tenants_kailo_scope_ref; ALTER TABLE tenants DROP COLUMN kailo_scope_ref; " +
 		"DROP INDEX idx_organizations_kailo_tenant_ref; ALTER TABLE organizations DROP COLUMN kailo_tenant_ref; " +
+		"DROP INDEX idx_organizations_kailo_share_ref; ALTER TABLE organizations DROP COLUMN kailo_share_ref; " +
 		"ALTER TABLE auth_tokens DROP COLUMN oidc_sid; ALTER TABLE auth_tokens DROP COLUMN session_expires_at").Error; err != nil {
 		t.Fatal(err)
 	}
+	// Knowledge bases and their shares as the native SQLite schema creates
+	// them (only the columns the Kailo share projection reads).
+	if err := db.Exec("CREATE TABLE knowledge_bases (id VARCHAR(36) PRIMARY KEY, name VARCHAR(255) NOT NULL DEFAULT '', " +
+		"tenant_id INTEGER NOT NULL, creator_id VARCHAR(36), deleted_at DATETIME)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(sqliteCreateTable(t, "kb_shares")).Error; err != nil {
+		t.Fatal(err)
+	}
 	for _, name := range []string{"000024_oidc_identity.up.sql", "000028_kailo_integration.up.sql",
-		"000029_kailo_member_directory.up.sql"} {
+		"000029_kailo_member_directory.up.sql", "000030_kailo_share_projection.up.sql"} {
 		migration, err := os.ReadFile("../../../migrations/sqlite/" + name)
 		if err != nil {
 			t.Fatal(err)
@@ -220,7 +230,7 @@ func TestKailoMembershipSyncFollowsDirectoryRolesAndWorkspaces(t *testing.T) {
 	user := f.login(t).User
 	ctx := context.Background()
 	membership := &types.KailoMembership{
-		Tenant:     types.KailoScope{ID: kailoTestTenant, Name: "Acme", Role: types.KailoRoleAdmin},
+		Tenant:     types.KailoScope{ID: kailoTestTenant, Name: "Acme", Role: types.KailoRoleAdmin, Create: true},
 		Workspaces: []types.KailoScope{{ID: "ws-a", Name: "A", Role: types.KailoRoleMember}},
 	}
 	if _, err := f.svc.kailoOrg.SyncLogin(ctx, user, membership); err != nil {
@@ -232,6 +242,7 @@ func TestKailoMembershipSyncFollowsDirectoryRolesAndWorkspaces(t *testing.T) {
 		t.Fatal("a Tenant administrator administers the Tenant space and every Workspace space")
 	}
 	membership.Tenant.Role = types.KailoRoleMember
+	membership.Tenant.Create = true
 	membership.Workspaces = nil
 	if _, err := f.svc.kailoOrg.SyncLogin(ctx, user, membership); err != nil {
 		t.Fatal(err)
@@ -475,4 +486,21 @@ func TestKailoBackchannelLogoutRejectsInvalidTokens(t *testing.T) {
 	if !f.valid(t, session.Token) {
 		t.Fatal("an invalid logout token ended a session")
 	}
+}
+
+// sqliteCreateTable is the CREATE TABLE statement of table in the native
+// SQLite init migration.
+func sqliteCreateTable(t *testing.T, table string) string {
+	t.Helper()
+	raw, err := os.ReadFile("../../../migrations/sqlite/000000_init.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	start := strings.Index(text, "CREATE TABLE IF NOT EXISTS "+table+" (")
+	if start < 0 {
+		t.Fatalf("no CREATE TABLE for %s", table)
+	}
+	end := strings.Index(text[start:], ");")
+	return text[start : start+end+2]
 }

@@ -1,7 +1,9 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,10 +21,13 @@ import (
 )
 
 // Kailo member directory read (DD-133(4), 07 §4.7.4): this instance reads
-// GET /service/v1/component-directory/bindings/{binding}/members on Core's
-// service listener with a client-credentials token of its own directory
-// client, every interval, and converges with the snapshot. Anything short of
-// a complete, valid snapshot for this binding and Tenant changes nothing.
+// GET /service/v1/component-directory/bindings/{binding}/members?schema=2 on
+// Core's service listener with a client-credentials token of its own
+// directory client, every interval, and converges with the snapshot
+// (memberships, roles by Kailo create, knowledge base shares; DD-164).
+// Anything short of a complete, valid schema 2 snapshot for this binding and
+// Tenant changes nothing. After each applied or failed snapshot it reports a
+// receipt (PUT .../receipt, DD-164(4)⑥); a receipt never blocks the sync.
 
 const (
 	kailoDirectorySecretMaxBytes   = 4 << 10
@@ -70,7 +75,7 @@ func (c *kailoDirectoryClient) Read(ctx context.Context) (*types.KailoMemberDire
 	ctx, cancel := context.WithTimeout(ctx, kailoDirectoryReadTimeout)
 	defer cancel()
 	endpoint := strings.TrimRight(c.cfg.CoreURL, "/") + "/service/v1/component-directory/bindings/" +
-		url.PathEscape(c.cfg.BindingID) + "/members"
+		url.PathEscape(c.cfg.BindingID) + "/members?schema=2"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, directoryReadError("directory request")
@@ -117,6 +122,10 @@ type KailoDirectorySyncRunner struct {
 	stopCh    chan struct{}
 	doneCh    chan struct{}
 	started   atomic.Bool
+
+	// lastReceipt is the receipt Core last accepted; an identical one is not
+	// sent again (only the sync goroutine touches it).
+	lastReceipt string
 }
 
 // NewKailoDirectorySyncRunner constructs the runner from the configuration.
@@ -188,14 +197,85 @@ func (r *KailoDirectorySyncRunner) SyncOnce(ctx context.Context) bool {
 	}
 	if !strings.EqualFold(snapshot.Tenant.TenantID, r.tenantID) {
 		logger.Warnf(ctx, "[kailo] member directory names another Tenant than this deployment; ignored")
+		r.report(ctx, snapshot.DirectoryVersion, types.KailoReceiptFailed, time.Now(), []types.KailoReceiptFailure{{
+			Kind: types.KailoReceiptKindTenant, Ref: snapshot.Tenant.TenantID, ReasonCode: "TENANT_MISMATCH"}})
 		return false
 	}
 	// Mapped spaces carry the deployment's own spelling of the Tenant id.
 	snapshot.Tenant.TenantID = r.tenantID
-	applied, err := r.org.ApplyDirectory(ctx, r.issuer, r.tenantName, snapshot)
+	result, err := r.org.ApplyDirectory(ctx, r.issuer, r.tenantName, snapshot)
 	if err != nil {
 		logger.Errorf(ctx, "[kailo] member directory apply failed, retrying next interval: %v", err)
+		r.report(ctx, snapshot.DirectoryVersion, types.KailoReceiptFailed, time.Now(), []types.KailoReceiptFailure{{
+			Kind: types.KailoReceiptKindTenant, Ref: snapshot.Tenant.TenantID, ReasonCode: "NATIVE_APPLY_FAILED"}})
 		return false
 	}
-	return applied
+	r.report(ctx, snapshot.DirectoryVersion, types.KailoReceiptApplied, result.AppliedAt, result.Failures)
+	return result.Applied
+}
+
+// report sends the receipt unless Core already accepted the same one.
+func (r *KailoDirectorySyncRunner) report(
+	ctx context.Context, version, outcome string, appliedAt time.Time, failures []types.KailoReceiptFailure,
+) {
+	if failures == nil {
+		failures = []types.KailoReceiptFailure{}
+	}
+	if len(failures) > types.KailoReceiptMaxFailures {
+		failures = failures[:types.KailoReceiptMaxFailures]
+	}
+	body, err := json.Marshal(map[string]interface{}{
+		"schema":           types.KailoDirectorySchema,
+		"directoryVersion": version,
+		"appliedAt":        appliedAt.UTC().Format(time.RFC3339),
+		"outcome":          outcome,
+		"failures":         failures,
+	})
+	if err != nil {
+		return
+	}
+	// appliedAt of a failed attempt changes every interval; the receipt is
+	// the same as long as version, outcome and failures are.
+	key := version + "|" + outcome + "|" + string(mustJSON(failures))
+	if outcome == types.KailoReceiptApplied && key == r.lastReceipt {
+		return
+	}
+	if err := r.client.Receipt(ctx, body); err != nil {
+		logger.Warnf(ctx, "[kailo] directory receipt not delivered (%v); will report again", err)
+		return
+	}
+	r.lastReceipt = key
+}
+
+func mustJSON(v interface{}) []byte {
+	raw, _ := json.Marshal(v)
+	return raw
+}
+
+// Receipt PUTs one receipt body for the configured binding.
+func (c *kailoDirectoryClient) Receipt(ctx context.Context, body []byte) error {
+	token, err := c.token(ctx)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, kailoDirectoryReadTimeout)
+	defer cancel()
+	endpoint := strings.TrimRight(c.cfg.CoreURL, "/") + "/service/v1/component-directory/bindings/" +
+		url.PathEscape(c.cfg.BindingID) + "/receipt"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return directoryReadError("receipt request")
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return directoryReadError("Core unreachable")
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return directoryReadError("Core status %d", resp.StatusCode)
+	}
+	return nil
 }

@@ -66,7 +66,8 @@ func TestKailoManagedGuardClosesLocalCredentialsAndMembershipEdits(t *testing.T)
 		{http.MethodGet, "/api/v1/tenants/10002/members"},
 		{http.MethodGet, "/api/v1/organizations"},
 		{http.MethodGet, "/api/v1/organizations/org-1/members"},
-		{http.MethodPost, "/api/v1/knowledge-bases/kb-1/shares"},
+		// Knowledge base shares are closed (DD-164(4), kailo_share_routes_test.go).
+		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/shares"},
 		{http.MethodPost, "/api/v1/agents/ag-1/shares"},
 		{http.MethodPost, "/api/v1/knowledge-bases"},
 	}

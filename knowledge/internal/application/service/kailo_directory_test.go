@@ -32,11 +32,13 @@ const (
 
 // fakeCore stands in for the IdP token endpoint and Core's directory read.
 type fakeCore struct {
-	mu     sync.Mutex
-	status int
-	body   []byte
-	reads  int
-	server *httptest.Server
+	mu       sync.Mutex
+	status   int
+	body     []byte
+	reads    int
+	receipts []map[string]interface{}
+	intents  []map[string]interface{}
+	server   *httptest.Server
 }
 
 func newFakeCore(t *testing.T) *fakeCore {
@@ -60,15 +62,58 @@ func newFakeCore(t *testing.T) *fakeCore {
 				w.WriteHeader(http.StatusForbidden)
 				return
 			}
+			if r.URL.Query().Get("schema") != "2" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(c.status)
 			_, _ = w.Write(c.body)
+		case "/service/v1/component-directory/bindings/" + dirBinding + "/receipt",
+			"/service/v1/component-directory/bindings/" + dirBinding + "/share-intents":
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			if r.Header.Get("Authorization") != "Bearer directory-token" {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			var body map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if strings.HasSuffix(r.URL.Path, "/receipt") {
+				if r.Method != http.MethodPut {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				c.receipts = append(c.receipts, body)
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			c.intents = append(c.intents, body)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"intentId": "9e1f0000-0000-4000-8000-0000000000c1", "expiresAt": "2026-10-30T10:00:00Z"})
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
 	t.Cleanup(c.server.Close)
 	return c
+}
+
+func (c *fakeCore) lastReceipt() map[string]interface{} {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.receipts) == 0 {
+		return nil
+	}
+	return c.receipts[len(c.receipts)-1]
 }
 
 func (c *fakeCore) answer(status int, body []byte) {
@@ -81,9 +126,17 @@ type dirMember struct {
 	principal, sub, name, role string
 	ws                         map[string]string
 	issuer                     string
+	// create: Kailo Tenant create; wsCreate: Workspace create (ADMIN implies it).
+	create   bool
+	wsCreate map[string]bool
 }
 
 func directoryJSON(t *testing.T, version string, binding, tenant string, wsNames map[string]string, members ...dirMember) []byte {
+	return directoryJSONWithShares(t, version, binding, tenant, wsNames, []map[string]interface{}{}, members...)
+}
+
+func directoryJSONWithShares(t *testing.T, version string, binding, tenant string, wsNames map[string]string,
+	shares []map[string]interface{}, members ...dirMember) []byte {
 	t.Helper()
 	workspaces := []map[string]string{}
 	for _, id := range []string{dirWsA, dirWsB} {
@@ -97,14 +150,16 @@ func directoryJSON(t *testing.T, version string, binding, tenant string, wsNames
 		if issuer == "" {
 			issuer = kailoTestIssuer
 		}
-		memberships := []map[string]string{}
+		memberships := []map[string]interface{}{}
 		for _, id := range []string{dirWsA, dirWsB} {
 			if role, ok := m.ws[id]; ok {
-				memberships = append(memberships, map[string]string{"workspaceId": id, "role": role})
+				memberships = append(memberships, map[string]interface{}{"workspaceId": id, "role": role,
+					"create": role == "ADMIN" || m.role == "ADMIN" || m.wsCreate[id]})
 			}
 		}
 		list = append(list, map[string]interface{}{
 			"principalId": m.principal, "displayName": m.name, "tenantRole": m.role,
+			"tenantCreate": m.create || m.role == "ADMIN",
 			"identities": []map[string]string{{"issuer": issuer, "subject": m.sub,
 				"picture": "https://kailo.example/api/v1/identity/avatars/" + m.sub}},
 			"workspaces": memberships,
@@ -112,6 +167,7 @@ func directoryJSON(t *testing.T, version string, binding, tenant string, wsNames
 	}
 	digest := sha256.Sum256([]byte(version))
 	raw, err := json.Marshal(map[string]interface{}{
+		"schema": 2, "shares": shares,
 		"bindingId": binding, "directoryVersion": hex.EncodeToString(digest[:]),
 		"tenant": map[string]string{"tenantId": tenant, "name": "Acme Corp"}, "workspaces": workspaces, "members": list,
 	})
@@ -192,8 +248,9 @@ func TestKailoDirectoryPreProvisionsMembersRolesAndWorkspaces(t *testing.T) {
 			t.Fatalf("admin role in %s = %q", space.Name, got)
 		}
 	}
-	// MEMBER → contributor; a Workspace ADMIN does not raise the native role.
-	if f.role(t, bob.ID, tenant.ID) != types.TenantRoleContributor || f.role(t, bob.ID, wsA.ID) != types.TenantRoleContributor ||
+	// DD-164(3): a member without Tenant create only reads the Tenant space;
+	// a Workspace ADMIN administers that Workspace's space.
+	if f.role(t, bob.ID, tenant.ID) != types.TenantRoleViewer || f.role(t, bob.ID, wsA.ID) != types.TenantRoleAdmin ||
 		f.role(t, bob.ID, wsB.ID) != "" {
 		t.Fatal("member roles do not follow the directory")
 	}
@@ -314,9 +371,9 @@ func TestKailoDirectoryRemovesDemotesAndRenames(t *testing.T) {
 	if wsA.Name != "Alpha 2" {
 		t.Fatalf("workspace space name = %q", wsA.Name)
 	}
-	if f.role(t, ada.ID, tenant.ID) != types.TenantRoleContributor || f.role(t, ada.ID, wsA.ID) != types.TenantRoleContributor ||
+	if f.role(t, ada.ID, tenant.ID) != types.TenantRoleViewer || f.role(t, ada.ID, wsA.ID) != types.TenantRoleViewer ||
 		f.role(t, ada.ID, wsB.ID) != "" {
-		t.Fatal("a demoted administrator keeps only the member projection")
+		t.Fatal("a demoted administrator without create keeps only the read-only member projection")
 	}
 	bob := f.userBySubject(t, "bob")
 	for _, space := range []*types.Tenant{tenant, wsA, wsB} {
