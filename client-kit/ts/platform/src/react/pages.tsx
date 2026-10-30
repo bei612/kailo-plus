@@ -34,6 +34,7 @@ import { useBffClient, useFailureText, useLocale, useT } from "./context";
 import { ActionLabel, Badge, Button, Cell, Notice, Table } from "./ui";
 import { type Loaded, useLoad } from "./use-load";
 import { LegacySecretRefManagement, RoleManagement } from "./roles";
+import { OwnerTransfersPanel } from "./owner-transfers";
 import { PlatformFeedback } from "./feedback/PlatformFeedback";
 import { PlatformTenantManagement } from "./tenants";
 import { CapabilityContractsPanel } from "./capability-contracts";
@@ -123,6 +124,8 @@ export function WorkspaceManagementPanels({children}:{children?:ReactNode}) {
     members: {label:"platform.tab.members",content:children},
     invitations: {label:"invitations.title",content:<TenantInvitations/>},
     roles: {label:"roles.title",content:<RoleManagement/>},
+    // DD-168(2): members whose removal waits for ownership transfers.
+    ownerTransfers: {label:"ownerTransfers.title",content:<OwnerTransfersPanel/>},
     tenants: {label:"tenants.title",content:<PlatformTenantManagement/>},
     feedback: {label:"platform.feedback.operatorTitle",content:<PlatformFeedback/>},
     secrets: {label:"secretRehome.title",content:<LegacySecretRefManagement/>},

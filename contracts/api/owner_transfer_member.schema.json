@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/owner_transfer_member.schema.json",
+  "title": "OwnerTransferMember",
+  "description": "一名成员与其名下仍有 owner 责任的条目。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["principalId", "displayName", "membershipState", "items", "truncated"],
+  "properties": {
+    "principalId": { "type": "string", "format": "uuid" },
+    "displayName": { "type": "string" },
+    "membershipState": { "type": "string", "description": "TenantMembership 状态原值（ACTIVE、REVOKING 等）。" },
+    "items": { "type": "array", "items": { "$ref": "owner_transfer_item.schema.json" } },
+    "truncated": { "type": "boolean", "description": "条目超过单次上界（500）时为 true。" }
+  }
+}

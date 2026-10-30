@@ -89,6 +89,7 @@ import type {
   RoleMemberPage,
   RoleWorkspacePage,
   TenantMemberJoinPage,
+  OwnerTransferPage,
   TaskView,
   TenantInvitationView,
   WorkspaceMemberView,
@@ -599,6 +600,12 @@ export function createBffClient(transport: BffTransport) {
      * 不带 after 只返回当前游标供建账；带 after（不透明游标，空串为起点）返回其后加入的其他成员，
      * hasMore 为 true 时以新 cursor 续读。每次都是 fresh 请求：撤权须在下一次读取生效。
      */
+    /**
+     * DD-168(2)：成员名下仍有 owner 责任的 Resource（REVOKED 前核对的同一事实）。不带参数列出撤权中
+     * 且仍有名下资源的成员，带 principalId 只列该成员；只给 Tenant manage 持有人，每次 fresh。
+     */
+    ownerTransfers: (principalId?: string) =>
+      get<OwnerTransferPage>(`/api/v1/owner-transfers${principalId ? `?principalId=${encodeURIComponent(principalId)}` : ""}`, true),
     tenantMemberJoins: (after?: string) =>
       get<TenantMemberJoinPage>(
         `/api/v1/tenant-member-joins${after === undefined ? "" : `?after=${encodeURIComponent(after)}`}`,

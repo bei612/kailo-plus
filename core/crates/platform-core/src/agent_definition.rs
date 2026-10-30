@@ -61,19 +61,25 @@ pub(crate) fn transferable_state(state: &str) -> bool {
     matches!(state, "ACTIVE" | "RETAINED_READ_ONLY")
 }
 
-/// DD-168(2)：随 Resource 一并移交的 Asset——父为该 Resource、owner 为原 owner、尚未终结。
-/// 锁序 Resource→Asset，与 Version 写者一致。
+/// DD-168(2)：随 Resource 一并移交的 Asset——父为该 Resource、尚未终结，且 owner 为
+/// Resource 原 owner，或已不是本 Tenant `ACTIVE` 成员（撤权中或已撤权者留下的 Asset 按
+/// “Asset 默认继承 Resource owner”收拢；仍在职的其他作者的 Asset 不动）。
+/// 返回 (Asset, 当前 owner, 未收敛投影)。锁序 Resource→Asset，与 Version 写者一致。
 pub(crate) async fn inherited_assets(
     conn: &mut PgConnection,
     tenant: Uuid,
     resource: Uuid,
     owner: Uuid,
     lock: bool,
-) -> Result<Vec<(Uuid, Option<Uuid>)>, sqlx::Error> {
+) -> Result<Vec<(Uuid, Uuid, Option<Uuid>)>, sqlx::Error> {
     sqlx::query_as(&format!(
-        "select id,projection_action_execution_id from catalog.asset
-         where tenant_id=$1 and resource_id=$2 and owner_principal_id=$3 and state not in ('DELETED','FAILED')
-         order by id{}", if lock { " for update" } else { "" }))
+        "select a.id,a.owner_principal_id,a.projection_action_execution_id from catalog.asset a
+         where a.tenant_id=$1 and a.resource_id=$2 and a.state not in ('DELETED','FAILED')
+           and (a.owner_principal_id=$3 or not exists(
+             select 1 from identity.tenant_membership tm join identity.principal p on p.id=tm.tenant_principal_id
+             where tm.tenant_id=$1 and tm.tenant_principal_id=a.owner_principal_id and tm.state='ACTIVE'
+               and p.status='ACTIVE'))
+         order by a.id{}", if lock { " for update of a" } else { "" }))
         .bind(tenant).bind(resource).bind(owner).fetch_all(conn).await
 }
 
@@ -336,12 +342,12 @@ pub(crate) async fn dispatch(
     } else {
         Vec::new()
     };
-    if assets.iter().any(|(_, pending)| pending.is_some()) {
+    if assets.iter().any(|(_, _, pending)| pending.is_some()) {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
-    for (asset, _) in &assets {
+    for (asset, from, _) in &assets {
         if !matches!(
-            move_asset_owner(gov, r.tenant_id, r.id, *asset, r.owner_principal_id, owner).await,
+            move_asset_owner(gov, r.tenant_id, r.id, *asset, *from, owner).await,
             Ok(true)
         ) {
             return unknown(tx, &ae, def).await;
@@ -373,10 +379,10 @@ pub(crate) async fn dispatch(
     if changed.rows_affected() != 1 {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
-    for (asset, _) in &assets {
+    for (asset, from, _) in &assets {
         sqlx::query("update catalog.asset set owner_principal_id=$3,version=version+1
             where id=$1 and tenant_id=$2 and owner_principal_id=$4")
-            .bind(asset).bind(r.tenant_id).bind(owner).bind(r.owner_principal_id).execute(&mut *tx).await?;
+            .bind(asset).bind(r.tenant_id).bind(owner).bind(from).execute(&mut *tx).await?;
     }
     sqlx::query("update catalog.agent_definition set status='ACTIVE' where resource_id=$1")
         .bind(r.id)
@@ -451,9 +457,9 @@ async fn abort_projection(
     let resolved = if resolved.is_some() && sem == Semantic::ResourceTransferOwner {
         let assets = inherited_assets(&mut tx, r.tenant_id, r.id, r.owner_principal_id, true).await?;
         let mut restored = true;
-        for (asset, _) in &assets {
+        for (asset, from, _) in &assets {
             restored &= matches!(
-                move_asset_owner(gov, r.tenant_id, r.id, *asset, attempted_owner, r.owner_principal_id).await,
+                move_asset_owner(gov, r.tenant_id, r.id, *asset, attempted_owner, *from).await,
                 Ok(true)
             );
         }
@@ -990,8 +996,24 @@ mod transfer_tests {
         let r = resource_any(&mut tx, tenant, route, true).await.unwrap().unwrap();
         assert_eq!((r.home_workspace_id, r.owner_principal_id), (Some(workspace), a));
         assert!(transferable_state(&r.state));
+        // b is not a member at all here, so its Asset counts as left behind and is gathered.
         let moved = inherited_assets(&mut tx, tenant, definition, a, true).await.unwrap();
-        assert_eq!(moved.into_iter().map(|(id, _)| id).collect::<Vec<_>>(), vec![mine]);
+        let mut ids = moved.iter().map(|(id, _, _)| *id).collect::<Vec<_>>();
+        ids.sort();
+        let mut want = vec![mine, theirs];
+        want.sort();
+        assert_eq!(ids, want);
+        // Once b is an ACTIVE member, b's own Asset stays with b.
+        sqlx::raw_sql(&format!(
+            "INSERT INTO identity.human_identity(id,display_name,status) VALUES('{b}','Fixture B','ACTIVE');
+             INSERT INTO identity.tenant_membership(id,tenant_id,human_identity_id,tenant_principal_id,state)
+               VALUES(gen_random_uuid(),'{tenant}','{b}','{b}','ACTIVE');"
+        ))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        let moved = inherited_assets(&mut tx, tenant, definition, a, true).await.unwrap();
+        assert_eq!(moved.into_iter().map(|(id, _, _)| id).collect::<Vec<_>>(), vec![mine]);
         // Cross-Tenant reads find nothing.
         assert!(resource_any(&mut tx, Uuid::new_v4(), route, false).await.unwrap().is_none());
         assert!(inherited_assets(&mut tx, Uuid::new_v4(), definition, a, false).await.unwrap().is_empty());

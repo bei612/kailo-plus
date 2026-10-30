@@ -130,6 +130,7 @@ mod tenant_bootstrap;
 mod tenant_delete;
 mod tenant_lifecycle;
 mod tenant_member_joins;
+mod owner_transfer;
 mod tenant_profile;
 mod tenant_quota;
 mod user_state;

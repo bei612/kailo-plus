@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/owner_transfer_page.schema.json",
+  "title": "OwnerTransferPage",
+  "description": "GET /api/v1/owner-transfers[?principalId=]（.design/03 §3.1 规则 2、DD-45）：成员名下仍有 owner 责任的 Resource，与 TenantMembership 进入 REVOKED 前核对的同一事实。不带参数列出撤权中（REVOKING）且仍有名下资源的成员；带 principalId 只列该成员。每次 fresh 校验 Tenant manage，否则 PERMISSION_DENIED；只读，不建立 ActionExecution，移交仍经 resource.transfer_owner 与审批。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["members", "truncated"],
+  "properties": {
+    "members": { "type": "array", "items": { "$ref": "owner_transfer_member.schema.json" } },
+    "truncated": { "type": "boolean", "description": "成员超过单次上界（50）时为 true；不静默截断。" }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/owner_transfer_item.schema.json",
+  "title": "OwnerTransferItem",
+  "description": "一个 Resource：此人是它的 owner（ownedResource=true），或此人名下有它的未终结 Asset 而 Resource 属于他人（ownedResource=false，由 Resource owner 以 resource.transfer_owner 收拢）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resourceId", "typeKey", "state", "resourceVersion", "resourceOwnerPrincipalId", "ownedResource", "assetCount", "transferable"],
+  "properties": {
+    "resourceId": { "type": "string", "format": "uuid" },
+    "typeKey": { "type": "string", "description": "ResourceType 键，客户端按已知类型显示名称，未知类型显示通用名。" },
+    "name": { "type": "string", "minLength": 1, "description": "该类型自有的显示名（定义、Skill、团队、连接器、自动化版本名，安装取其 Agent 定义名）；没有时省略。" },
+    "homeWorkspaceId": { "type": "string", "format": "uuid" },
+    "homeWorkspaceName": { "type": "string" },
+    "state": { "type": "string", "description": "Resource 状态原值。" },
+    "resourceVersion": { "type": "integer", "minimum": 1 },
+    "resourceOwnerPrincipalId": { "type": "string", "format": "uuid" },
+    "ownedResource": { "type": "boolean" },
+    "assetCount": { "type": "integer", "minimum": 0, "description": "此人名下、属于该 Resource 的未终结 Asset 数。" },
+    "transferable": { "type": "boolean", "description": "现在可以提交 resource.transfer_owner。" },
+    "blockReason": { "type": "string", "enum": ["PROJECTION_PENDING", "STATE", "AUTOMATION_ENABLED"], "description": "不可移交的原因：投影未收敛、Resource 状态不可移交、已启用的自动化须先暂停或停用。" }
+  }
+}

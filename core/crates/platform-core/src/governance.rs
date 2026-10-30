@@ -2389,9 +2389,6 @@ async fn resolve_target(
                 let owner = p
                     .principal_id
                     .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
-                if owner == r.owner_principal_id {
-                    return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
-                }
                 if !crate::agent_definition::active_owner(conn, tenant, owner).await? {
                     return Err(Refusal::Precondition(ReasonCode::TargetNotFound));
                 }
@@ -2400,7 +2397,14 @@ async fn resolve_target(
                     conn, tenant, r.id, r.owner_principal_id, lock,
                 )
                 .await?;
-                if assets.iter().any(|(_, pending)| pending.is_some()) {
+                if assets.iter().any(|(_, _, pending)| pending.is_some()) {
+                    return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+                }
+                // 新 owner 等于现 owner 只用于收拢已离开成员留下的 Asset（DD-168(2)）；
+                // 没有这样的 Asset 就没有可做的事。
+                if owner == r.owner_principal_id
+                    && !assets.iter().any(|(_, from, _)| *from != r.owner_principal_id)
+                {
                     return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
                 }
                 // 已启用的自动化以原 owner 的委托运行：须先暂停或停用再移交（DD-168(2)）。
@@ -2410,7 +2414,7 @@ async fn resolve_target(
                 .bind(r.id)
                 .fetch_one(&mut *conn)
                 .await?;
-                if enabled {
+                if enabled && owner != r.owner_principal_id {
                     return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
                 }
             }
