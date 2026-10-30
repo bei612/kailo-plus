@@ -1,5 +1,11 @@
 # 知识库原生页面 release 版本（DD-127、DD-133(5)）
 
+## 1.6.0-native-page（2026-10-30，验收批次 5 复验）
+
+1.5.0（release `2a94588f-5681-517d-add3-665cc3eed71e`，`knowledge-native-ui` `sha256:92af646f…`）登记后，发布 `de21965c1`（源 `4009e1c6`，含验收批次 5 修复与 Buzz 第 11 轮）
+重建该镜像为 `sha256:9940a69b…` 并已部署。manifest 升到 `1.6.0-native-page`（release id
+`fe333662-3d5b-588b-abd0-3649297db515`），按 `--source-commit de21965c1e202e3bca724dcc4c97c199186d666b` 渲染、登记、审批并换绑。
+
 ## 1.5.0-native-page（2026-10-29，验收批次 5，发布 79f63671）
 
 1.4.0（release `ce3ebc65-e30d-5a7d-a778-1f9bd045fe69`，`knowledge-native-ui` `sha256:8d903111…`）登记后，发布
