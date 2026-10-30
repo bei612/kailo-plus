@@ -39,6 +39,7 @@ import {MultiColumnPanel} from "../detailpanes/MultiColumnPanel";
 import genUuid from 'uuid4'
 import AppBarRight from "./AppBarRight";
 import {ModalSearch} from "../search/ModalSearch";
+import {workspaceChatShown} from "./kailoChat";
 
 const CurrentTemplateKey = 'FSTemplate'
 const TemplatesKey = 'FSTemplatePresets'
@@ -360,7 +361,8 @@ class FSTemplate extends React.Component {
 
         let headerHeight = 72;
 
-        let showChatTab = (!pydio.getPluginConfigs("action.advanced_settings").get("GLOBAL_DISABLE_CHATS")) && !xtraSmallScreen;
+        // DD-163: no shared-space chat in Kailo mode (Kailo channels).
+        let showChatTab = workspaceChatShown(pydio) && !xtraSmallScreen;
         let showInfoPanel = !xtraSmallScreen;
 
         if(showChatTab){

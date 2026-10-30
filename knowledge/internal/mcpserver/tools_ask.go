@@ -108,7 +108,9 @@ func (s *Server) handleAsk(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 // shell tools) would bypass the endpoint's tool allowlist.
 func (s *Server) resolveAskAgent(ctx context.Context, ep *types.MCPEndpoint) (*types.CustomAgent, error) {
 	agentID := strings.TrimSpace(ep.DefaultAgentID)
-	if agentID == "" {
+	// Kailo DD-163: in Kailo mode the knowledge tool answers with the
+	// built-in quick answer only; the calling Kailo Agent is the agent.
+	if agentID == "" || (s.cfg != nil && s.cfg.KailoEnabled()) {
 		agentID = types.BuiltinQuickAnswerID
 	}
 	agent, err := s.agentService.GetAgentByID(ctx, agentID)

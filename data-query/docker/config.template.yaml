@@ -149,6 +149,8 @@ pipes:
 settings:
   doc_endpoint: https://docs.getwren.ai
   is_oss: true
+  # Kailo DD-163: product help is Kailo's; no user-guide answers, no upstream docs fetch.
+  allow_user_guide: false
   engine_timeout: 30
   column_indexing_batch_size: 50
   table_retrieval_size: 10
