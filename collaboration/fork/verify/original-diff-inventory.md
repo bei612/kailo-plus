@@ -4343,18 +4343,20 @@ Top 30 之外的 (c)：
 - **视觉由 DD-141 接管**：2026-10-23 用户裁定 Kailo 视觉全面超越且不再复刻 Buzz（DD-141 Kailo 视觉设计系统）；纯视觉、无功能与交互语义的 (c) 行不计入剩余缺口。剩余计数只统计功能与交互项。
 - 这是第 0 节“(b)”规则的同一口径，比“有效行覆盖 ≥30%”宽松，逐项功能是否完整以 8.3 的功能记录与后续截图验收为准。
 
-### 8.2 当前计数（feat/buzz-restore-r9）
+### 8.2 当前计数（feat/buzz-restore-r11）
 
 | 项目 | 数量 |
 |---|---:|
 | 第 6 节 (c) 行 | 459 |
-| 已有源码替代（按引用判定） | 256 |
-| 原位改写已恢复（8.6） | 7 |
-| 原版未挂载，不计缺口（8.7） | 8 |
-| 纯视觉，由 DD-141 接管（8.7） | 1 |
-| **剩余功能与交互缺口** | **187** |
+| 已有源码替代（按引用判定，8.5） | 299 |
+| 人工登记的源码替代（8.5b） | 15 |
+| 原位改写已恢复（8.6） | 13 |
+| 原版未挂载，不计缺口（8.7） | 15 |
+| 纯视觉，由 DD-141 接管（8.7） | 5 |
+| 设计排除，不计缺口（8.7，逐行标注 DD） | 13 |
+| **剩余功能与交互缺口** | **99** |
 
-上一轮（r8）为 230 行剩余，r7 为 252 行，r6 为 289 行，r5 为 303 行，r4 为 325 行（当时尚未扣除未挂载与纯视觉行）。按引用判定脚本本轮另命中 3838（`shared/widgets/editor_option_button.dart`，命中的是 `avatar_editor_option_button` 的子串），仍计为缺口；3676 随 DD-151 推送开关恢复后计入。本轮 Desktop 侧 17 行由承接文件补注原版路径后关闭，其功能已在 r7/r8 由 Core 或 client-kit 交付（快照、团队、目录）。
+r9 为 187 行剩余，r8 为 230 行，r7 为 252 行，r6 为 289 行，r5 为 303 行。本轮按协调者裁定新增“设计排除”类（每行标注排除依据）并把 Mobile Pulse 归入“原版未挂载”。按引用判定脚本另命中 3838（`shared/widgets/editor_option_button.dart`，命中的是 `avatar_editor_option_button` 的子串），仍计为缺口。NIP-IA 身份存档（1144、2352、2846）是否属设计排除尚无设计条文，仍计为缺口待裁定。
 
 ### 8.3 各轮关闭的功能缺口
 
@@ -4367,13 +4369,14 @@ Top 30 之外的 (c)：
 - **r7**：DD-131(2) 导入裁定（内联头像存为本 Tenant 媒体对象、草稿可缺运行配置/路由/指令且发布时校验）；通用 RESOURCE_EXPORT 与 Agent 快照导出（owner 审批、ExportPackage、JSON/PNG、按读权限下载、复制分享与剪贴板快照）；Teams 全链路（`agent_team` 资源与动作、团队区与对话框、部署到频道、@团队提及、目录分享）与团队快照导入导出（ALL_AFFECTED_OWNERS 审批）；DD-131(6)“从目录选择”；r6/r7 新界面按 DD-141 令牌改造；Mobile 资料编辑页与头像拍摄/裁剪/emoji/动图整条链路、iOS 原生文本编辑器、在线状态（20001）、成员 sheet 的 Agents 分区；Desktop Inbox 三个测试按共享 InboxDetailFrame 重写。
 - **r8**：原版“选收件人直接发送”分享面板（DD-131(7)），目录与团队导入预览显示真实头像；DD-150 频道删除为受治理的 `workspace.delete`（三端入口、快照驱动的删除链），频道静音与移到分区落到 Core 个人偏好、Mobile Canvas 编辑经 `workspace.canvas.set`；Mobile 他人资料卡状态与经 `conversation.open` 发消息、Agent 行“工作中”与活动面板、r6 状态测试按新接口恢复；Desktop Updates（无 Kailo 更新源时显示宿主确定状态）、macOS 托盘菜单与 OS 空闲自动离开（DD-125(5)）。
 - **r9**：DD-151 Mobile 推送（平台自有通道：设备登记与令牌入 OpenBao、Core 以 CONTROL 读 Relay 按原通知次序判定、APNs/FCM 投递、载荷不含正文，Mobile 通知开关与点击跳转）；Desktop 频道星标改走 Core 偏好；Mobile 分组排序（`sidebar_sort`）、Canvas Markdown、频道管理人员目录搜索；Mobile 活动面板“停止当前回合”（`task.cancel.agent.invoke.v1`）；频道“添加 Agent”的团队分区；Mobile 论坛频道、“稍后提醒”、Activity 标签页（收件箱、提醒、草稿）与私聊 p 标签。
+- **r10/r11**：Mobile 临时频道标识、频道元数据实时更新（重读 39000）、搜索“成员”分区、设置“社区”分区与邀请（`tenant.member.invite`）、原版“提及频道外成员”对话框（V-SCN-163）；Desktop 终端（DD-161：本人键盘驱动的本机 PTY，密钥与会话不进入 shell，Projects“在终端中打开”）；Projects 克隆失败文案与仓库来源标识（DD-160）；发送反馈（DD-158）、社区资料（tenant profile）、本地存档（DD-159）与仓库型详情经核对已在 main 交付，补注原版来源；Web Composer Escape 用例改为按状态等待。
 
-### 8.4 仍缺的主要项（r9 结束时）
+### 8.4 仍缺的主要项（r11 结束时）
 
-- DD-142 由协调者在主会话完成（不在本分支）。
-- Desktop Huddle 全模块（暂缓）、Local archive、Voice、Terminal、发送反馈、社区名称与图标编辑、Projects 仓库型详情；Updates 需要发布链提供更新源与签名公钥。
-- Mobile Pulse（原版 Mobile 无挂载入口，需先定入口）、临时频道显示、频道页输入中与在线状态细节、设置页其余分区、搜索人员分区、频道元数据更新；推送的真机投递与 Android FCM 客户端、通知扩展经本人会话取正文。
-- 设计排除但仍登记为 (c) 的行（如 537 卡片查看、695 观察帧存档）待清单口径裁定。
+- Desktop Huddle 全模块与 Voice（Voice 只服务 Huddle 中的 Agent 朗读，随 Huddle 暂缓，DD-161 注明）；合并恢复终端（2826）。
+- Projects：项目工作区 URL 驱动的资料面板（1931）、项目详情的远端呈现（1955）、概览仓库快照扫描（1959）、Agent 资料卡的“导出快照”入口（1672）。
+- NIP-IA 身份存档（1144、2352、2846）待裁定是否属设计排除。
+- Mobile：原版外观模式选择（3677）、表情爆发（3478 中的 emoji_burst）、`channel_push_cache`（3502）、邀请加入流程（invite_join、person_invite_section）、`editor_option_button`（3838）；推送真机投递阻塞于外部凭据（Apple/Google 开发者账号）。
 
 ### 8.5 已有源码替代的 (c) 行
 
@@ -4381,8 +4384,10 @@ Top 30 之外的 (c)：
 |---:|---|---|
 | 346 | `desktop/src/app/AppHuddleBar.tsx` | `client-kit/ts/platform/src/react/huddle/HuddleBar.tsx` |
 | 347 | `desktop/src/app/AppHuddleShell.tsx` | `client-kit/ts/platform/src/react/huddle/HuddleShell.tsx` |
+| 358 | `desktop/src/app/TerminalContextOverrideContext.tsx` | `collaboration/desktop/src/app/TerminalContextOverrideContext.tsx` |
 | 379 | `desktop/src/app/routes/channels.$channelId.posts.$postId.tsx` | `collaboration/desktop/src/app/routes/channels.$channelId.tsx` |
 | 396 | `desktop/src/app/useAppShellTrayMenu.tsx` | `collaboration/desktop/src/app/useTrayMenu.ts` |
+| 404 | `desktop/src/app/useTerminalContext.ts` | `client-kit/ts/platform/src/react/projects/ProjectsView.tsx` |
 | 405 | `desktop/src/app/useTrayMenu.ts` | `collaboration/desktop/src/app/useTrayMenu.ts` |
 | 414 | `desktop/src/features/agent-memory/lib/buildMemoryGraph.ts` | `client-kit/ts/platform/src/react/memory-order.ts` |
 | 433 | `desktop/src/features/agents/agentWorkingSignal.ts` | `client-kit/ts/platform/src/react/agent-activity/agentWorkingSignal.ts` |
@@ -4420,6 +4425,12 @@ Top 30 之外的 (c)：
 | 849 | `desktop/src/features/channels/ui/BotActivityBar.tsx` | `client-kit/ts/platform/src/react/agent-activity/BotActivityBar.tsx` |
 | 852 | `desktop/src/features/channels/ui/ChannelComposerActivityAccessory.tsx` | `client-kit/ts/platform/src/react/agent-activity/ChannelComposerActivityAccessory.tsx` |
 | 897 | `desktop/src/features/channels/ui/useChannelActivityTyping.ts` | `client-kit/ts/platform/src/react/agent-activity/useChannelAgentActivity.ts` |
+| 957 | `desktop/src/features/communities/communityIconCache.ts` | `client-kit/ts/platform/src/react/tenant-profile/live.tsx` |
+| 972 | `desktop/src/features/communities/lib/downscaleIcon.ts` | `client-kit/ts/platform/src/react/tenant-profile/TenantProfileDialog.tsx` |
+| 981 | `desktop/src/features/communities/ui/CommunityEditForm.tsx` | `client-kit/ts/platform/src/react/tenant-profile/TenantProfileDialog.tsx` |
+| 982 | `desktop/src/features/communities/ui/CommunityIconSettingsCard.tsx` | `client-kit/ts/platform/src/react/tenant-profile/TenantProfileDialog.tsx` |
+| 984 | `desktop/src/features/communities/ui/EditCommunityDialog.tsx` | `client-kit/ts/platform/src/react/tenant-profile/TenantProfileDialog.tsx` |
+| 989 | `desktop/src/features/communities/useCommunityIcons.ts` | `client-kit/ts/platform/src/react/tenant-profile/live.tsx` |
 | 1000 | `desktop/src/features/community-members/lib/joinAlerts.ts` | `client-kit/ts/platform/src/react/tenant-join-alerts/joinAlerts.ts` |
 | 1008 | `desktop/src/features/community-members/useCommunityJoinAlerts.ts` | `client-kit/ts/platform/src/react/tenant-join-alerts/useTenantJoinAlerts.ts` |
 | 1049 | `desktop/src/features/gifs/api.ts` | `client-kit/ts/platform/src/react/gifs/ComposerGifAttachments.tsx` |
@@ -4442,6 +4453,9 @@ Top 30 之外的 (c)：
 | 1134 | `desktop/src/features/huddle/lib/useHuddlePttState.ts` | `client-kit/ts/platform/src/react/huddle/HuddleContext.tsx` |
 | 1135 | `desktop/src/features/huddle/lib/useHuddleSpeakerActivity.ts` | `client-kit/ts/platform/src/react/huddle/HuddleContext.tsx` |
 | 1136 | `desktop/src/features/huddle/lib/useMicLevelAnalyser.ts` | `client-kit/ts/platform/src/react/huddle/HuddleContext.tsx` |
+| 1152 | `desktop/src/features/local-archive/ui/LocalArchiveSettingsCard.tsx` | `collaboration/desktop/src/features/local-archive/LocalArchiveSettingsCard.tsx` |
+| 1154 | `desktop/src/features/local-archive/ui/localArchiveKinds.ts` | `collaboration/desktop/src/features/local-archive/localArchiveModel.ts` |
+| 1159 | `desktop/src/features/local-archive/useArchiveSync.ts` | `collaboration/desktop/src/features/local-archive/useLocalArchiveBackgroundSync.ts` |
 | 1189 | `desktop/src/features/messages/lib/agentSnapshotClipboard.ts` | `client-kit/ts/platform/src/react/messages/agentSnapshotClipboard.ts` |
 | 1344 | `desktop/src/features/messages/lib/waveMessage.ts` | `client-kit/ts/platform/src/react/messages/waveMessage.ts` |
 | 1396 | `desktop/src/features/messages/ui/NonMemberMentionDialog.tsx` | `client-kit/ts/platform/src/react/non-member-mentions/NonMemberMentionDialog.tsx` |
@@ -4475,11 +4489,19 @@ Top 30 之外的 (c)：
 | 1694 | `desktop/src/features/projects/lib/projectAgentConversationStorage.ts` | `client-kit/ts/platform/src/react/projects/lib/projectAgentConversationStorage.ts` |
 | 1696 | `desktop/src/features/projects/lib/projectAgentSelection.ts` | `client-kit/ts/platform/src/react/projects/lib/projectAgentConversation.ts` |
 | 1708 | `desktop/src/features/projects/lib/projectDetailAgentContext.ts` | `client-kit/ts/platform/src/react/projects/lib/projectDetailAgentContext.ts` |
+| 1710 | `desktop/src/features/projects/lib/projectDetailSearch.ts` | `client-kit/ts/platform/src/react/projects/ProjectsView.tsx` |
+| 1712 | `desktop/src/features/projects/lib/projectDetailSelectionItem.ts` | `client-kit/ts/platform/src/react/projects/ProjectWorkItemCommunicationActions.tsx` |
+| 1716 | `desktop/src/features/projects/lib/projectGitError.ts` | `client-kit/ts/platform/src/react/projects/lib/projectGitError.ts` |
+| 1728 | `desktop/src/features/projects/lib/projectLocalRepos.ts` | `client-kit/ts/platform/src/react/projects/useProjectLocalCheckout.tsx` |
+| 1735 | `desktop/src/features/projects/lib/projectRepoHost.ts` | `client-kit/ts/platform/src/react/projects/lib/projectRepoHost.ts` |
 | 1737 | `desktop/src/features/projects/lib/projectReviewDisplay.ts` | `client-kit/ts/platform/src/react/projects/lib/projectReviewDisplay.ts` |
 | 1757 | `desktop/src/features/projects/projectChannelCreation.ts` | `client-kit/ts/platform/src/react/projects/projectChannelCreation.ts` |
 | 1759 | `desktop/src/features/projects/projectChannelRequest.ts` | `client-kit/ts/platform/src/react/inbox/needs-action.tsx` |
+| 1761 | `desktop/src/features/projects/projectChannelRequestQueue.ts` | `client-kit/ts/platform/src/react/projects/ProjectChannelRequestDialog.tsx` |
 | 1784 | `desktop/src/features/projects/projectRepositoryCreation.ts` | `client-kit/ts/platform/src/react/projects/projectRepositoryCreation.ts` |
 | 1787 | `desktop/src/features/projects/projectSnapshot.ts` | `web-client/web/src/platform/ui/inbox-snapshot.ts` |
+| 1794 | `desktop/src/features/projects/repoSyncHooks.ts` | `client-kit/ts/platform/src/react/projects/useProjectLocalCheckout.tsx` |
+| 1795 | `desktop/src/features/projects/repositoryActivityHooks.ts` | `client-kit/ts/platform/src/react/projects/lib/projectActivitySummaries.ts` |
 | 1798 | `desktop/src/features/projects/ui/AgentContextPayloadPreview.tsx` | `client-kit/ts/platform/src/react/projects/AgentContextPayloadPreview.tsx` |
 | 1812 | `desktop/src/features/projects/ui/ProjectAgentChatPanel.tsx` | `client-kit/ts/platform/src/react/projects/projectAgentChatHost.tsx` |
 | 1813 | `desktop/src/features/projects/ui/ProjectAgentContextStrip.tsx` | `client-kit/ts/platform/src/react/projects/ProjectAgentContextStrip.tsx` |
@@ -4499,9 +4521,12 @@ Top 30 之外的 (c)：
 | 1882 | `desktop/src/features/projects/ui/ProjectsCategoryCreateDialogs.tsx` | `client-kit/ts/platform/src/react/projects/ProjectsCategoryCreateDialogs.tsx` |
 | 1890 | `desktop/src/features/projects/ui/ProjectsOverviewItems.tsx` | `client-kit/ts/platform/src/react/projects/ProjectsView.tsx` |
 | 1897 | `desktop/src/features/projects/ui/ProjectsSelectionCountMenu.tsx` | `client-kit/ts/platform/src/react/projects/ProjectsSelectionCountMenu.tsx` |
+| 1905 | `desktop/src/features/projects/ui/PullRequestsPanelSurface.tsx` | `client-kit/ts/platform/src/react/projects/ProjectPullRequestsPanel.tsx` |
 | 1908 | `desktop/src/features/projects/ui/UnavailableProjectRepositories.tsx` | `client-kit/ts/platform/src/react/projects/UnavailableProjectRepositories.tsx` |
 | 1910 | `desktop/src/features/projects/ui/buildProjectsViewAgentContext.ts` | `client-kit/ts/platform/src/react/projects/buildProjectsViewAgentContext.ts` |
 | 1912 | `desktop/src/features/projects/ui/projectDetailHelpers.ts` | `client-kit/ts/platform/src/react/projects/ProjectContributorsPanel.tsx` |
+| 1913 | `desktop/src/features/projects/ui/projectGitErrorToast.ts` | `client-kit/ts/platform/src/react/projects/lib/projectGitError.ts` |
+| 1927 | `desktop/src/features/projects/ui/useProjectDetailCrumbs.ts` | `client-kit/ts/platform/src/react/projects/ProjectsView.tsx` |
 | 1928 | `desktop/src/features/projects/ui/useProjectDetailPeople.ts` | `client-kit/ts/platform/src/react/projects/ProjectsView.tsx` |
 | 1933 | `desktop/src/features/projects/ui/useProjectRepositoryPanel.ts` | `client-kit/ts/platform/src/react/projects/ProjectsView.tsx` |
 | 1934 | `desktop/src/features/projects/ui/useProjectsOverviewAgentContext.ts` | `client-kit/ts/platform/src/react/projects/useProjectsOverviewAgentContext.ts` |
@@ -4521,26 +4546,43 @@ Top 30 之外的 (c)：
 | 2026 | `desktop/src/features/settings/UpdateIndicator.tsx` | `collaboration/desktop/src/features/settings/UpdateIndicator.tsx` |
 | 2027 | `desktop/src/features/settings/hooks/UpdaterProvider.tsx` | `collaboration/desktop/src/features/settings/hooks/UpdaterProvider.tsx` |
 | 2028 | `desktop/src/features/settings/hooks/use-updater.ts` | `collaboration/desktop/src/features/settings/hooks/use-updater.ts` |
+| 2030 | `desktop/src/features/settings/hooks/useSendFeedback.ts` | `client-kit/ts/platform/src/react/feedback/SendFeedbackDialog.tsx` |
 | 2038 | `desktop/src/features/settings/sidebarUpdateCardVisibility.ts` | `collaboration/desktop/src/features/sidebar/ui/AppSidebar.tsx` |
 | 2043 | `desktop/src/features/settings/ui/ChannelTemplatesSettingsCard.tsx` | `client-kit/ts/platform/src/react/channel-templates/ChannelTemplatesSettingsCard.tsx` |
 | 2054 | `desktop/src/features/settings/ui/ModerationQueueCard.tsx` | `client-kit/ts/platform/src/react/moderation/ModerationQueueCard.tsx` |
+| 2059 | `desktop/src/features/settings/ui/SendFeedbackController.tsx` | `client-kit/ts/platform/src/react/feedback/SendFeedbackDialog.tsx` |
+| 2060 | `desktop/src/features/settings/ui/SendFeedbackDialog.tsx` | `client-kit/ts/platform/src/react/sidebar/profile-popover.tsx` |
 | 2127 | `desktop/src/features/sidebar/ui/ChannelSectionDialogs.tsx` | `client-kit/ts/platform/src/react/sidebar/channel-section-dialogs.tsx` |
 | 2135 | `desktop/src/features/sidebar/ui/SidebarDnd.tsx` | `client-kit/ts/platform/src/react/sidebar/sidebar-dnd.tsx` |
 | 2141 | `desktop/src/features/sidebar/ui/SidebarSection.tsx` | `client-kit/ts/platform/src/react/sidebar/channel-row.tsx` |
+| 2153 | `desktop/src/features/terminal/TerminalBootstrap.tsx` | `collaboration/desktop/src/app/AppShell.tsx` |
+| 2155 | `desktop/src/features/terminal/TerminalSubstrate.tsx` | `collaboration/desktop/src/features/terminal/TerminalSubstrate.tsx` |
 | 2157 | `desktop/src/features/terminal/fadeController.ts` | `collaboration/mobile/lib/features/channels/channels_page/quick_actions.dart` |
+| 2167 | `desktop/src/features/terminal/terminalClient.ts` | `collaboration/desktop/src/features/terminal/TerminalBootstrap.tsx` |
+| 2169 | `desktop/src/features/terminal/terminalPanelStore.ts` | `collaboration/desktop/src/features/terminal/TerminalPanelToggle.tsx` |
+| 2171 | `desktop/src/features/terminal/terminalRenderer.ts` | `collaboration/desktop/src/features/terminal/TerminalSubstrate.tsx` |
+| 2173 | `desktop/src/features/terminal/terminalState.ts` | `collaboration/desktop/src/features/terminal/TerminalSubstrate.tsx` |
 | 2319 | `desktop/src/shared/api/osIdle.ts` | `collaboration/desktop/src/shared/api/osIdle.ts` |
+| 2345 | `desktop/src/shared/api/tauriArchive.ts` | `collaboration/desktop/src/shared/api/tauriLocalArchive.ts` |
 | 2367 | `desktop/src/shared/api/tauriTeams.ts` | `client-kit/ts/platform/src/react/agent-library/useTeamActions.ts` |
 | 2370 | `desktop/src/shared/api/trayMenu.ts` | `collaboration/desktop/src/app/useTrayMenu.ts` |
 | 2517 | `desktop/src/shared/styles/globals/terminal.css` | `client-kit/ts/platform/src/gateway-drafts.ts` |
+| 2537 | `desktop/src/shared/theme/terminal-palette.ts` | `collaboration/desktop/src/features/terminal/useTerminalPalette.ts` |
+| 2556 | `desktop/src/shared/ui/TerminalPanelIcon.tsx` | `collaboration/desktop/src/features/terminal/TerminalPanelToggle.tsx` |
 | 2574 | `desktop/src/shared/ui/assets/terminal.svg` | `client-kit/ts/platform/src/gateway-drafts.ts` |
 | 2582 | `desktop/src/shared/ui/carousel.tsx` | `client-kit/ts/platform/src/react/profile/buzz/features/profile/ui/UserProfilePanelTabs.tsx` |
 | 2599 | `desktop/src/shared/ui/markdown/AgentSnapshotCard.tsx` | `client-kit/ts/platform/src/react/messages/SnapshotCard.tsx` |
+| 2678 | `desktop/src-tauri/src/archive/archive_db.rs` | `collaboration/desktop/src/features/local-archive/LocalArchiveSettingsCard.tsx` |
 | 2685 | `desktop/src-tauri/src/archive/pipeline.rs` | `client-kit/ts/platform/src/react/huddle/HuddleContext.tsx` |
+| 2686 | `desktop/src-tauri/src/archive/retention.rs` | `collaboration/desktop/src/features/local-archive/LocalArchiveSettingsCard.tsx` |
+| 2690 | `desktop/src-tauri/src/archive/store_migrations.rs` | `collaboration/desktop/src/features/local-archive/LocalArchiveSettingsCard.tsx` |
 | 2781 | `desktop/src-tauri/src/commands/personas/sharing.rs` | `client-kit/ts/platform/src/i18n.ts` |
 | 2782 | `desktop/src-tauri/src/commands/personas/snapshot.rs` | `client-kit/ts/platform/src/i18n.ts` |
 | 2792 | `desktop/src-tauri/src/commands/team_snapshot.rs` | `client-kit/ts/platform/src/react/agent-library/TeamSnapshotImportDialog.tsx` |
 | 2802 | `desktop/src-tauri/src/commands/teams/pending.rs` | `client-kit/ts/platform/src/i18n.ts` |
 | 2806 | `desktop/src-tauri/src/commands/teams/sharing.rs` | `client-kit/ts/platform/src/i18n.ts` |
+| 2825 | `desktop/src-tauri/src/commands/project_repo_paths.rs` | `client-kit/ts/platform/src/react/projects/useProjectLocalCheckout.tsx` |
+| 2826 | `desktop/src-tauri/src/commands/project_terminal.rs` | `client-kit/ts/platform/src/react/projects/projectGit.ts` |
 | 2858 | `desktop/src-tauri/src/commands/os_idle.rs` | `collaboration/desktop/src/shared/api/osIdle.ts` |
 | 2865 | `desktop/src-tauri/src/commands/updater.rs` | `client-kit/ts/platform/src/react/image-lightbox/ImageZoomOverlay.tsx` |
 | 2879 | `desktop/src-tauri/src/huddle/audio_output.rs` | `client-kit/ts/platform/src/react/huddle/host.tsx` |
@@ -4571,8 +4613,10 @@ Top 30 之外的 (c)：
 | 3455 | `mobile/lib/features/activity/reminders_provider.dart` | `collaboration/mobile/lib/features/activity/activity_page.dart` |
 | 3469 | `mobile/lib/features/channels/add_members_sheet.dart` | `collaboration/mobile/lib/features/channels/add_members_sheet.dart` |
 | 3470 | `mobile/lib/features/channels/agent_activity/agent_activity_sheet.dart` | `collaboration/mobile/lib/features/channels/agent_activity/agent_activity_sheet.dart` |
+| 3474 | `mobile/lib/features/channels/agent_activity/transcript_item_widget.dart` | `collaboration/mobile/lib/features/channels/agent_activity/agent_activity_sheet.dart` |
 | 3475 | `mobile/lib/features/channels/agent_activity/working_bots_provider.dart` | `collaboration/mobile/lib/features/channels/agent_activity/working_agents_provider.dart` |
 | 3492 | `mobile/lib/features/channels/channel_details_page.dart` | `collaboration/mobile/lib/features/channels/channel_details_page.dart` |
+| 3498 | `mobile/lib/features/channels/channel_metadata_updates.dart` | `collaboration/mobile/lib/features/channels/channel_governed_actions.dart` |
 | 3503 | `mobile/lib/features/channels/channel_sections/channel_sections_manager.dart` | `collaboration/mobile/lib/features/channels/channel_sections/channel_sections_provider.dart` |
 | 3504 | `mobile/lib/features/channels/channel_sections/channel_sections_provider.dart` | `collaboration/mobile/lib/features/channels/channel_sections/channel_sections_provider.dart` |
 | 3505 | `mobile/lib/features/channels/channel_sections/channel_sections_storage.dart` | `collaboration/mobile/lib/features/channels/channel_sections/channel_sections_provider.dart` |
@@ -4580,6 +4624,7 @@ Top 30 之外的 (c)：
 | 3513 | `mobile/lib/features/channels/channel_typing_provider.dart` | `collaboration/mobile/lib/features/channels/channel_typing_indicator.dart` |
 | 3515 | `mobile/lib/features/channels/channels_page/badges.dart` | `→ mobile/lib/features/channels/channels_page/error_view.dart collaboration/mobile/lib/features/channels/channels_page.dart` |
 | 3537 | `mobile/lib/features/channels/dm_channel_labels.dart` | `collaboration/mobile/lib/features/activity/activity_page.dart` |
+| 3541 | `mobile/lib/features/channels/ephemeral_channel_display.dart` | `collaboration/mobile/lib/features/channels/channels_page.dart` |
 | 3543 | `mobile/lib/features/channels/manage_channel_sheet.dart` | `collaboration/mobile/lib/features/channels/manage_channel_sheet.dart` |
 | 3544 | `mobile/lib/features/channels/members_sheet.dart` | `collaboration/mobile/lib/features/channels/members_sheet.dart` |
 | 3550 | `mobile/lib/features/channels/message_actions/message_reaction_tray.dart` | `collaboration/mobile/lib/features/channels/message_actions.dart` |
@@ -4619,6 +4664,7 @@ Top 30 之外的 (c)：
 | 3644 | `mobile/lib/features/profile/user_status.dart` | `client-kit/ts/platform/src/react/user-status/hooks.ts` |
 | 3645 | `mobile/lib/features/profile/user_status_cache_provider.dart` | `collaboration/mobile/lib/features/profile/user_status_cache_provider.dart` |
 | 3646 | `mobile/lib/features/profile/user_status_provider.dart` | `collaboration/mobile/lib/features/profile/user_status_provider.dart` |
+| 3674 | `mobile/lib/features/settings/settings_page/community_section.dart` | `collaboration/mobile/lib/features/settings/settings_page.dart` |
 | 3676 | `mobile/lib/features/settings/settings_page/notifications_section.dart` | `collaboration/mobile/lib/features/settings/settings_page.dart` |
 | 3722 | `mobile/lib/shared/custom_emoji/custom_emoji.dart` | `client-kit/ts/platform/src/react/composer/features/messages/lib/customEmojiNode.ts` |
 | 3723 | `mobile/lib/shared/custom_emoji/custom_emoji_provider.dart` | `collaboration/mobile/lib/features/channels/message_mutations.dart` |
@@ -4636,6 +4682,26 @@ Top 30 之外的 (c)：
 | 3844 | `mobile/lib/shared/widgets/masked_avatar_badge.dart` | `collaboration/mobile/lib/shared/widgets/masked_avatar_badge.dart` |
 | 3846 | `mobile/lib/shared/widgets/playing_avatar_image.dart` | `collaboration/mobile/lib/shared/widgets/playing_avatar_image.dart` |
 
+### 8.5b 人工登记的源码替代（脚本无法按文件名主干判定）
+
+| 第 6 节行号 | 原版路径 | Kailo 承接 |
+|---:|---|---|
+| 1926 | `desktop/src/features/projects/ui/useOpenProjectTerminal.ts` | client-kit `projects/projectTerminal.tsx` 与 Desktop 终端宿主（DD-161） |
+| 2682 | `desktop/src-tauri/src/archive/mod.rs` | collaboration/desktop/src-tauri/src/local_archive（DD-159） |
+| 2688 | `desktop/src-tauri/src/archive/store.rs` | collaboration/desktop/src-tauri/src/local_archive（DD-159） |
+| 2692 | `desktop/src-tauri/src/archive/sync.rs` | collaboration/desktop/src-tauri/src/local_archive（DD-159） |
+| 2784 | `desktop/src-tauri/src/commands/personas/snapshot/import.rs` | Core `agent_snapshot`（DD-131(2)） |
+| 2786 | `desktop/src-tauri/src/commands/personas/snapshot/tests.rs` | Core `agent_snapshot` 测试 |
+| 2793 | `desktop/src-tauri/src/commands/team_snapshot/tests.rs` | Core `team_snapshot` 测试（DD-131(3)） |
+| 2794 | `desktop/src-tauri/src/commands/teams/adopt.rs` | 目录团队复制（DD-131(6)） |
+| 2795 | `desktop/src-tauri/src/commands/teams/adopt/apply.rs` | 目录团队复制（DD-131(6)） |
+| 2796 | `desktop/src-tauri/src/commands/teams/adopt/tests.rs` | 目录团队复制测试 |
+| 2801 | `desktop/src-tauri/src/commands/teams/mod.rs` | Core `agent_team`（DD-131(1)） |
+| 2803 | `desktop/src-tauri/src/commands/teams/pending/tests.rs` | Core `agent_team` 测试 |
+| 2807 | `desktop/src-tauri/src/commands/teams/sharing/tests.rs` | Core `agent_team` 分享测试 |
+| 2808 | `desktop/src-tauri/src/commands/teams/tests.rs` | Core `agent_team` 测试 |
+| 3446 | `mobile/lib/features/activity/activity_page/lists.dart` | collaboration/mobile/lib/features/activity/activity_page.dart（r9 恢复，脚本只对 desktop 路径按全路径匹配） |
+
 ### 8.6 原位改写已恢复的 (c) 行
 
 | 第 6 节行号 | 原版路径 | 说明 |
@@ -4647,8 +4713,14 @@ Top 30 之外的 (c)：
 | 3642 | `mobile/lib/features/profile/settings_profile_header.dart` | 设置页资料头的状态徽章、状态文字与设置状态入口 |
 | 3496 | `mobile/lib/features/channels/channel_management_provider.dart` | 频道管理的添加成员（r6）、Canvas（r8/r9）与人员目录搜索（r9） |
 | 3643 | `mobile/lib/features/profile/user_profile_sheet.dart` | 他人资料卡的在线状态、自定义状态、经 `conversation.open` 发消息与复制公钥 |
+| 3479 | `mobile/lib/features/channels/channel_detail_page/app_bar.dart` | 频道顶栏成员入口 |
+| 3516 | `mobile/lib/features/channels/channels_page/body.dart` | 频道列表自定义分区（r8） |
+| 3522 | `mobile/lib/features/channels/channels_page/sections.dart` | 频道列表分区（r8） |
+| 3518 | `mobile/lib/features/channels/channels_page/channel_tile.dart` | 私聊行在线点（r7） |
+| 3673 | `mobile/lib/features/settings/settings_page.dart` | 设置页编辑资料入口（r7） |
+| 2747 | `desktop/src-tauri/src/commands/media_download.rs` | 快照字节读取改为原生媒体读取加快照卡核验（r7） |
 
-### 8.7 不计入缺口的 (c) 行
+### 8.7 不计入缺口的 (c) 行（原版未挂载、纯视觉、设计排除）
 
 | 第 6 节行号 | 原版路径 | 归类 |
 |---:|---|---|
@@ -4661,3 +4733,27 @@ Top 30 之外的 (c)：
 | 3639 | `mobile/lib/features/profile/profile_text_edit_sheet.dart` | 原版未挂载（公开类无引用，两处编辑器各用私有副本；本轮已随资料编辑恢复） |
 | 3672 | `mobile/lib/features/settings/accent_picker_page.dart` | 原版未挂载（固定提交中无任何引用；本轮已随强调色能力恢复文件，同样不挂载） |
 | 1538 | `desktop/src/features/onboarding/ui/LandingBees.tsx` | 纯视觉，由 DD-141 接管 |
+| 3652 | `mobile/lib/features/pulse/agent_activity_card.dart` | 原版未挂载（Pulse 在原版 Mobile 无入口；协调者裁定不新开入口） |
+| 3653 | `mobile/lib/features/pulse/compose_note_page.dart` | 原版未挂载（Pulse 在原版 Mobile 无入口；协调者裁定不新开入口） |
+| 3654 | `mobile/lib/features/pulse/note_card.dart` | 原版未挂载（Pulse 在原版 Mobile 无入口；协调者裁定不新开入口） |
+| 3655 | `mobile/lib/features/pulse/pulse_actions.dart` | 原版未挂载（Pulse 在原版 Mobile 无入口；协调者裁定不新开入口） |
+| 3656 | `mobile/lib/features/pulse/pulse_models.dart` | 原版未挂载（Pulse 在原版 Mobile 无入口；协调者裁定不新开入口） |
+| 3657 | `mobile/lib/features/pulse/pulse_page.dart` | 原版未挂载（Pulse 在原版 Mobile 无入口；协调者裁定不新开入口） |
+| 3658 | `mobile/lib/features/pulse/pulse_provider.dart` | 原版未挂载（Pulse 在原版 Mobile 无入口；协调者裁定不新开入口） |
+| 2159 | `desktop/src/features/terminal/terminalBanner.ts` | 纯视觉，由 DD-141 接管（终端字标与闪屏） |
+| 2161 | `desktop/src/features/terminal/terminalBannerColor.ts` | 纯视觉，由 DD-141 接管（终端字标与闪屏） |
+| 2163 | `desktop/src/features/terminal/terminalBannerPainter.ts` | 纯视觉，由 DD-141 接管（终端字标与闪屏） |
+| 2165 | `desktop/src/features/terminal/terminalBannerWave.ts` | 纯视觉，由 DD-141 接管（终端字标与闪屏） |
+| 537 | `desktop/src/features/agents/ui/AgentCardViewerDialog.tsx` | 设计排除（DD-131(5) 卡片铸造） |
+| 695 | `desktop/src/features/agents/ui/archivePagingState.ts` | 设计排除（DD-125(6) 不发 24200 观察帧） |
+| 1150 | `desktop/src/features/local-archive/agentMetricArchivePreference.ts` | 设计排除（DD-125(6)、DD-159(1) 指标存档） |
+| 1151 | `desktop/src/features/local-archive/observerArchivePreference.ts` | 设计排除（DD-125(6)、DD-159(1) 观察帧存档） |
+| 1156 | `desktop/src/features/local-archive/useAgentMetricArchiveSeed.ts` | 设计排除（DD-125(6)、DD-159(1)） |
+| 1157 | `desktop/src/features/local-archive/useArchiveAgentMetricsBridge.ts` | 设计排除（DD-125(6)、DD-159(1)） |
+| 1161 | `desktop/src/features/local-archive/useObserverArchiveSeed.ts` | 设计排除（DD-125(6)、DD-159(1)） |
+| 2675 | `desktop/src-tauri/src/archive/agent_usage.rs` | 设计排除（DD-125(6)、DD-159(1)） |
+| 2680 | `desktop/src-tauri/src/archive/metric_store.rs` | 设计排除（DD-125(6)、DD-159(1)） |
+| 2857 | `desktop/src-tauri/src/commands/observer_archive.rs` | 设计排除（DD-125(6)、DD-159(1)） |
+| 1960 | `desktop/src/features/projects/useRepositoryAccess.ts` | 设计排除（DD-118、DD-160(1) 不区分仓库不可读原因） |
+| 3835 | `mobile/lib/shared/widgets/bouncing_dots_indicator.dart` | 设计排除（DD-125(3) Mobile Huddle） |
+| 3847 | `mobile/lib/shared/widgets/tappable_flapping_bee.dart` | 设计排除（DD-125(5) 配对、DD-141 品牌视觉） |

@@ -56,6 +56,12 @@ impl crate::platform::api::SessionArchive for SessionArchive {
         &self,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + '_>> {
         Box::pin(async move {
+            // DD-161(5): the same identity boundary ends every terminal PTY;
+            // its context variables name the identity being retired.
+            use tauri::Manager;
+            self.0
+                .state::<crate::terminal_runtime::TerminalSessions>()
+                .shutdown_all();
             let _guard = lock().lock().await;
             erase_all(&archive_dir(&self.0)?)
         })
@@ -67,6 +73,12 @@ pub(crate) async fn change_device_key(
     state: &AppState,
     keys: Keys,
 ) -> Result<(), String> {
+    {
+        use tauri::Manager;
+        // DD-161(5): a device key change retires the identity the PTYs were opened under.
+        app.state::<crate::terminal_runtime::TerminalSessions>()
+            .shutdown_all();
+    }
     replace_device_key(&state.keys, keys, || erase_all(&archive_dir(app)?)).await
 }
 

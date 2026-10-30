@@ -25,6 +25,8 @@ import '../../shared/widgets/immediate_page_route.dart';
 import '../../shared/widgets/ios_glass_navigation_action.dart';
 import '../../shared/widgets/ios_glass_navigation_button.dart';
 import '../../shared/widgets/modal_presentation.dart';
+import '../invites/invite_create_page.dart';
+import '../invites/invite_create_provider.dart';
 import '../platform/platform_audit_page.dart';
 import '../platform/platform_agent_installation_workspaces_page.dart';
 import '../platform/platform_devices_page.dart';
@@ -35,6 +37,7 @@ import '../feedback/feedback_page.dart';
 import '../tenant_profile/tenant_profile_page.dart';
 import 'theme_picker_page.dart';
 
+part 'settings_page/community_section.dart';
 part 'settings_page/notifications_section.dart';
 
 // Buzz 779af8886caae1317b4de962082429867ab61503 mobile/lib/features/settings/settings_page.dart:
@@ -42,6 +45,9 @@ part 'settings_page/notifications_section.dart';
 // editors and the Photo row opens the original profile editor in its photo mode (kind:0
 // signed by this device's CLIENT key, DD-75; avatar bytes through the media upload).
 Widget _emptyProfileEditPage(BuildContext context) => const SizedBox.shrink();
+
+Widget _communityInvitePage(BuildContext context) =>
+    const CommunityInvitePage();
 
 enum _ProfileEditAction { displayName, description, photo }
 
@@ -53,6 +59,7 @@ class SettingsPage extends HookConsumerWidget {
     this.profileEditPageBuilder = _emptyProfileEditPage,
     this.onEditDisplayName,
     this.onEditProfileDescription,
+    this.invitePageBuilder = _communityInvitePage,
   });
 
   /// Header widget displayed at the top of settings.
@@ -66,6 +73,9 @@ class SettingsPage extends HookConsumerWidget {
 
   /// Opens the profile-description editor after the Edit Profile sheet closes.
   final Future<void> Function(BuildContext context)? onEditProfileDescription;
+
+  /// Builds the page opened by the Community section's "Invite to community" row.
+  final WidgetBuilder invitePageBuilder;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -242,7 +252,7 @@ class SettingsPage extends HookConsumerWidget {
               children: [
                 profileHeader,
                 const _OrganizationSection(),
-                const _AppearanceSection(),
+                _CommunitySection(invitePageBuilder: invitePageBuilder),
                 const _NotificationsSection(),
                 AppListCard(
                   children: [
@@ -413,38 +423,6 @@ class _OrganizationSection extends StatelessWidget {
           ),
           trailing: const _RowChevron(),
           onTap: () => open(const PlatformDevicesPage()),
-        ),
-      ],
-    );
-  }
-}
-
-class _AppearanceSection extends ConsumerWidget {
-  const _AppearanceSection();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final preference = ref.watch(communityThemeProvider);
-    final locale = Localizations.localeOf(context).toLanguageTag();
-    return AppListCard(
-      label: platformText(
-        PlatformMessageKey.platformSettingsAppearance,
-        locale: locale,
-      ),
-      verticalPadding: Grid.twelve,
-      children: [
-        AppListRow(
-          key: const ValueKey('community-theme-row'),
-          icon: LucideIcons.palette,
-          title: platformText(
-            PlatformMessageKey.platformSettingsTheme,
-            locale: locale,
-          ),
-          value: themeSelectionLabel(preference.theme, preference.mode),
-          trailing: const _RowChevron(),
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const ThemePickerPage()),
-          ),
         ),
       ],
     );

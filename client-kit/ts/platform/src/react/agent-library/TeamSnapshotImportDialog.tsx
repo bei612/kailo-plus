@@ -9,6 +9,7 @@
 // The original phase helpers desktop/src/features/agents/ui/teamSnapshotImport.lib.ts are the
 // preview/confirm/result states below; the native desktop/src-tauri/src/commands/team_snapshot.rs and
 // desktop/src-tauri/src/managed_agents/team_snapshot.rs codec is Core's team_snapshot (DD-131(3)).
+// The original desktop/src-tauri/src/commands/team_snapshot/tests.rs coverage is Core's team_snapshot tests.
 import {
   ActionGateState,
   AgentSnapshotMediaType,

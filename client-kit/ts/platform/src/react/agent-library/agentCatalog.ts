@@ -9,6 +9,8 @@
 // desktop/src/features/agents/lib/usePersonaCatalogRelay.ts, desktop/src/features/agents/lib/teamCatalogRelay.ts,
 // desktop/src/features/agents/lib/useTeamCatalogRelay.ts and the native desktop/src-tauri/src/team_catalog.rs
 // (kind:30175/30178 paging and verification): the catalog is now Core's discover-filtered read (DD-131(6)).
+// The original Tauri commands/teams/adopt.rs (+ adopt/apply.rs, tests) "add team from catalog" is the
+// governed team copy below.
 import {
   ActionDispatchState,
   ActionGateState,

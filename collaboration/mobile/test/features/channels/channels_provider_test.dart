@@ -948,6 +948,8 @@ NostrEvent _meta({
   String visibility = 'open',
   int createdAt = 1,
   bool archived = false,
+  String? ttl,
+  String? ttlDeadline,
 }) => NostrEvent(
   id: 'meta-$id',
   pubkey: 'creator',
@@ -959,6 +961,8 @@ NostrEvent _meta({
     ['t', channelType],
     [visibility == 'private' ? 'private' : 'public'],
     if (archived) ['archived', 'true'],
+    if (ttl != null) ['ttl', ttl],
+    if (ttlDeadline != null) ['ttl_deadline', ttlDeadline],
   ],
   content: '',
   sig: 'sig',

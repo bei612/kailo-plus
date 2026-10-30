@@ -561,14 +561,23 @@ class ComposeBar extends HookConsumerWidget {
         messenger?.showSnackBar(SnackBar(content: Text(error.message)));
         return;
       }
+      final nonMembers = await _nonMemberMentionPubkeys(
+        ref,
+        channelId: channelId,
+        selectedMentions: selectedMentions,
+      );
+      if (!context.mounted) return;
+      final resolution = await _resolveNonMemberMentions(
+        context,
+        ref,
+        channelId: channelId,
+        nonMembers: nonMembers,
+        selectedMentions: selectedMentions,
+        messenger: messenger,
+      );
+      if (!resolution.send || !context.mounted) return;
       final outgoing = _OutgoingMentions(selectedMentions)
-        ..demote(
-          await _nonMemberMentionPubkeys(
-            ref,
-            channelId: channelId,
-            selectedMentions: selectedMentions,
-          ),
-        );
+        ..demote(resolution.demote);
       final queuedAttachments = List<_PendingAttachment>.of(attachments.value);
 
       isSending.value = true;

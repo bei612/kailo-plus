@@ -1,15 +1,15 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/ui/RepositoryCards.tsx. Same card/row layout,
-// people stack, stats and activity bar from the governed Projects read. Git
-// host classification needs the Relay origin and terminal checkout needs the
-// native Git chain; neither is available to this shared read, so the icon is
-// the original unresolved-host mark and no terminal action is rendered.
+// people stack, stats and activity bar from the governed Projects read. The
+// host mark and "where the git data lives" path come from lib/projectRepoHost
+// (Kailo-hosted vs external, DD-118). Terminal checkout needs the native Git
+// chain and is not rendered here.
 import * as React from "react";
-import { FolderGit2 } from "lucide-react";
+import { FolderGit2, Globe } from "lucide-react";
 
 import { useUiT } from "../context";
 import { normalizePubkey } from "../conversations/pubkey";
-import type { UserProfileLookup } from "../messages/system/identity";
+import { resolveUserLabel, type UserProfileLookup } from "../messages/system/identity";
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../sidebar/tooltip";
 import { CopyShareLinkMenuItem } from "./CopyShareLinkMenuItem";
@@ -23,6 +23,7 @@ import { ProjectListRowMenu } from "./ProjectListRowMenu";
 import type { Project, Repository } from "./projectModels";
 import { repositoryShareLink } from "./projectShareLinks";
 import { selectionItemFromRepository, type ProjectSelectionItem } from "./lib/projectSelection";
+import { projectRepoHostForRepository, repositoryDisplayPath } from "./lib/projectRepoHost";
 
 export type RepositoryListItem = {
   project: Project;
@@ -50,9 +51,13 @@ export function repositorySelectionItem(project: Project, repository: Repository
   });
 }
 
-function RepositoryHostIcon({ compact = false }: { compact?: boolean }) {
+function RepositoryHostIcon({ compact = false, repository }: { compact?: boolean; repository: Repository }) {
   const t = useUiT();
-  const label = t("projects.repository.host");
+  const host = projectRepoHostForRepository(repository);
+  const label = host.kind === "kailo" ? t("projects.repository.hostKailo")
+    : host.kind === "external" ? t("projects.repository.hostExternal", { host: host.host })
+    : t("projects.repository.host");
+  const Mark = host.kind === "external" ? Globe : FolderGit2;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -66,7 +71,7 @@ function RepositoryHostIcon({ compact = false }: { compact?: boolean }) {
           data-testid="repository-host-icon"
           role="img"
         >
-          <FolderGit2 className={compact ? "h-3.5 w-3.5" : "h-4.5 w-4.5"} />
+          <Mark className={compact ? "h-3.5 w-3.5" : "h-4.5 w-4.5"} />
         </span>
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
@@ -92,12 +97,15 @@ function RepositoryOpenButton({
 }
 
 function RepositoryIdentity({
+  profiles,
   project,
   repository,
-}: Pick<RepositoryItemProps, "project" | "repository">) {
+}: Pick<RepositoryItemProps, "profiles" | "project" | "repository">) {
+  // Original: where the git data lives beats repeating the (often identical) project name.
+  const displayPath = repositoryDisplayPath(repository, resolveUserLabel({ pubkey: repository.owner, profiles }));
   return (
     <>
-      <RepositoryHostIcon />
+      <RepositoryHostIcon repository={repository} />
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
           <span className={PROJECT_LIST_ROW_TITLE_CLASS}>
@@ -105,7 +113,7 @@ function RepositoryIdentity({
           </span>
         </div>
         <p className={PROJECT_LIST_ROW_PREVIEW_CLASS}>
-          {project.name}
+          {displayPath ?? project.name}
           {` · ${repository.defaultBranch}`}
         </p>
       </div>
@@ -162,7 +170,7 @@ export const RepositoryGridCard = React.memo(function RepositoryGridCard(
       />
       <div className="pointer-events-none relative z-10 flex min-h-0 flex-1 flex-col p-4">
         <div className="flex min-w-0 items-start gap-2.5">
-          <RepositoryIdentity project={project} repository={repository} />
+          <RepositoryIdentity profiles={profiles} project={project} repository={repository} />
           <div className="pointer-events-auto ml-auto">
             <RepositoryActionsMenu canCopyLink={canCopyLink} repository={repository} />
           </div>
@@ -210,7 +218,7 @@ export const RepositoryListRow = React.memo(function RepositoryListRow(
       }
       dateSeconds={updatedAt}
       dateTestId="repositories-row-date"
-      icon={<RepositoryHostIcon compact />}
+      icon={<RepositoryHostIcon compact repository={repository} />}
       onClick={() => onOpen(project, repository)}
       peopleSlot={people.length > 0 ? <ProjectEntityFacepile interactive participants={people} profiles={profiles} /> : undefined}
       selection={selectionRangeItems ? { item: selectionItem, rangeItems: selectionRangeItems } : undefined}

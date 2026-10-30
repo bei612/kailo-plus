@@ -2,6 +2,10 @@
 // DD-159: the original Personal "Local archive" section, Desktop only. Subscriptions are
 // conversations the user reads now; copies are pulled through this device's own Relay session,
 // sealed at rest, and removed when access is lost. Copy from the shared catalog, DD-141 roles.
+// Native store: original src-tauri archive (archive_db.rs, store.rs, store_migrations.rs, sync.rs,
+// mod.rs) is src-tauri/src/local_archive (one sealed SQLite per identity, schema created in place,
+// paged channel sync); retention.rs's size readout is the card's size line (observer retention is not
+// offered, DD-159(1)).
 import * as React from "react";
 import { toast } from "sonner";
 import { useDeviceLocale } from "@client-kit/platform/react/context";

@@ -1,9 +1,14 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503: repoSyncHooks.ts,
 // ProjectRepositorySource.tsx and ProjectRepositoryContextPanel's local controls.
 // DD-160 keeps the same operations behind the Desktop host; Web has no checkout.
+// desktop/src/features/projects/lib/projectLocalRepos.ts (hasLocalRepositoryCheckout) and
+// desktop/src-tauri/src/commands/project_repo_paths.rs: DD-160(3) places each checkout in the app
+// data directory by Community and 30617 coordinate, so whether a repository has a local checkout
+// is the host's sync status for that coordinate rather than a folder-name match under a
+// user-chosen repositories directory.
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cloud, DownloadCloud, FolderOpen, HardDrive, Loader2, UploadCloud } from "lucide-react";
+import { Cloud, DownloadCloud, FolderOpen, HardDrive, Loader2, SquareTerminal, UploadCloud } from "lucide-react";
 import { toast } from "sonner";
 import { useUiT } from "../context";
 import { Button } from "../profile/buzz/shared/ui/button";
@@ -15,6 +20,7 @@ import { PROJECT_CONTEXT_ACTION_BUTTON_CLASS } from "./projectContextActionStyle
 import { PROJECT_PICKER_TRIGGER_CLASS } from "./projectPanelStyles";
 import { isOutcomeUnknown } from "../../transport";
 import { useFocusedRefetchInterval } from "./useProjectAppFocus";
+import { showProjectCloneErrorToast } from "./lib/projectGitError";
 
 export type ProjectCheckoutSource = { source: "remote" | "local"; onChange: (source: "remote" | "local") => void };
 
@@ -51,9 +57,9 @@ export function useProjectLocalCheckout(host: ProjectsHost, repository: Reposito
     mutationKey: ["project-local-checkout", owner],
     retry: false,
     onMutate: () => ({ owner }),
-    mutationFn: async (action: "clone" | "push" | "pull" | "open") => {
+    mutationFn: async (action: "clone" | "push" | "pull" | "open" | "terminal") => {
       if (!checkout || activeOwner.current !== owner) throw new Error("Local checkout unavailable");
-      if (readOnlyRef.current && action !== "open") throw new Error("Local checkout unavailable");
+      if (readOnlyRef.current && action !== "open" && action !== "terminal") throw new Error("Local checkout unavailable");
       if (action === "clone") { await checkout.cloneProjectRepository(ref); selectSource("local"); }
       if (action === "push") {
         const result = await checkout.pushProjectLocalRepository({ ...branchRef, branchName: status.data?.pendingPush?.branch ?? branchRef.branchName });
@@ -61,16 +67,21 @@ export function useProjectLocalCheckout(host: ProjectsHost, repository: Reposito
       }
       if (action === "pull") await checkout.pullProjectLocalRepository(branchRef);
       if (action === "open") await checkout.openProjectRepositoryFolder({ repository: repository.repoAddress });
+      if (action === "terminal") {
+        if (!checkout.openProjectTerminal) throw new Error("Local terminal unavailable");
+        await checkout.openProjectTerminal({ repository: repository.repoAddress });
+      }
     },
     onError: (error, action, operation) => {
       if (operation?.owner !== activeOwner.current) return;
       const reason = typeof error === "string" ? error : error instanceof Error ? error.message : "";
       if (reason === "project_repo_outcome_unknown" || action === "push" && isOutcomeUnknown(error)) toast.info(t("projects.checkout.unknown"));
+      else if (action === "clone" && reason !== "project_repo_conflict") showProjectCloneErrorToast(error);
       else toast.error(t(reason === "project_repo_conflict" ? "projects.checkout.conflict" : "projects.checkout.failed"));
     },
     onSuccess: (_data, action, operation) => {
       if (operation?.owner !== activeOwner.current) return;
-      if (action !== "open") toast.success(t("projects.checkout.completed"));
+      if (action !== "open" && action !== "terminal") toast.success(t("projects.checkout.completed"));
     },
     onSettled: (_data, _error, _action, operation) => {
       if (operation?.owner !== activeOwner.current) return;
@@ -80,7 +91,7 @@ export function useProjectLocalCheckout(host: ProjectsHost, repository: Reposito
       ]);
     },
   });
-  return { available: Boolean(checkout), readOnly, source, selectSource, status, snapshot, mutation };
+  return { available: Boolean(checkout), terminalAvailable: Boolean(checkout?.openProjectTerminal), readOnly, source, selectSource, status, snapshot, mutation };
 }
 
 export type ProjectLocalCheckoutState = ReturnType<typeof useProjectLocalCheckout>;
@@ -96,7 +107,7 @@ export function ProjectLocalCheckoutControls({ state }: { state: ProjectLocalChe
   const cloneAvailable = state.status.isSuccess && status === null;
   const Icon = state.source === "local" ? HardDrive : Cloud;
   const actionClass = PROJECT_CONTEXT_ACTION_BUTTON_CLASS;
-  const run = (action: "clone" | "push" | "pull" | "open") => state.mutation.mutate(action);
+  const run = (action: "clone" | "push" | "pull" | "open" | "terminal") => state.mutation.mutate(action);
   return <div className="grid gap-0.5" data-testid="project-local-checkout-controls">
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -122,6 +133,7 @@ export function ProjectLocalCheckoutControls({ state }: { state: ProjectLocalChe
         {t(pending ? "projects.checkout.retry" : "projects.checkout.push")} {status?.aheadCount ? status.aheadCount : ""}
       </Button> : null}
       <Button className={actionClass} disabled={busy} onClick={() => run("open")} size="sm" type="button" variant="ghost"><FolderOpen className="h-3.5 w-3.5"/>{t("projects.checkout.open")}</Button>
+      {state.terminalAvailable ? <Button className={actionClass} data-testid="project-open-terminal" disabled={busy} onClick={() => run("terminal")} size="sm" type="button" variant="ghost"><SquareTerminal className="h-3.5 w-3.5"/>{t("projects.checkout.terminal")}</Button> : null}
       {status?.localPath ? <p className="truncate text-xs text-muted-foreground" title={status.localPath}>{status.localPath}</p> : null}
     </> : null}
   </div>;

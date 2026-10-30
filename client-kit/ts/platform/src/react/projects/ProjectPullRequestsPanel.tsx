@@ -1,4 +1,6 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/ProjectPullRequestsPanel.tsx.
+// desktop/src/features/projects/ui/PullRequestsPanelSurface.tsx: a selected review wins over the empty
+// list; loading is resolved by the work-item read before this panel renders.
 import {GitBranch,MessageSquare} from "lucide-react";
 import {useUiT} from "../context";
 import {normalizePubkey} from "../conversations/pubkey";

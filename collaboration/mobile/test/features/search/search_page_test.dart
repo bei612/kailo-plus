@@ -7,7 +7,11 @@ import 'package:buzz/shared/profile/user_cache_provider.dart';
 import 'package:buzz/shared/profile/user_profile.dart';
 import 'package:buzz/features/search/recent_searches_provider.dart';
 import 'package:buzz/features/search/search_page.dart';
+import 'package:buzz/features/search/search_people.dart';
 import 'package:buzz/features/search/search_provider.dart';
+import 'package:buzz/features/channels/direct_messages.dart';
+import 'package:buzz/features/profile/user_profile_sheet.dart';
+import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:buzz/shared/theme/theme.dart';
 import 'package:buzz/shared/mentions/agent_identity_provider.dart';
 import 'package:buzz/shared/widgets/frosted_app_bar.dart';
@@ -509,7 +513,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const Key('search-empty-state')),
-        matching: find.text('Search messages and channels'),
+        matching: find.text('Search messages, channels, and people'),
       ),
       findsOneWidget,
     );
@@ -955,6 +959,91 @@ void main() {
 
     expect(find.text('Open'), findsOneWidget);
     expect(find.text('0 members'), findsNothing);
+  });
+
+  group('People (DD-75 conversation directory)', () {
+    final dana = ConversationParticipant(
+      displayName: 'Dana Scully',
+      principalId: 'principal-dana',
+      pubkeys: ['ab' * 32],
+    );
+    final eli = ConversationParticipant(
+      displayName: 'Eli',
+      principalId: 'principal-eli',
+      pubkeys: ['cd' * 32],
+    );
+
+    test('matches a name or a key prefix, never an empty query', () {
+      expect(matchesSearchPerson(dana, 'scul'), isTrue);
+      expect(matchesSearchPerson(dana, 'ABAB'), isTrue);
+      expect(matchesSearchPerson(dana, 'cdcd'), isFalse);
+      expect(matchesSearchPerson(dana, '   '), isFalse);
+    });
+
+    Future<void> pumpPeople(
+      WidgetTester tester, {
+      required List<ConversationParticipant> people,
+      ProfileDirectMessageOpener? opener,
+    }) async {
+      await tester.pumpWidget(
+        WidgetHelpers.testable(
+          overrides: [
+            searchProvider.overrideWith(
+              () => _FakeSearchNotifier(const SearchState(query: 'da')),
+            ),
+            recentSearchesProvider.overrideWith(
+              () => _FakeRecentSearchesNotifier(const []),
+            ),
+            currentPubkeyProvider.overrideWithValue('test'),
+            searchPeopleProvider.overrideWith((ref, query) async => people),
+            if (opener != null)
+              profileDirectMessageOpenerProvider.overrideWithValue(opener),
+          ],
+          child: const SearchPage(),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('lists admitted people and the People filter', (tester) async {
+      await pumpPeople(tester, people: [dana, eli]);
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('search-section-people')))
+            .data,
+        'People',
+      );
+      expect(
+        find.byKey(const ValueKey('search-person-title-principal-dana')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('search-person-title-principal-eli')),
+        findsOneWidget,
+      );
+      expect(find.text('People'), findsWidgets);
+      expect(find.text("No results for 'da'"), findsNothing);
+    });
+
+    testWidgets('an unfinished DM open is told apart, not dropped', (
+      tester,
+    ) async {
+      final opened = <String>[];
+      await pumpPeople(
+        tester,
+        people: [dana],
+        opener: (principalId) async {
+          opened.add(principalId);
+          throw const DirectMessagePending(null);
+        },
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('search-person-row-principal-dana')),
+      );
+      await tester.pumpAndSettle();
+      expect(opened, ['principal-dana']);
+      expect(find.byType(SnackBar), findsOneWidget);
+    });
   });
 }
 

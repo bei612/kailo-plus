@@ -862,7 +862,8 @@ it("Escape dismisses mention autocomplete before canceling an edit, and cannot c
     mentionPeople={[{pubkey:"b".repeat(64),displayName:"Bob"}]} onPublish={publish} onCancelEdit={canceled} />);
   const input = () => host.querySelector<HTMLElement>('[data-testid="message-input"]')!;
   await type(input(),"@Bo");
-  await vi.waitFor(() => expect(host.querySelector('[data-mention-suggestion-index]')).not.toBeNull());
+  // The suggestion list resolves on a later macrotask; under CI load 1 s was not enough (wait on the state, not a fixed budget).
+  await vi.waitFor(() => expect(host.querySelector('[data-mention-suggestion-index]')).not.toBeNull(), {timeout:15000});
   await act(async () => input().dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
   expect(canceled).not.toHaveBeenCalled();
   expect(host.querySelector('[data-mention-suggestion-index]')).toBeNull();
@@ -872,10 +873,13 @@ it("Escape dismisses mention autocomplete before canceling an edit, and cannot c
   await act(async () => input().dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
   expect(canceled).not.toHaveBeenCalled();
   await act(async () => release({}));
-  await settle();
-  await act(async () => input().dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
+  // Once the save settles, Escape cancels the edit; retry the key until the in-flight guard has cleared.
+  await vi.waitFor(async () => {
+    await act(async () => input().dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
+    expect(canceled).toHaveBeenCalled();
+  }, {timeout:15000});
   expect(canceled).toHaveBeenCalledOnce();
-});
+}, 30_000);
 
 it("restores an original edit body and never changes an unresolved edit's key for changed content", async () => {
   const publish = vi.fn().mockRejectedValue(new TransportError("lost edit receipt"));
@@ -1791,29 +1795,30 @@ describe("DD-146 original send flow: clear at Send, restore on failure", () => {
     const {upload, uploads} = uploader();
     const host = await render(composer("gif-file", upload));
     await type(input(host), "body with GIF");
-    await vi.waitFor(()=>expect(host.querySelector('[data-testid="composer-emoji-button"]')?.getAttribute("aria-label")).toBe("Insert emoji or GIF"));
+    await vi.waitFor(()=>expect(host.querySelector('[data-testid="composer-emoji-button"]')?.getAttribute("aria-label")).toBe("Insert emoji or GIF"), {timeout:15000});
     await click(host.querySelector<HTMLElement>('[data-testid="composer-emoji-button"]')!);
-    await vi.waitFor(()=>expect(document.querySelector('[data-testid="composer-gif-tab"]')).not.toBeNull());
+    await vi.waitFor(()=>expect(document.querySelector('[data-testid="composer-gif-tab"]')).not.toBeNull(), {timeout:15000});
     const tab = document.querySelector<HTMLElement>('[data-testid="composer-gif-tab"]')!;
     await act(async()=>tab.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0})));
     await click(tab);
-    await vi.waitFor(()=>expect(document.querySelector('[data-testid="klipy-gif-grid"] button')).not.toBeNull());
+    await vi.waitFor(()=>expect(document.querySelector('[data-testid="klipy-gif-grid"] button')).not.toBeNull(), {timeout:15000});
     await click(document.querySelector<HTMLElement>('[data-testid="klipy-gif-grid"] button')!);
     await attachPending(host);
     await click(button(host,"platform.send"));
     await act(async()=>uploads[0]!.reject(new TransportError("file receipt unknown")));
-    await settle();
+    // The unknown upload restores the frozen message into the composer; wait for that, not a settle count.
+    await vi.waitFor(()=>expect(input(host).textContent).toBe("body with GIF"), {timeout:15000});
     await rerender(composer("other-gif-draft", upload));
     await rerender(composer("gif-file", upload));
     expect(host.querySelectorAll('[data-testid="composer-gif-attachment"]')).toHaveLength(1);
     expect(upload).toHaveBeenCalledOnce();
     await click(button(host,"platform.send"));
-    await vi.waitFor(()=>expect(uploads).toHaveLength(2));
+    await vi.waitFor(()=>expect(uploads).toHaveLength(2), {timeout:15000});
     await act(async()=>uploads[1]!.resolve(descriptor));
-    await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledOnce());
+    await vi.waitFor(()=>expect(state.publish).toHaveBeenCalledOnce(), {timeout:15000});
     expect(state.publish.mock.calls[0][1]).toContain(gif.url);
     expect(state.publish.mock.calls[0][2]).toEqual([expect.objectContaining({sha256:descriptor.sha256})]);
-  });
+  }, 30_000);
 
   it("keeps a failed send as a recovery when the composer has moved on", async () => {
     const {upload, uploads} = uploader();

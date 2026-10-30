@@ -4,6 +4,8 @@
 // governed Projects host snapshot; the reducer and per-project fold are unchanged.
 // Kailo's Projects read does not expose kind 1617 patches, so patch commits are
 // absent from commitCount rather than estimated.
+// desktop/src/features/projects/repositoryActivityHooks.ts (useRepositoryActivitySummariesQuery) maps
+// to repositoryActivitySummaries over the same snapshot.
 import type { PulseEvent } from "../../pulse/host";
 import { summarizeProjectActivityEvents, type ProjectActivitySummary } from "../projectActivity.mjs";
 import type { Project, Repository } from "../projectModels";
