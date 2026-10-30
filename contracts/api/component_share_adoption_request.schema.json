@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_share_adoption_request.schema.json",
+  "title": "ComponentShareAdoptionRequest",
+  "description": "POST /service/v1/component-directory/bindings/{bindingId}/share-adoptions (DD-164(4)⑧): before its first schema 2 convergence a component registers an existing native share of a Kailo-mapped object as a Kailo share. Creates the component.shared_object Resource with these grants only when none exists; otherwise answers the existing Resource unchanged.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "nativeType",
+    "nativeId",
+    "name",
+    "owner",
+    "grants"
+  ],
+  "properties": {
+    "nativeType": {
+      "$ref": "../enums/component_shared_native_type.schema.json"
+    },
+    "nativeId": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "owner": {
+      "title": "ComponentShareAdoptionOwner",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "issuer",
+        "subject"
+      ],
+      "properties": {
+        "issuer": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        }
+      }
+    },
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "grants": {
+      "type": "array",
+      "description": "Mapped from the native permission: viewer -> READ, editor/admin -> WRITE; the owner is implicit.",
+      "items": {
+        "$ref": "../domain/component_share_grant.schema.json"
+      }
+    }
+  }
+}

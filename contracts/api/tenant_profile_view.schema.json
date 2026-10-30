@@ -28,6 +28,13 @@
     },
     "updateActionKey": {
       "type": "string"
+    },
+    "memberCreatePolicy": {
+      "$ref": "../enums/tenant_member_create_policy.schema.json",
+      "description": "DD-164(3): present for Tenant managers, with policyActionKey tenant.member_create_policy.set."
+    },
+    "policyActionKey": {
+      "type": "string"
     }
   }
 }

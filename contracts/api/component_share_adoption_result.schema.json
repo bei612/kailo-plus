@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_share_adoption_result.schema.json",
+  "title": "ComponentShareAdoptionResult",
+  "description": "Answer of a share adoption: the Resource now authoritative for the native object and its grants (without the owner). adopted=false means a Resource already existed and nothing was changed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "resourceId",
+    "ownerPrincipalId",
+    "adopted",
+    "grants"
+  ],
+  "properties": {
+    "resourceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "ownerPrincipalId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "adopted": {
+      "type": "boolean"
+    },
+    "grants": {
+      "type": "array",
+      "items": {
+        "$ref": "../domain/component_share_grant.schema.json"
+      }
+    }
+  }
+}

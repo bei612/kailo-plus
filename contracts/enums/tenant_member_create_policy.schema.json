@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/tenant_member_create_policy.schema.json",
+  "title": "TenantMemberCreatePolicy",
+  "description": "DD-164(3): whether ordinary Tenant members hold tenant#creator (MEMBERS_CREATE, the default) or only administrators create (ADMINS_ONLY).",
+  "type": "string",
+  "enum": [
+    "MEMBERS_CREATE",
+    "ADMINS_ONLY"
+  ]
+}

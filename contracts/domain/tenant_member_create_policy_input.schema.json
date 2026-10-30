@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/tenant_member_create_policy_input.schema.json",
+  "title": "TenantMemberCreatePolicyInput",
+  "description": "Only tenant.member_create_policy.set (DD-164(3)) and required for it: the policy and the Tenant version it was read at.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "policy",
+    "expectedVersion"
+  ],
+  "properties": {
+    "policy": {
+      "$ref": "../enums/tenant_member_create_policy.schema.json"
+    },
+    "expectedVersion": {
+      "type": "integer"
+    }
+  }
+}
