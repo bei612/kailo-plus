@@ -234,12 +234,12 @@ describe("TenantQuotaSection with component items (DD-165)", () => {
     await settle();
     expect(rows(host).map((r) => r.dataset.feature)).toEqual(["component_tokens", "knowledge_answers", "data_queries", "file_storage"]);
     const cells = (feature: string) => [...row(host, feature).querySelectorAll("td")].map((c) => c.textContent);
-    expect(cells("knowledge_answers").slice(0, 5)).toEqual(["Knowledge answers", "100", "5", "7", "93"]);
-    expect(cells("data_queries").slice(0, 3)).toEqual(["Data queries", "50", "Not set"]);
+    expect(cells("knowledge_answers").slice(0, 5)).toEqual(["Knowledge Engineering answers", "100", "5", "7", "93"]);
+    expect(cells("data_queries").slice(0, 3)).toEqual(["Data Modeling queries", "50", "Not set"]);
     expect(cells("file_storage").slice(0, 5)).toEqual(["File storage", "100 GiB", "—", "1.5 GiB", "98.5 GiB"]);
     const banners = [...host.querySelectorAll("[data-testid=tenant-quota-exhausted]")];
     expect(banners.map((b) => b.getAttribute("data-feature"))).toEqual(["component_tokens"]);
-    expect(banners[0]?.textContent).toContain("model calls from Files, Knowledge and Data Q&A are being rejected");
+    expect(banners[0]?.textContent).toContain("model calls from Files, Knowledge Engineering and Data Modeling are being rejected");
   });
 
   it("a member limit on a non-member item is out of contract (read failure)", async () => {
@@ -340,8 +340,8 @@ describe("usage page views (DD-165(4))", () => {
     const items = [...page.querySelectorAll<HTMLElement>("[data-testid=my-usage-row]")];
     expect(items.map((r) => r.dataset.feature)).toEqual(["knowledge_answers", "data_queries"]);
     const cells = (i: number) => [...(items[i]?.querySelectorAll("td") ?? [])].map((c) => c.textContent);
-    expect(cells(0).slice(0, 4)).toEqual(["Knowledge answers", "5", "5", "Your limit for this month is used up"]);
-    expect(cells(1).slice(0, 4)).toEqual(["Data queries", "2", "No personal limit",
+    expect(cells(0).slice(0, 4)).toEqual(["Knowledge Engineering answers", "5", "5", "Your limit for this month is used up"]);
+    expect(cells(1).slice(0, 4)).toEqual(["Data Modeling queries", "2", "No personal limit",
       "The organization's quota is used up — contact an admin"]);
     expect(page.querySelector("[data-testid=tenant-quotas]")).toBeNull();
     expect(page.querySelector("[data-testid=component-usage]")).toBeNull();
@@ -390,7 +390,7 @@ describe("usage page views (DD-165(4))", () => {
       "data_query_count:", "file_storage_bytes:"]);
     const cells = (i: number) => [...(rowsOf[i]?.querySelectorAll("td") ?? [])].map((c) => c.textContent);
     expect(cells(0)).toEqual(["Model tokens", "Knowledge", "Sales", "Committed", "1,200"]);
-    expect(cells(1)).toEqual(["Model tokens", "Data Q&A", "Whole organization", "Committed", "300"]);
+    expect(cells(1)).toEqual(["Model tokens", "Data Modeling", "Whole organization", "Committed", "300"]);
     expect(cells(3).slice(3)).toEqual(["No stored events in this period", "—"]);
     expect(cells(4).slice(3)).toEqual(["Cannot be verified", "—"]);
     expect(section?.textContent).not.toContain("b-know");

@@ -88,7 +88,7 @@ describe("Kailo admin area with component admin surfaces", () => {
     const { host, requests } = await mount([entry(KNOWLEDGE, models, "knowledge"), entry(DATA, source, "data_query")]);
     expect(host.querySelector('[data-testid="admin-surface-group-MODELS"]')?.textContent).toContain("模型");
     expect(host.querySelector('[data-testid="admin-surface-group-DATA_SOURCES"]')?.textContent).toContain("数据源连接");
-    expect(host.querySelector('[data-testid="admin-surface-group-MODELS"]')?.textContent).toContain("知识库");
+    expect(host.querySelector('[data-testid="admin-surface-group-MODELS"]')?.textContent).toContain("知识工程");
     const groups = [...host.querySelectorAll('[data-testid^="admin-surface-group-"]')].map((group) => group.textContent).join(" ");
     for (const name of ["weknora", "wren", "cells", "外部服务", "已连接"]) expect(groups).not.toContain(name);
     await click(host.querySelector<HTMLElement>('[data-testid="admin-surface-group-MODELS"] [data-testid="admin-surface-entry"]')!);
