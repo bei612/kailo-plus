@@ -9,7 +9,7 @@ CREATE TABLE identity.account_preferences (
     follow_system         boolean,
     locale                text,
     -- 07 §4.8.2 声明键 -> 布尔或封闭选项值；键与值由写入路径校验。
-    component_preferences jsonb       NOT NULL DEFAULT {}::jsonb,
+    component_preferences jsonb       NOT NULL DEFAULT '{}'::jsonb,
     version               integer     NOT NULL DEFAULT 1 CHECK (version > 0),
     updated_at            timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT account_preferences_theme CHECK (theme IS NULL OR theme ~ '^[a-z0-9][a-z0-9-]{0,63}$'),
