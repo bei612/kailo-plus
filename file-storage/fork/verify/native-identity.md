@@ -4276,7 +4276,7 @@ SHA-256 `8365de28200953365a06e2d25c85d271c50fde0f83f23d4c2477899147745a2b`；
 
 依据：design-authority `f3e3855c` 07 §4.8.5 与 20 §13.2；验证场景 V-SCN-269（声明登记）、V-SCN-270（控制台关闭与写拒绝）。
 
-- **声明**：`fork/release/manifest.native-page.json` 版本升为 `1.4.0-native-page`（`1.3.0` 已登记，不复用），
+- **声明**：`fork/release/manifest.native-page.json` 版本升为 `1.5.0-native-page`（`1.4.0` 已由发布 `feb30ea58` 登记，不复用），
   `frontendPresentationContract.adminSurfaces` 两项，`preferences` 不变：
   `storage.dataSources`（STORAGE，`/kailo-admin/data-sources`，READ_ONLY）与 `files.metadata`
   （SYSTEM，`/kailo-admin/metadata`，EDITABLE），均 `TENANT_MANAGE`：一个 Cells 实例服务整个 Tenant
