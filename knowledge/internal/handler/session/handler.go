@@ -68,6 +68,9 @@ type Handler struct {
 	// kailoNotifier announces long-running answers through Kailo
 	// notifications (DD-138(4), 07 §4.8.3). Nil or disabled outside Kailo mode.
 	kailoNotifier *service.KailoNotifier
+	// kailoUsage admits and meters knowledge answers through Kailo (DD-165,
+	// 07 §4.8.9). Nil or disabled outside Kailo mode.
+	kailoUsage *service.KailoUsage
 }
 
 // NewHandler creates a new instance of Handler with all necessary dependencies
@@ -103,6 +106,7 @@ func NewHandler(
 	rdb *redis.Client,
 	forkService *service.SessionForkService,
 	kailoNotifier *service.KailoNotifier,
+	kailoUsage *service.KailoUsage,
 ) *Handler {
 	h := &Handler{
 		browserSkill:          browserSkill,
@@ -143,6 +147,7 @@ func NewHandler(
 		h.forkService = forkService
 	}
 	h.kailoNotifier = kailoNotifier
+	h.kailoUsage = kailoUsage
 	return h
 }
 

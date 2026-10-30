@@ -77,6 +77,8 @@ import type {
   OwnAuditEntry,
   UsageBillingView,
   TenantQuotaPage,
+  MemberUsagePage,
+  ComponentUsagePage,
   ModerationAccessView,
   ModerationReportPage,
   ModerationAuditPage,
@@ -712,6 +714,11 @@ export function createBffClient(transport: BffTransport) {
 
     /** DD-123：本 Tenant 的平台额度（OpenMeter 唯一权威）；只对 Tenant admin 与 auditor 开放，其余 403。 */
     tenantQuotas: () => get<TenantQuotaPage>("/api/v1/tenant/quotas"),
+    /** DD-165(4)「我的用量」：每名成员只读本人带成员维度额度项的本期用量与本人上限。 */
+    myUsage: () => get<MemberUsagePage>("/api/v1/usage/me"),
+    /** DD-165(4) 按组件用量：区间 [from, to) 内按 binding 拆分；只对 Tenant admin 与 auditor，其余 403。 */
+    componentUsage: (from: string, to: string) =>
+      get<ComponentUsagePage>(`/api/v1/usage/components?${new URLSearchParams({ from, to })}`),
 
     /** DD-125(2)：审核入口提示（fresh Tenant manage）；不读取任何审核事实。 */
     moderationAccess: () => get<ModerationAccessView>("/api/v1/moderation/access"),

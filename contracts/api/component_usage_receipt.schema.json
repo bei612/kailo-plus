@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_usage_receipt.schema.json",
+  "title": "ComponentUsageReceipt",
+  "description": "DD-165：上报回执。新建 201、同键同内容重复 200（duplicate=true）。usageEventId 是 Core UsageEvent 与 OpenMeter event 的同一 ID；回执不表示 OpenMeter 已存储。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["usageEventId", "duplicate"],
+  "properties": {
+    "usageEventId": {"type": "string", "format": "uuid"},
+    "duplicate": {"type": "boolean"}
+  }
+}

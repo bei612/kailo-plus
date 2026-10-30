@@ -996,7 +996,7 @@ async fn untraced_agent_usage(
 }
 
 /// 同一权威 AuditEvent，与引用和状态写同事务；不建立计量审计的第二份表。
-async fn usage_audit(
+pub(crate) async fn usage_audit(
     tx: &mut Transaction<'_, Postgres>,
     operation: Uuid,
     stage: &str,
@@ -2133,6 +2133,7 @@ pub(crate) async fn settle_events(
                 | "AGENT_INVOCATION"
                 | "BUZZ_AGENT_MEMORY"
                 | "APPLICATION_ADAPTER_USAGE"
+                | "COMPONENT_REPORT"
         ) {
             return Err("UsageEvent source 不可核验");
         }

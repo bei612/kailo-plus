@@ -315,6 +315,134 @@ class DeployOrder(unittest.TestCase):
         self.assertEqual(journal["state"], "SUCCEEDED")
 
 
+class MeteringAlignment(unittest.TestCase):
+    """DD-165(5)：Core 就绪后、其他服务之前执行 platform-core 计量对齐；失败中止 deploy；verify 只读回读。"""
+
+    SPEC = dict(service="core-bff", apply="align-metering", verify="verify-metering")
+
+    @staticmethod
+    def runner(codes=None, problems=None):
+        calls = []
+
+        def run(mode):
+            calls.append(mode)
+            code = (codes or {}).get(mode, 0)
+            body = dict(mode="ALIGN" if mode == "align-metering" else "VERIFY", meters=9, features=7, tenants=2,
+                        entitlements=14 if not code else 13, problems=(problems or []) if code else [],
+                        unexpected=SENTINELS[1])
+            return code, "progress\n" + json.dumps(body) + "\n"
+        return run, calls
+
+    def test_apply_keeps_counts_only_and_failure_stops(self):
+        run, calls = self.runner()
+        result = node.MeteringStep(self.SPEC, run).apply()
+        self.assertEqual(calls, ["align-metering"])
+        self.assertEqual((result["meters"], result["features"], result["entitlements"]), (9, 7, 14))
+        self.assertNotIn(SENTINELS[1], json.dumps(result))
+        run, _ = self.runner({"align-metering": 5}, ["Tenant t 缺额度项 file_storage"])
+        with self.assertRaises(node.NodeError) as caught:
+            node.MeteringStep(self.SPEC, run).apply()
+        self.assertIn("缺额度项 file_storage", str(caught.exception))
+        # 无法解析的输出也是失败，不当作已对齐
+        with self.assertRaises(node.NodeError):
+            node.MeteringStep(self.SPEC, lambda mode: (1, "garbage")).apply()
+
+    def test_verify_reports_each_gap(self):
+        run, calls = self.runner()
+        self.assertEqual(node.MeteringStep(self.SPEC, run).verify()["problems"], [])
+        self.assertEqual(calls, ["verify-metering"])
+        run, _ = self.runner({"verify-metering": 5}, ["meter file_storage_bytes 未登记", "feature file_storage 的 meter 未登记"])
+        problems = node.MeteringStep(self.SPEC, run).verify()["problems"]
+        self.assertEqual(problems, ["计量回读：meter file_storage_bytes 未登记", "计量回读：feature file_storage 的 meter 未登记"])
+        self.assertEqual(node.MeteringStep(self.SPEC, lambda mode: (2, "")).verify()["problems"],
+                         ["计量回读 verify-metering 退出 2"])
+
+    def test_declaration_is_closed_and_present(self):
+        model = load_model()
+        self.assertEqual(model.metering_declaration(), self.SPEC)
+        self.assertIsNone(model.metering_declaration(dict(DECL)))
+        for bad in (dict(self.SPEC, apply="align; rm -rf /"), dict(self.SPEC, extra=1), dict(service=1, apply="a", verify="b")):
+            with self.assertRaises(model.ReleaseError):
+                model.metering_declaration(dict(metering=bad))
+
+    def deploy(self, targets, fail=False):
+        events = []
+        svcs = services(**{"core-bff": ("core", []), "worker": ("worker", ["core-bff"]), "buzz-web": ("web-client", [])})
+        doc = rendered(**{"core-bff": {}, "worker": {}, "buzz-web": {}})
+        live = {name: [ctr(name, H1)] for name in svcs}
+        spec = self.SPEC
+
+        class Model:
+            converge_plan = staticmethod(load_model().converge_plan)
+            prerequisites = staticmethod(lambda services, svc: [])
+            idp_declaration = staticmethod(lambda decl: dict(wait="keycloak"))
+            metering_declaration = staticmethod(lambda decl: spec)
+
+        class Idp:
+            def apply(self, commit):
+                return dict(applied=False, native_clients_declared=True, state="unchanged", commands=[])
+
+        def compose(*args, **kw):
+            if args[0] == "exec":
+                events.append("metering " + args[-1])
+                code = 5 if fail else 0
+                body = dict(mode="ALIGN", meters=9, features=7, tenants=1, entitlements=7,
+                            problems=["Tenant t 缺额度项 data_queries"] if fail else [])
+                return type("R", (), dict(returncode=code, stdout=json.dumps(body).encode()))()
+            events.append(args[0] + " " + args[-1])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "backups"))
+            open(os.path.join(tmp, "backups", "manifest.json"), "w").close()
+            r = node.Release.__new__(node.Release)
+            r.model, r.decl, r.commit, r.journal, r.backups = Model, dict(DECL, overlays=[], metering=spec), "c" * 40, \
+                tmp, os.path.join(tmp, "backups")
+            r.services, r.managed, r.cfg, r.ci_env = svcs, {"buzz-web": "web-client"}, dict(compose_project="p"), {}
+            r.decl["services"] = {}
+            r.operated, r.delivery = {}, None
+            r.lock = lambda: open(os.devnull)
+            r.normalize_tree = lambda: 0
+            r.apply_env = lambda: {}
+            r.desired = lambda: (doc, {name: H1 for name in svcs})
+            r.check_rendered = lambda rendered: None
+            r.targets = lambda found: list(targets)
+            r.migration_plan = lambda found: []
+            r.apply_config_oneoffs = lambda: []
+            r.wait_ready = lambda svc: events.append("wait " + svc)
+            r.idp_step = lambda: Idp()
+            r.readback = lambda svc: dict(service=svc)
+            r.readback_config = lambda svc, d, h: dict(service=svc)
+            r.compose = compose
+            r.retention = lambda: dict(deleted=[])
+            saved = node.containers, node.running_containers, node.container_file
+            node.containers, node.running_containers, node.container_file = \
+                (lambda project: live), (lambda: {}), (lambda cid, target: None)
+            try:
+                journal = r.deploy()
+            except node.NodeError as error:
+                journal = dict(error=str(error))
+            finally:
+                node.containers, node.running_containers, node.container_file = saved
+        return events, journal
+
+    def test_alignment_runs_after_core_and_before_other_services(self):
+        events, journal = self.deploy(["core-bff", "buzz-web"])
+        ups = [e for e in events if e.startswith(("up ", "metering "))]
+        self.assertEqual(ups, ["up core-bff", "metering align-metering", "up buzz-web"])
+        self.assertEqual(journal["metering"]["entitlements"], 7)
+
+    def test_unchanged_core_still_aligns_before_replacing_anything(self):
+        events, journal = self.deploy(["buzz-web"])
+        ups = [e for e in events if e.startswith(("up ", "metering ", "wait core-bff"))]
+        self.assertEqual(ups, ["wait core-bff", "metering align-metering", "up buzz-web"])
+        self.assertEqual(journal["metering"]["command"], "align-metering")
+
+    def test_failed_alignment_stops_before_the_next_service(self):
+        events, journal = self.deploy(["core-bff", "buzz-web"], fail=True)
+        self.assertNotIn("up buzz-web", events)
+        self.assertIn("缺额度项 data_queries", journal["error"])
+
+
 class ConfigOneoffs(unittest.TestCase):
     def test_digest_follows_config_content_and_skips_deliveries(self):
         import tempfile
