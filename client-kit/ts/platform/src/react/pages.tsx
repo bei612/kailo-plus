@@ -139,7 +139,7 @@ export function WorkspaceManagementPanels({children}:{children?:ReactNode}) {
   const [openedSurfaces,setOpenedSurfaces]=useState<string[]>([]);
   const selectedSurface=selected.startsWith("surface:")?selected.slice("surface:".length):null;
   return <div className="flex min-h-0 w-full flex-1 flex-col bg-sidebar sm:flex-row" data-testid="member-management-context">
-    <nav aria-label={t("platform.tab.members")} className="shrink-0 text-sidebar-foreground sm:w-(--sidebar-width)">
+    <nav aria-label={t("platform.tab.members")} className="shrink-0 text-sidebar-foreground sm:min-h-0 sm:w-(--sidebar-width) sm:overflow-y-auto">
       <SidebarGroup><SidebarGroupLabel>{t("platform.tab.members")}</SidebarGroupLabel><SidebarGroupContent><SidebarMenu>
         {(Object.keys(sections) as Section[]).map(section=><SidebarMenuItem key={section}><SidebarMenuButton type="button"
           aria-pressed={section===selected} isActive={section===selected} onClick={()=>{setSelected(section);setVisited(old=>old.includes(section)?old:[...old,section]);}}>
