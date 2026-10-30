@@ -71,7 +71,7 @@ class ComponentPlan(unittest.TestCase):
                     operated={}, deploy=dict(order=["core-bff"], config=dict(before=[], after=[])),
                     components=orch.component_entries(INSTANCES, FACTS, rebuilt={}))
         out = io.StringIO()
-        with contextlib.redirect_stderr(out):
+        with contextlib.redirect_stdout(out):
             orch.rehearse(plan)
         line = next(l for l in out.getvalue().splitlines() if l.strip().startswith("deploy:"))
         self.assertLess(line.index("core-bff"), line.index("组件实例 file-storage"))
@@ -85,7 +85,7 @@ class ComponentPlan(unittest.TestCase):
             services=[], components=[dict(component="file-storage", state="SUCCEEDED", images={"file-storage-service": NEW}),
                                      dict(component="knowledge", action="current")])
         out = io.StringIO()
-        with contextlib.redirect_stderr(out):
+        with contextlib.redirect_stdout(out):
             release.deploy({})
         self.assertIn(f"组件实例 file-storage: SUCCEEDED file-storage-service {NEW[:19]}", out.getvalue())
         self.assertNotIn("knowledge", out.getvalue())
@@ -93,7 +93,7 @@ class ComponentPlan(unittest.TestCase):
                                                 components=[dict(component="file-storage"),
                                                             dict(component="document-editor", installed=False)])
         out = io.StringIO()
-        with contextlib.redirect_stderr(out):
+        with contextlib.redirect_stdout(out):
             release.verify({})
         self.assertIn("1 个组件实例与 pin 一致", out.getvalue())
 
