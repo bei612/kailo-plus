@@ -81,6 +81,8 @@ describe("kailo-embed.js", () => {
     expect(load({ search: "?kailo_theme=light" }).adminSurface()).toBeNull();
     delete window.KailoEmbed;
     expect(load().adminSurface()).toBeNull();
+    delete window.KailoEmbed;
+    expect(load({ search: "?kailo_admin_surface=models.catalog&kailo_admin_surface=models.catalog" }).adminSurface()).toBeNull();
     for (const bad of ["Models.catalog", "models", "models.catalog%3Fx", "a.b.c.d.e"]) {
       delete window.KailoEmbed;
       expect(load({ search: `?kailo_admin_surface=${bad}` }).adminSurface()).toBeNull();

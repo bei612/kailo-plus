@@ -1,7 +1,7 @@
 // DD-138(6) (07 §4.8.5): component admin surfaces in the Kailo admin area
 // (V-SCN-229, V-SCN-269, V-SCN-270).
 import type { AdminSurfaceEntry, ComponentAdminSurfaceDeclaration } from "@client-kit/contracts";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   adminSurfaceLaunchUrl, groupAdminSurfaces, validAdminSurface, validAdminSurfacePage, validAdminSurfacePath,
 } from "../src/admin-surfaces";
@@ -27,6 +27,9 @@ const DATA = "10000000-0000-4000-8000-000000000002";
 const entry = (bindingId: string, surface: ComponentAdminSurfaceDeclaration, category: string, workspaceId?: string) =>
   ({ bindingId, surface, nativePageCategory: category, ...(workspaceId ? { workspaceId } : {}) }) as unknown as AdminSurfaceEntry;
 
+beforeEach(() => {
+  vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => true }));
+});
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("admin surface declarations", () => {

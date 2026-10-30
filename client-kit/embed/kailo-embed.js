@@ -142,9 +142,10 @@
   // fresh Kailo launch (kailo_theme present) without the parameter clears it.
   function readAdminSurface() {
     var path = global.location.pathname;
-    var launched = params ? params.get("kailo_admin_surface") : null;
-    if (launched !== null) {
-      var valid = launched.length <= 64 && PREFERENCE_KEY.test(launched) ? launched : null;
+    var launched = params ? params.getAll("kailo_admin_surface") : [];
+    if (launched.length) {
+      // Exactly one well-formed key; a repeated parameter is as invalid as a malformed one.
+      var valid = launched.length === 1 && launched[0].length <= 64 && PREFERENCE_KEY.test(launched[0]) ? launched[0] : null;
       try {
         if (valid) global.sessionStorage.setItem(ADMIN_SURFACE_KEY, JSON.stringify({ key: valid, path: path }));
         else global.sessionStorage.removeItem(ADMIN_SURFACE_KEY);
