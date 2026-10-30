@@ -19,7 +19,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, RawQuery, State},
     http::HeaderMap,
     response::{IntoResponse, Response},
     Json,
@@ -44,15 +44,36 @@ fn unavailable(what: &str) -> Refusal {
     Refusal::Unavailable(format!("member directory: {what}"))
 }
 
-/// `GET /service/v1/component-directory/bindings/{binding}/members`.
+/// DD-164(2): the directory schema a component asks for. Absent is schema 1,
+/// whose answer stays byte-identical; only `schema=1` and `schema=2` exist.
+pub(crate) fn requested_schema(query: Option<&str>) -> Result<u8, Refusal> {
+    let invalid = || Refusal::Precondition(ReasonCode::InvalidParameters);
+    match query {
+        None | Some("") => Ok(1),
+        Some("schema=1") => Ok(1),
+        Some("schema=2") => Ok(2),
+        Some(_) => Err(invalid()),
+    }
+}
+
+/// `GET /service/v1/component-directory/bindings/{binding}/members[?schema=2]`.
 pub(crate) async fn members(
     State(state): State<ServiceState>,
     headers: HeaderMap,
     Path(binding): Path<Uuid>,
+    RawQuery(query): RawQuery,
 ) -> Response {
-    match directory(&state, &headers, binding).await {
+    let schema = match requested_schema(query.as_deref()) {
+        Ok(schema) => schema,
+        Err(error) => {
+            let mut response = error.respond(None);
+            *response.status_mut() = axum::http::StatusCode::BAD_REQUEST;
+            return response;
+        }
+    };
+    match directory(&state, &headers, binding, schema).await {
         Ok(body) => {
-            tracing::info!(%binding, "成员目录已读取");
+            tracing::info!(%binding, schema, "成员目录已读取");
             (
                 [(axum::http::header::CACHE_CONTROL, "no-store")],
                 Json(body),
@@ -178,9 +199,17 @@ struct Facts {
     members: Vec<MemberRow>,
     identities: HashMap<Uuid, Vec<(String, String)>>,
     memberships: HashMap<Uuid, Vec<Uuid>>,
+    /// DD-164(4): this binding's ACTIVE `component.shared_object` Resources
+    /// (schema 2 only): id, native type, native id, owner.
+    shares: Vec<(Uuid, String, String, Uuid)>,
 }
 
-async fn facts(conn: &mut PgConnection, entry: &Entry) -> Result<Facts, Refusal> {
+async fn facts(
+    conn: &mut PgConnection,
+    entry: &Entry,
+    binding: Uuid,
+    schema: u8,
+) -> Result<Facts, Refusal> {
     let tenant = entry.tenant_id;
     let scope = entry.workspace_id;
     let members: Vec<MemberRow> = sqlx::query_as(
@@ -236,6 +265,20 @@ async fn facts(conn: &mut PgConnection, entry: &Entry) -> Result<Facts, Refusal>
     for (principal, workspace) in rows {
         memberships.entry(principal).or_default().push(workspace);
     }
+    let shares: Vec<(Uuid, String, String, Uuid)> = if schema == 2 {
+        sqlx::query_as(
+            "select id,native_type,native_id,owner_principal_id from catalog.resource
+             where tenant_id=$1 and application_binding_id=$2 and type_key=$3 and state='ACTIVE'
+             order by id",
+        )
+        .bind(tenant)
+        .bind(binding)
+        .bind(crate::governance::component_share::TYPE_KEY)
+        .fetch_all(&mut *conn)
+        .await?
+    } else {
+        Vec::new()
+    };
     Ok(Facts {
         tenant: (tenant, entry.tenant_name.clone()),
         scope_workspace: scope,
@@ -243,6 +286,7 @@ async fn facts(conn: &mut PgConnection, entry: &Entry) -> Result<Facts, Refusal>
         members,
         identities,
         memberships,
+        shares,
     })
 }
 
@@ -254,9 +298,12 @@ struct Roles {
     in_scope: HashSet<Uuid>,
     tenant_admins: HashSet<Uuid>,
     workspace_admins: HashSet<(Uuid, Uuid)>,
+    /// DD-164(2)(3), schema 2 only: Tenant and Workspace `create`.
+    tenant_creators: HashSet<Uuid>,
+    workspace_creators: HashSet<(Uuid, Uuid)>,
 }
 
-async fn roles(state: &ServiceState, facts: &Facts) -> Result<Roles, Refusal> {
+async fn roles(state: &ServiceState, facts: &Facts, schema: u8) -> Result<Roles, Refusal> {
     let tenant = facts.tenant.0.to_string();
     let principals: Vec<String> = facts
         .members
@@ -304,6 +351,20 @@ async fn roles(state: &ServiceState, facts: &Facts) -> Result<Roles, Refusal> {
         permission: "manage",
         principal,
     }));
+    if schema == 2 {
+        items.extend(principals.iter().map(|principal| BulkCheck {
+            object_type: "tenant",
+            object_id: &tenant,
+            permission: "create",
+            principal,
+        }));
+        items.extend(pairs.iter().map(|(_, _, workspace, principal)| BulkCheck {
+            object_type: "workspace",
+            object_id: workspace,
+            permission: "create",
+            principal,
+        }));
+    }
     let allowed = state
         .governance
         .spicedb
@@ -330,6 +391,18 @@ async fn roles(state: &ServiceState, facts: &Facts) -> Result<Roles, Refusal> {
     for (principal, workspace, _, _) in &pairs {
         if results.next() == Some(true) {
             roles.workspace_admins.insert((*principal, *workspace));
+        }
+    }
+    if schema == 2 {
+        for member in &facts.members {
+            if results.next() == Some(true) {
+                roles.tenant_creators.insert(member.principal_id);
+            }
+        }
+        for (principal, workspace, _, _) in &pairs {
+            if results.next() == Some(true) {
+                roles.workspace_creators.insert((*principal, *workspace));
+            }
         }
     }
     Ok(roles)
@@ -485,6 +558,7 @@ async fn directory(
     state: &ServiceState,
     headers: &HeaderMap,
     binding: Uuid,
+    schema: u8,
 ) -> Result<Value, Refusal> {
     let header = bearer(headers)?;
     let public_origin = public_origin().ok_or_else(|| unavailable("PUBLIC_ORIGIN"))?;
@@ -497,10 +571,10 @@ async fn directory(
         .execute(&mut *tx)
         .await?;
     let entry = authorize(state, &mut tx, header, binding, core_client.as_deref()).await?;
-    let facts = facts(&mut tx, &entry).await?;
+    let facts = facts(&mut tx, &entry, binding, schema).await?;
     tx.commit().await?;
 
-    let roles = roles(state, &facts).await?;
+    let roles = roles(state, &facts, schema).await?;
     let in_scope =
         |principal: &Uuid| facts.scope_workspace.is_none() || roles.in_scope.contains(principal);
     let authors: Vec<String> = facts
@@ -544,13 +618,189 @@ async fn directory(
         members,
         &public_origin,
     );
-    // The wire shape is the contract (ADR-03): refuse rather than send drift.
-    let typed: contracts::ComponentMemberDirectory =
-        serde_json::from_value(body.clone()).map_err(|_| unavailable("contract"))?;
-    if serde_json::to_value(&typed).map_err(|_| unavailable("contract"))? != body {
-        return Err(unavailable("contract"));
+    let body = if schema == 2 {
+        // DD-164(4)④: each shared object's grants, read fully consistent.
+        let listed: HashSet<Uuid> = body["members"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|m| m["principalId"].as_str())
+            .filter_map(|id| Uuid::parse_str(id).ok())
+            .collect();
+        let workspaces: HashSet<Uuid> = facts.workspaces.iter().map(|(id, _)| *id).collect();
+        let mut shares = Vec::with_capacity(facts.shares.len());
+        for (resource, native_type, native_id, owner) in &facts.shares {
+            let relationships = crate::governance::component_share::grants_of(
+                &state.governance.spicedb,
+                *resource,
+                state.governance.cfg.relationship_page,
+            )
+            .await
+            .map_err(|_| unavailable("authorization"))?;
+            shares.push(share_entry(
+                *resource,
+                native_type,
+                native_id,
+                *owner,
+                &relationships,
+                facts.tenant.0,
+                &listed,
+                &workspaces,
+            ));
+        }
+        let creators = Creators {
+            tenant: &roles.tenant_creators,
+            workspace: &roles.workspace_creators,
+        };
+        let body = upgrade(body, &creators, shares);
+        let typed: contracts::ComponentMemberDirectoryV2 =
+            serde_json::from_value(body.clone()).map_err(|_| unavailable("contract"))?;
+        if serde_json::to_value(&typed).map_err(|_| unavailable("contract"))? != body {
+            return Err(unavailable("contract"));
+        }
+        body
+    } else {
+        // The wire shape is the contract (ADR-03): refuse rather than send drift.
+        let typed: contracts::ComponentMemberDirectory =
+            serde_json::from_value(body.clone()).map_err(|_| unavailable("contract"))?;
+        if serde_json::to_value(&typed).map_err(|_| unavailable("contract"))? != body {
+            return Err(unavailable("contract"));
+        }
+        body
+    };
+    // DD-164(4)⑥: remember what was served so a receipt can be compared with it.
+    // Bookkeeping only: a failure here never withholds the directory.
+    if let Some(version) = body["directoryVersion"].as_str() {
+        if let Err(error) = record_served(state, binding, facts.tenant.0, schema, version).await {
+            tracing::warn!(%binding, error = %error, "成员目录供给版本未能记录");
+        }
     }
     Ok(body)
+}
+
+/// DD-164(4)⑥: the last directory version served to this binding's component.
+/// `served_version_since` only moves when the version or schema changes.
+async fn record_served(
+    state: &ServiceState,
+    binding: Uuid,
+    tenant: Uuid,
+    schema: u8,
+    version: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "insert into catalog.component_directory_receipt
+           (application_binding_id,tenant_id,served_schema,served_version,served_version_since,served_at)
+         values($1,$2,$3,$4,now(),now())
+         on conflict (application_binding_id) do update set
+           served_version_since = case
+             when catalog.component_directory_receipt.served_version is distinct from excluded.served_version
+               or catalog.component_directory_receipt.served_schema is distinct from excluded.served_schema
+             then now() else catalog.component_directory_receipt.served_version_since end,
+           served_schema=excluded.served_schema, served_version=excluded.served_version,
+           served_at=now()",
+    )
+    .bind(binding)
+    .bind(tenant)
+    .bind(i32::from(schema))
+    .bind(version)
+    .execute(&state.pool)
+    .await?;
+    Ok(())
+}
+
+/// DD-164(2) schema 2 additions.
+struct Creators<'a> {
+    tenant: &'a HashSet<Uuid>,
+    workspace: &'a HashSet<(Uuid, Uuid)>,
+}
+
+/// Schema 2 from the schema 1 snapshot: every member gains `tenantCreate`,
+/// every membership `create`, the body `schema` and `shares`; the version is
+/// recomputed over the whole schema 2 body.
+fn upgrade(mut body: Value, creators: &Creators<'_>, shares: Vec<Value>) -> Value {
+    if let Some(object) = body.as_object_mut() {
+        object.remove("directoryVersion");
+    }
+    if let Some(members) = body["members"].as_array_mut() {
+        for member in members {
+            let principal = member["principalId"]
+                .as_str()
+                .and_then(|id| Uuid::parse_str(id).ok());
+            member["tenantCreate"] = json!(principal.is_some_and(|p| creators.tenant.contains(&p)));
+            if let Some(memberships) = member["workspaces"].as_array_mut() {
+                for membership in memberships {
+                    let workspace = membership["workspaceId"]
+                        .as_str()
+                        .and_then(|id| Uuid::parse_str(id).ok());
+                    let create = match (principal, workspace) {
+                        (Some(p), Some(w)) => creators.workspace.contains(&(p, w)),
+                        _ => false,
+                    };
+                    membership["create"] = json!(create);
+                }
+            }
+        }
+    }
+    body["schema"] = json!(2);
+    body["shares"] = Value::Array(shares);
+    body["directoryVersion"] = json!(collab_bridge::limits::canonical_digest(&body));
+    body
+}
+
+/// One `shares[]` item (07 §4.7.4 schema 2): the owner first as WRITE, then
+/// each reader/editor subject still in this snapshot — a listed member, a
+/// listed Workspace, or this Tenant's members (READ only) — editor winning
+/// over reader, ordered by kind, id and access.
+#[allow(clippy::too_many_arguments)]
+fn share_entry(
+    resource: Uuid,
+    native_type: &str,
+    native_id: &str,
+    owner: Uuid,
+    relationships: &[(crate::spicedb::Subject, bool)],
+    tenant: Uuid,
+    members: &HashSet<Uuid>,
+    workspaces: &HashSet<Uuid>,
+) -> Value {
+    use crate::spicedb::Subject;
+    let mut grants: BTreeMap<(&'static str, String), bool> = BTreeMap::new();
+    for (subject, write) in relationships {
+        let key = match subject {
+            Subject::Principal(id) => match Uuid::parse_str(id) {
+                Ok(p) if p != owner && members.contains(&p) => ("PRINCIPAL", p.to_string()),
+                _ => continue,
+            },
+            Subject::WorkspaceMembers(id) => match Uuid::parse_str(id) {
+                Ok(w) if workspaces.contains(&w) => ("WORKSPACE", w.to_string()),
+                _ => continue,
+            },
+            Subject::TenantMembers(id) if *id == tenant.to_string() && !*write => {
+                ("TENANT", String::new())
+            }
+            Subject::TenantMembers(_) => continue,
+        };
+        let entry = grants.entry(key).or_insert(false);
+        *entry |= *write;
+    }
+    let mut list = vec![json!({
+        "subject": {"kind": "PRINCIPAL", "principalId": owner},
+        "access": "WRITE",
+    })];
+    for ((kind, id), write) in grants {
+        let subject = match kind {
+            "PRINCIPAL" => json!({"kind": kind, "principalId": id}),
+            "WORKSPACE" => json!({"kind": kind, "workspaceId": id}),
+            _ => json!({"kind": kind}),
+        };
+        list.push(json!({"subject": subject, "access": if write { "WRITE" } else { "READ" }}));
+    }
+    json!({
+        "resourceId": resource,
+        "nativeType": native_type,
+        "nativeId": native_id,
+        "ownerPrincipalId": owner,
+        "grants": list,
+    })
 }
 
 #[cfg(test)]
@@ -672,6 +922,156 @@ mod tests {
                 "{forbidden} leaked into the directory"
             );
         }
+    }
+
+    #[test]
+    fn schema_is_one_unless_two_is_asked_for() {
+        assert_eq!(requested_schema(None).ok(), Some(1));
+        assert_eq!(requested_schema(Some("")).ok(), Some(1));
+        assert_eq!(requested_schema(Some("schema=1")).ok(), Some(1));
+        assert_eq!(requested_schema(Some("schema=2")).ok(), Some(2));
+        for bad in ["schema=3", "schema=2&x=1", "x=1", "schema="] {
+            assert!(requested_schema(Some(bad)).is_err(), "{bad}");
+        }
+    }
+
+    /// DD-164(2): schema 1 keeps exactly its original fields, so components
+    /// that parse strictly see the same answer.
+    #[test]
+    fn schema_one_shape_is_unchanged() {
+        let (w, a) = (Uuid::new_v4(), Uuid::new_v4());
+        let body = snapshot(
+            Uuid::new_v4(),
+            &(Uuid::new_v4(), "Acme".to_owned()),
+            &[(w, "A".to_owned())],
+            vec![member(a, &["sub-a"], true, &[(w, true)])],
+            "https://kailo.test",
+        );
+        let keys = |v: &Value| {
+            let mut k: Vec<String> = v.as_object().unwrap().keys().cloned().collect();
+            k.sort();
+            k
+        };
+        assert_eq!(
+            keys(&body),
+            [
+                "bindingId",
+                "directoryVersion",
+                "members",
+                "tenant",
+                "workspaces"
+            ]
+        );
+        let m = &body["members"][0];
+        assert_eq!(
+            keys(m),
+            [
+                "displayName",
+                "identities",
+                "principalId",
+                "tenantRole",
+                "workspaces"
+            ]
+        );
+        assert_eq!(keys(&m["workspaces"][0]), ["role", "workspaceId"]);
+        let typed: contracts::ComponentMemberDirectory =
+            serde_json::from_value(body.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&typed).unwrap(), body);
+    }
+
+    #[test]
+    fn schema_two_adds_create_and_shares_and_reversions() {
+        let (w, a, b) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        let tenant = (Uuid::new_v4(), "Acme".to_owned());
+        let v1 = snapshot(
+            Uuid::new_v4(),
+            &tenant,
+            &[(w, "A".to_owned())],
+            vec![
+                member(a, &["sub-a"], true, &[(w, true)]),
+                member(b, &["sub-b"], false, &[(w, false)]),
+            ],
+            "https://kailo.test",
+        );
+        let tenant_creators: HashSet<Uuid> = [a].into();
+        let workspace_creators: HashSet<(Uuid, Uuid)> = [(a, w)].into();
+        let creators = Creators {
+            tenant: &tenant_creators,
+            workspace: &workspace_creators,
+        };
+        let v2 = upgrade(v1.clone(), &creators, vec![]);
+        assert_eq!(v2["schema"], 2);
+        assert_ne!(v2["directoryVersion"], v1["directoryVersion"]);
+        let mut without = v2.clone();
+        without.as_object_mut().unwrap().remove("directoryVersion");
+        assert_eq!(
+            v2["directoryVersion"].as_str().unwrap(),
+            collab_bridge::limits::canonical_digest(&without)
+        );
+        let find = |p: Uuid| {
+            v2["members"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|m| m["principalId"] == json!(p))
+                .unwrap()
+                .clone()
+        };
+        assert_eq!(find(a)["tenantCreate"], true);
+        assert_eq!(find(a)["workspaces"][0]["create"], true);
+        assert_eq!(find(b)["tenantCreate"], false);
+        assert_eq!(find(b)["workspaces"][0]["create"], false);
+        let typed: contracts::ComponentMemberDirectoryV2 =
+            serde_json::from_value(v2.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&typed).unwrap(), v2);
+    }
+
+    #[test]
+    fn share_entries_keep_only_subjects_in_the_snapshot() {
+        use crate::spicedb::Subject;
+        let (resource, owner, reader, outsider, w, foreign_ws, tenant) = (
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        );
+        let members: HashSet<Uuid> = [owner, reader].into();
+        let workspaces: HashSet<Uuid> = [w].into();
+        let rels = vec![
+            (Subject::Principal(owner.to_string()), true),
+            (Subject::Principal(reader.to_string()), false),
+            (Subject::Principal(outsider.to_string()), true),
+            (Subject::WorkspaceMembers(w.to_string()), false),
+            (Subject::WorkspaceMembers(w.to_string()), true),
+            (Subject::WorkspaceMembers(foreign_ws.to_string()), true),
+            (Subject::TenantMembers(tenant.to_string()), false),
+        ];
+        let entry = share_entry(
+            resource,
+            "folder",
+            "node-1",
+            owner,
+            &rels,
+            tenant,
+            &members,
+            &workspaces,
+        );
+        assert_eq!(
+            entry["grants"],
+            json!([
+                {"subject": {"kind": "PRINCIPAL", "principalId": owner}, "access": "WRITE"},
+                {"subject": {"kind": "PRINCIPAL", "principalId": reader}, "access": "READ"},
+                {"subject": {"kind": "TENANT"}, "access": "READ"},
+                {"subject": {"kind": "WORKSPACE", "workspaceId": w}, "access": "WRITE"},
+            ])
+        );
+        assert_eq!(entry["nativeType"], "folder");
+        let typed: contracts::ComponentDirectoryShare =
+            serde_json::from_value(entry.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&typed).unwrap(), entry);
     }
 
     #[test]

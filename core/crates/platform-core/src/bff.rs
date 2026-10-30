@@ -664,6 +664,15 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/application-bindings/{id}/native-page",
             get(crate::application_page::get),
         )
+        // DD-164(4)③⑥: the Kailo share dialog and the binding receipt view.
+        .exposed_route(
+            "/api/v1/application-bindings/{id}/directory-receipt",
+            get(crate::governance::component_share::receipt_view),
+        )
+        .exposed_route(
+            "/api/v1/component-shares/intents/{id}",
+            get(crate::governance::component_share::intent_view),
+        )
         .exposed_route(
             "/api/v1/platform/capability-contracts",
             get(crate::capability_contract::list),
