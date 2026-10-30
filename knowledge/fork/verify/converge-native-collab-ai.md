@@ -40,3 +40,20 @@ Kailo 模式运行时，下列功能保持上游原状。
 - 前端（`tsx --test`）：`src/kailo/converge.test.ts`（分区、菜单、路由、Agent 选择归一、端点、问答设置入口），
   `src/kailo/shell.test.ts` 与 `src/kailo/surface.test.ts` 随之更新（页头分区只剩“对话”“知识库”，命令面板不含 `open-agents`）。
 - CI 节点运行结果与截图见下节。
+
+## CI 节点结果（2026-10-30，分支 `feat/converge-native-collab-ai`，源码取自 GitHub）
+
+脚本：CI 节点 `~/scratch/converge/kn-test.sh`（源码经 `git archive` 取自分支提交；Go 用知识库服务构建镜像同一
+`golang:1.26-bookworm@sha256:a688600c…`，CGO 开启；前端用 `node:24-bookworm-slim@sha256:ba849c60…`）。
+
+- Go（提交 `99d769e5f`）：`gofmt -l` 无输出；`go vet` 通过；`go test ./internal/middleware/ ./internal/handler/...
+  ./internal/router/ ./internal/im/ ./internal/mcpserver/ ./internal/application/service/memory/` 8 个包全部 `ok`；
+  `-run Kailo -v` 中本批 6 个新测试与既有 `TestKailoManagedGuard…` 全部 PASS。
+- 前端：`tsx --test src/kailo/*.test.ts` 47/47 通过；全部 `src/**/*.test.ts` 784/784 通过；`vue-tsc --build` 退出 0；
+  `vite build` 退出 0。
+- 截图（本地构建产物）：CI 节点 `~/kailo-acceptance/converge-native/knowledge/{light,dark}/`。Playwright 以
+  kailo-qa-1 登录 Kailo，打开知识库原生页；文档、`config.js`、`kailo-embed.js` 与 API 仍取部署的服务，入口模块与全部
+  代码块由本地 `vite build` 产物提供（`report.json` 记录被替换的资源）。明暗两套各 4 张：知识库列表、对话页、直接打开
+  `/platform/agents` 与 `/platform/artifacts`。结果：Kailo 页头分区只有“对话”“知识库”；对话输入区只有附件、@ 与模型
+  选择，没有 Agent 选择与模式切换；两条已关闭路由都回到 `/platform/creatChat`；页面无脚本错误。服务端的关闭以上述
+  Go 测试为证，部署后的接口实测随组件重建与发布进行。
