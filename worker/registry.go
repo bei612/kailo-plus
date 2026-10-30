@@ -12,7 +12,8 @@ type activityRegistrar interface {
 // registry_test.go derives the expected set from workflows/ and fails on any
 // missing or extra registration (a missing one only surfaces at run time as an
 // endless "unable to find activityType" retry).
-func registerActivities(w activityRegistrar, spicedb *activities.SpiceDB, core *activities.CoreAPI) {
+func registerActivities(w activityRegistrar, spicedb *activities.SpiceDB, core *activities.CoreAPI,
+	idp *activities.IdentityProvider) {
 	w.RegisterActivity(spicedb.Converge)
 	w.RegisterActivity(spicedb.RevokeSubject)
 	w.RegisterActivity(core.ProjectTaskState)
@@ -47,4 +48,5 @@ func registerActivities(w activityRegistrar, spicedb *activities.SpiceDB, core *
 	w.RegisterActivity(core.RecordComponentConformance)
 	w.RegisterActivity(core.ProjectAgentTaskState)
 	w.RegisterActivity(core.ApproveComponentRelease)
+	w.RegisterActivity(idp.EndSessions)
 }

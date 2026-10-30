@@ -24,6 +24,10 @@ const changeTenantRevocationAllRelations = "tenant-revocation-all-relations"
 // Tenant 撤权连带收敛该成员的 WorkspaceMembership（.design/10 §5）。
 const changeTenantRevocationWorkspaceMemberships = "tenant-revocation-workspace-memberships"
 
+// DD-164(6)：Tenant 撤权在 roster 收敛之后、成员跃迁到 REVOKED 之前结束此人全部 IdP 会话。在途与已录制
+// 的旧 history 没有这一步，按 GetVersion 走原路径。
+const changeTenantRevocationIdentityProviderSessions = "tenant-revocation-idp-sessions"
+
 // Workspace 撤权撤掉该 Principal 在这个 Workspace 上的全部关系，含 workspace#admin
 // （DD-82、.design/10 §5）。
 const changeWorkspaceRevocationAllRelations = "workspace-revocation-all-relations"
@@ -44,6 +48,9 @@ type MembershipTarget struct {
 	// 只有 Tenant 撤权才有：Core 在启动时冻结的、此人仍在 REVOKING 的
 	// WorkspaceMembership。它们随同这条链撤 Channel roster 并推进到 REVOKED。
 	WorkspaceMemberships []WorkspaceMembershipRef `json:"workspaceMemberships,omitempty"`
+	// 只有 Tenant 撤权才有：Core 冻结的此人 ACTIVE 外部身份；Worker 以会话终止 client 结束其
+	// 全部 IdP 会话（DD-164(6)）。只定位 IdP 用户，不是凭据。
+	IdentityProviderSubjects []activities.IdentityProviderSubject `json:"identityProviderSubjects,omitempty"`
 }
 
 // WorkspaceMembershipRef 是 Tenant 撤权连带收敛的一个 WorkspaceMembership。
@@ -521,6 +528,23 @@ func convergeMembership(ctx workflow.Context, t *task, m *MembershipTarget, want
 			})
 	}, nil); err != nil {
 		return err
+	}
+
+	// 2b. DD-164(6)：Tenant 撤权结束此人全部 IdP 会话。IdP 同时向会话中出现过的每个组件 client
+	//     投递 back-channel logout，组件结束其会话；确定成功前不跃迁到 REVOKED。
+	if revokeScope != nil && m.Scope == "TENANT" && len(m.IdentityProviderSubjects) > 0 &&
+		workflow.GetVersion(ctx, changeTenantRevocationIdentityProviderSessions,
+			workflow.DefaultVersion, 1) == 1 {
+		subjects := append([]activities.IdentityProviderSubject(nil), m.IdentityProviderSubjects...)
+		var ended activities.EndSessionsOutput
+		if err := t.step(func(ao workflow.Context) workflow.Future {
+			return workflow.ExecuteActivity(ao, (*activities.IdentityProvider).EndSessions,
+				activities.EndSessionsInput{Subjects: subjects})
+		}, &ended); err != nil {
+			return err
+		}
+		workflow.GetLogger(ctx).Info("IdP 会话已结束",
+			"ended", ended.Ended, "absent", ended.Absent, "foreign", ended.Foreign)
 	}
 
 	// 3. 两个投影都已查证，才让 Core 跃迁成员状态。

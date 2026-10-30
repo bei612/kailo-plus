@@ -1,0 +1,52 @@
+capability_id: identity.session_termination
+title: Tenant 撤权联动 IdP：Worker 以专用会话终止 client 结束被撤成员全部 IdP 会话，IdP 向组件投递 back-channel 退出
+stage: EXT-BASE
+status: in_progress
+# 源码尚未构建进任何产物、未部署；发布前须先以 IdP 声明步骤建立 client 与凭据文件，再替换 Worker。
+exposure: none
+
+design:
+  requirements: [V-REQ-17]
+  decisions: [DD-164]
+  facts: []
+  seams: []
+  blockers: []
+  entities: [TenantMembership, ExternalIdentity]
+
+validation:
+  scenarios: [V-SCN-277]
+  evidence:
+    - dimension: 单元测试
+      ref: worker/activities/identity_provider_test.go
+    - dimension: 单元测试
+      ref: worker/workflows/component_task_test.go
+    - dimension: 单元测试
+      ref: tools/release/test_node.py
+
+implementation:
+  owners: [team-platform]
+  paths:
+    - core/crates/platform-core/src/membership_lifecycle.rs
+    - worker/activities/identity_provider.go
+    - worker/workflows/component_task.go
+    - worker/registry.go
+    - worker/main.go
+    - deploy/local/idp-declarations.py
+    - deploy/local/bootstrap.sh
+    - deploy/local/init-local.sh
+    - deploy/local/compose.yaml
+    - deploy/local/.env.example
+    - tools/release/release.yaml
+    - tools/release/node.py
+  surfaces: []
+  schemas: []
+  migrations: []
+
+runtime:
+  routes: []
+  actions: []
+  workflow_kinds: []
+
+release:
+  artifacts: []
+  gate: blocked_until_seams_closed

@@ -294,10 +294,12 @@ bootstrap、初始化、IdP 部署或真实管理 API。以下检查不代替浏
   原生明确选择、用户语言、客户端语言、cookie、Accept-Language 优先于 realm 默认值。
 
 只改 realm 默认值不能压过英文浏览器的 Accept-Language，因此 Web 在原网关
-OIDC 配置追加 `uiLocales`：默认 `zh-CN`、支持 `[zh-CN,en]`、cookie 名复用
-`buzz-locale`。首次请求在 JS 加载之前也传默认中文；应用选择英文后，原
-`subscribeLocale` 同步仅语言投影，下一次 OIDC 请求传 `en`。非法或重复 cookie
-回到配置默认值，不影响 scope、JWT、state、PKCE、回调或原页面回跳。
+OIDC 配置追加 `uiLocales`：支持 `[zh-CN,en]`、cookie 名复用 `buzz-locale`。
+DD-164(8)（2026-10-30）起不再配置 `default`：没有本机 Kailo 语言投影时不传
+`ui_locales`，由 IdP 依次取其语言 cookie、浏览器 `Accept-Language` 与 realm 默认
+`zh-CN`（英文浏览器不再被强制中文）；应用选择语言后，原 `subscribeLocale` 同步
+仅语言投影，下一次 OIDC 请求传该值。非法或重复 cookie 同样不传，`default` 只在
+配置给出时作回落。不影响 scope、JWT、state、PKCE、回调或原页面回跳。
 Keycloak 原菜单明确选择及用户 profile 的优先级仍按上游，不新建 SPI。
 官方说明见
 [Keycloak 原生 locale selector](https://www.keycloak.org/ui-customization/themes)。

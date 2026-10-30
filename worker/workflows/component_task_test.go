@@ -192,8 +192,10 @@ func runMembershipRevocation(t *testing.T, m MembershipTarget) ([]string, error)
 	env.RegisterWorkflowWithOptions(ComponentTask, workflow.RegisterOptions{Name: ComponentTaskKind})
 	var core *activities.CoreAPI
 	var spice *activities.SpiceDB
+	var idp *activities.IdentityProvider
 	env.RegisterActivity(core)
 	env.RegisterActivity(spice)
+	env.RegisterActivity(idp)
 	var mu sync.Mutex
 	var steps []string
 	add := func(s string) {
@@ -221,6 +223,15 @@ func runMembershipRevocation(t *testing.T, m MembershipTarget) ([]string, error)
 		func(_ context.Context, in activities.TransitionInput) (activities.TransitionOutput, error) {
 			add("transition:" + in.Scope + ":" + in.MembershipID + ":" + in.ToState)
 			return activities.TransitionOutput{State: in.ToState, Version: in.FromVersion + 1}, nil
+		})
+	env.OnActivity("EndSessions", mock.Anything, mock.Anything).Return(
+		func(_ context.Context, in activities.EndSessionsInput) (activities.EndSessionsOutput, error) {
+			names := make([]string, 0, len(in.Subjects))
+			for _, s := range in.Subjects {
+				names = append(names, s.Subject)
+			}
+			add("idp-logout:" + strings.Join(names, ","))
+			return activities.EndSessionsOutput{Ended: len(in.Subjects)}, nil
 		})
 	env.ExecuteWorkflow(ComponentTaskKind, ComponentTaskInput{
 		Kind: generated.MembershipRevocation, Membership: &m,
@@ -253,6 +264,49 @@ func TestTenantRevocationConvergesWorkspaceMembershipsFirst(t *testing.T) {
 	}
 	if strings.Join(steps, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("步骤顺序不符：\n%s", strings.Join(steps, "\n"))
+	}
+}
+
+// DD-164(6)、V-SCN-277：Tenant 撤权在 roster 收敛之后、跃迁到 REVOKED 之前结束此人全部 IdP 会话。
+func TestTenantRevocationEndsIdentityProviderSessionsBeforeRevoked(t *testing.T) {
+	steps, err := runMembershipRevocation(t, MembershipTarget{
+		Scope: "TENANT", MembershipID: "tm", MembershipVersion: 3,
+		SubjectPrincipalID: "p", RelationObjectID: "t",
+		IdentityProviderSubjects: []activities.IdentityProviderSubject{
+			{Issuer: "https://idp.invalid/realms/kailo", Subject: "s1"},
+			{Issuer: "https://idp.invalid/realms/kailo", Subject: "s2"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("撤权链失败：%v", err)
+	}
+	want := []string{
+		"revoke-subject:tenant=t,workspace=",
+		"roster:TENANT:tm:ABSENT",
+		"idp-logout:s1,s2",
+		"transition:TENANT:tm:REVOKED",
+	}
+	if strings.Join(steps, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("步骤顺序不符：\n%s", strings.Join(steps, "\n"))
+	}
+}
+
+// Workspace 撤权不结束 IdP 会话：此人仍是 Tenant 成员（DD-164(6)）。
+func TestWorkspaceRevocationKeepsIdentityProviderSessions(t *testing.T) {
+	steps, err := runMembershipRevocation(t, MembershipTarget{
+		Scope: "WORKSPACE", MembershipID: "wm", MembershipVersion: 4,
+		SubjectPrincipalID: "p", RelationObjectID: "w",
+		IdentityProviderSubjects: []activities.IdentityProviderSubject{
+			{Issuer: "https://idp.invalid/realms/kailo", Subject: "s1"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("撤权链失败：%v", err)
+	}
+	for _, s := range steps {
+		if strings.HasPrefix(s, "idp-logout") {
+			t.Fatalf("Workspace 撤权不得结束 IdP 会话：%v", steps)
+		}
 	}
 }
 
