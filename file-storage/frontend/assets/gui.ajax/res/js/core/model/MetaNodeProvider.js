@@ -79,6 +79,24 @@ export default class MetaNodeProvider{
     }
 
     /**
+     * DD-167: Kailo mode listing options, or null outside Kailo mode.
+     * pageSize(pydio) is the user's page size for the current view.
+     */
+    static kailoListing() {
+        const kailo = typeof window !== 'undefined' && window.KailoCells
+        if (!kailo || !kailo.kailoMode || !kailo.kailoMode()) {
+            return null
+        }
+        return {
+            pageSize: (pydio) => {
+                const stored = pydio && pydio.user ? pydio.user.getLayoutPreference('FSTemplate.Kailo.PageSize', 0) : 0
+                const mode = pydio && pydio.user ? String(pydio.user.getLayoutPreference('FSTemplate.FilesList.DisplayMode', 'detail')) : 'detail'
+                return kailo.normalizePageSize ? kailo.normalizePageSize(stored, mode.indexOf('grid') === 0 ? 'grid' : 'list') : 20
+            }
+        }
+    }
+
+    /**
      * Load a node
      * @param node AjxpNode
      * @param nodeCallback Function On node loaded
@@ -90,7 +108,10 @@ export default class MetaNodeProvider{
     loadNode (node, nodeCallback=null, childCallback=null, recursive=false, depth=-1, optionalParameters=null){
 
         const pydio = Pydio.getInstance();
-        const api = new MetaServiceApi(PydioApi.getRestClient());
+        // DD-167 (20 §15.4): in Kailo mode a failed listing is an inline state
+        // of the list (with its HTTP status), never a toast.
+        const kailoList = MetaNodeProvider.kailoListing();
+        const api = new MetaServiceApi(PydioApi.getRestClient(kailoList ? {silent: true} : {}));
         let request = new RestGetBulkMetaRequest();
         let slug = '';
         if(pydio.user){
@@ -112,6 +133,9 @@ export default class MetaNodeProvider{
                 request.SortField = inputSorting.get('order_column');
                 request.SortDirDesc = inputSorting.get('order_direction') === 'desc';
             }
+        } else if (kailoList && kailoList.pageSize) {
+            // DD-167 (20 §15.3): Kailo lists are served one page at a time.
+            request.Limit = kailoList.pageSize(pydio);
         } else {
             request.Limit = pydio.getPluginConfigs("access.gateway").get("LIST_NODES_PER_PAGE") || 200;
         }
@@ -161,6 +185,10 @@ export default class MetaNodeProvider{
                     paginationData.set("current", res.Pagination.CurrentPage);
                     paginationData.set("total", res.Pagination.TotalPages);
                     paginationData.set("size", res.Pagination.Limit);
+                    // DD-167 (20 §15.3): the folder total ("共 N 条"), not only the page count.
+                    if (res.Pagination.Total !== undefined && res.Pagination.Total !== null) {
+                        paginationData.set("count", res.Pagination.Total);
+                    }
                     origNode.getMetadata().set("paginationData", paginationData);
                 } else {
                     origNode.getMetadata().delete("paginationData")

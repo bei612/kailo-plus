@@ -56,6 +56,10 @@ import {CellChatInfoCard} from './views/CellChat'
 import {Editor} from './editor/components/editor'
 import {MUITour, WelcomeMUITour, ThemeTogglerCard} from './views/WelcomeMuiTour'
 import {Scheme} from './views/WelcomeTour'
+import KailoHome from './kailo/KailoHome'
+import KailoTopHeader from './kailo/KailoTopHeader'
+import KailoPager from './kailo/KailoPager'
+import {KailoEmptyState, KailoLoadError, KailoSkeleton} from './kailo/KailoStateView'
 
 const classes = {
     OpenNodesModel,
@@ -95,7 +99,15 @@ const classes = {
     ThemeTogglerCard,
     Scheme,
 
-    Editor
+    Editor,
+
+    // DD-167 (20 §15): Kailo-mode pages and states for the other plugins.
+    KailoHome,
+    KailoTopHeader,
+    KailoPager,
+    KailoEmptyState,
+    KailoLoadError,
+    KailoSkeleton
 }
 
 export {classes as default}

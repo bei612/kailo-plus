@@ -134,3 +134,35 @@ func TestKailoAdminSurfacesMatchReleaseManifest(t *testing.T) {
 		t.Fatalf("manifest adminSurfaces %v != server allowlist %v", declared, kailoAdminSurfaces)
 	}
 }
+
+// DD-167 (20 §15.3, 07 §4.8.2): the release declares the shared list density
+// preference exactly as the three components do (舒适 40 px / 紧凑 32 px), and
+// the version moved to 1.6.0 with the DD-167 page.
+func TestReleaseManifestDeclaresListDensity(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "fork", "release", "manifest.native-page.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Version                      string `json:"version"`
+		FrontendPresentationContract struct {
+			Preferences []json.RawMessage `json:"preferences"`
+		} `json:"frontendPresentationContract"`
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Version != "1.6.0-native-page" {
+		t.Fatalf("version %q", manifest.Version)
+	}
+	want := `{"key":"appearance.listDensity","settingsCategory":"APPEARANCE","valueType":"ENUM","options":[{"value":"comfortable","label":{"ZH_CN":"舒适","EN":"Comfortable"}},{"value":"compact","label":{"ZH_CN":"紧凑","EN":"Compact"}}],"defaultValue":"comfortable","label":{"ZH_CN":"列表密度","EN":"List density"},"description":{"ZH_CN":"列表与表格的行高","EN":"Row height of lists and tables"}}`
+	found := false
+	for _, p := range manifest.FrontendPresentationContract.Preferences {
+		if string(p) == want {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("appearance.listDensity is not declared verbatim")
+	}
+}

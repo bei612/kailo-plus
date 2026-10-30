@@ -26,7 +26,10 @@ import ConfigLogo from './ConfigLogo'
 import WelcomeTour from './WelcomeTour'
 import HomeSearchForm from './HomeSearchForm'
 import SmartRecents from '../recent/SmartRecents'
-const {MasterLayout} = Pydio.requireLib('workspaces');
+const {MasterLayout, KailoHome, KailoTopHeader} = Pydio.requireLib('workspaces');
+
+// DD-167 (20 §15.1): Kailo mode (framed or top level) shows Kailo's 主页.
+const kailoHome = () => !!(typeof window !== 'undefined' && window.KailoCells && window.KailoCells.kailoMode && window.KailoCells.kailoMode() && KailoHome)
 import {debounce} from 'lodash'
 
 class AltDashboard extends React.Component {
@@ -62,10 +65,43 @@ class AltDashboard extends React.Component {
         }
     }
 
+    componentDidMount() {
+        const kailo = window.KailoCells
+        if (kailoHome() && kailo && kailo.onPageHosted) {
+            this._stopHosted = kailo.onPageHosted(() => this.forceUpdate())
+        }
+    }
+
+    componentWillUnmount() {
+        if (this._stopHosted) {
+            this._stopHosted()
+        }
+        this.clearCloseTimeout()
+    }
+
     render() {
 
         const {pydio, muiTheme} = this.props;
         const {drawerOpen, fullScreen, fullScreenTransition} = this.state;
+
+        if (kailoHome()) {
+            const kailo = window.KailoCells
+            const hosted = !!(kailo.pageHosted && kailo.pageHosted())
+            const styles = muiTheme.buildFSTemplate({})
+            return (
+                <MasterLayout
+                    pydio={pydio}
+                    classes={['vertical_fit', 'react-fs-template', 'kailo-fs-template', 'kailo-home-template']}
+                    style={{...styles.masterStyle}}
+                    leftPanelProps={{style: {...styles.leftPanel.masterStyle}, headerHeight: 72, userWidgetProps: {}}}
+                    drawerOpen={false}
+                    kailoHeader={hosted ? null : <KailoTopHeader/>}
+                    onCloseDrawerRequested={() => {}}
+                >
+                    <KailoHome pydio={pydio}/>
+                </MasterLayout>
+            );
+        }
 
         const appBarColor = new Color(muiTheme.appBar.color);
         const isMui3 = muiTheme.userTheme === 'mui3'

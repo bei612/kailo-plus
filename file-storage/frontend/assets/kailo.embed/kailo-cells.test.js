@@ -617,3 +617,125 @@ describe('Kailo admin surfaces', () => {
         expect(api.dataSourceFacts(null)).toEqual([])
     })
 })
+
+describe('DD-167 lists, states, type dials and host dialogs', () => {
+    const FEATURES = 'page toast confirm shortcuts'
+    beforeEach(() => {
+        document.body.innerHTML = ''
+        document.documentElement.removeAttribute('data-kailo-density')
+    })
+
+    it('carries Kailo text size and zoom in the presentation and rebuilds the theme key on change', () => {
+        const pydio = fakePydio('zh-cn')
+        const { api, host } = load({ search: '?kailo_theme=light&kailo_locale=zh-CN&kailo_font_size=larger&kailo_zoom=1.2', pydio })
+        expect(api.presentation()).toMatchObject({ fontSize: 'larger', zoom: 1.2 })
+        expect(api.presentation().typeScale).toBeCloseTo(15 / 14)
+        const types = vi.fn()
+        api.onTypeChange(types)
+        host({ theme: 'light', locale: 'zh-CN', fontSize: 'smaller', zoom: 1 })
+        expect(api.presentation()).toMatchObject({ fontSize: 'smaller', zoom: 1 })
+        expect(types).toHaveBeenCalledWith(expect.objectContaining({ fontSize: 'smaller', zoom: 1 }))
+        expect(pydio.UI.themeBuilder.applyHostPresentation).toHaveBeenLastCalledWith(expect.objectContaining({ fontSize: 'smaller' }))
+        expect(api.zoom()).toBe(1)
+    })
+
+    it('defaults the type dials for an older runtime state', () => {
+        const { api } = load({ search: '?kailo_theme=light&kailo_locale=en' })
+        expect(api._internal.typeState({})).toEqual({ fontSize: 'default', zoom: 1, typeScale: 1 })
+        expect(api._internal.typeState({ fontSize: 'huge', zoom: 9 })).toEqual({ fontSize: 'default', zoom: 1, typeScale: 1 })
+    })
+
+    it('follows the list density preference (comfortable 40 / compact 32) live', () => {
+        const { api, send } = load({ search: '?kailo_theme=light&kailo_locale=zh-CN' })
+        expect(api.listDensity()).toBe('comfortable')
+        expect(api.rowHeight()).toBe(40)
+        expect(document.documentElement.getAttribute('data-kailo-density')).toBe('comfortable')
+        const seen = vi.fn()
+        api.onListDensity(seen)
+        send({ type: 'preferences', values: { 'appearance.listDensity': 'compact' } })
+        expect(api.listDensity()).toBe('compact')
+        expect(api.rowHeight()).toBe(32)
+        expect(document.documentElement.getAttribute('data-kailo-density')).toBe('compact')
+        expect(seen).toHaveBeenCalledWith('compact')
+    })
+
+    it('pages with totals, page sizes per view and gaps beyond seven pages', () => {
+        const { api } = load({ search: '?kailo_theme=light&kailo_locale=zh-CN' })
+        expect(api.pageSizes('list')).toEqual([20, 50, 100])
+        expect(api.pageSizes('grid')).toEqual([24, 48, 96])
+        expect(api.normalizePageSize(50, 'grid')).toBe(48)
+        expect(api.normalizePageSize(96, 'list')).toBe(100)
+        expect(api.normalizePageSize(0, 'list')).toBe(20)
+        expect(api.paging(0, 3, 20)).toEqual({ total: 0, page: 1, pages: 1, size: 20 })
+        expect(api.paging(45, 9, 20)).toEqual({ total: 45, page: 3, pages: 3, size: 20 })
+        expect(api.pageItems(2, 5)).toEqual([1, 2, 3, 4, 5])
+        expect(api.pageItems(2, 12)).toEqual([1, 2, 3, 4, 5, 'gap', 12])
+        expect(api.pageItems(6, 12)).toEqual([1, 'gap', 5, 6, 7, 'gap', 12])
+        expect(api.pageItems(11, 12)).toEqual([1, 'gap', 8, 9, 10, 11, 12])
+        expect(api.text('total', 45)).toBe('共 45 条')
+        expect(api.text('pageOf', 2, 3)).toBe('第 2 / 3 页')
+    })
+
+    it('keeps 403 as the access state and names the reason of other failures', () => {
+        const { api } = load({ search: '?kailo_theme=light&kailo_locale=en' })
+        expect(api.loadErrorKind({ status: 403 })).toBe('forbidden')
+        expect(api.loadErrorKind({ message: '{"code":"KAILO_MANAGED"}' })).toBe('forbidden')
+        expect(api.loadErrorKind({ status: 404 })).toBe('gone')
+        expect(api.loadErrorKind({ status: 503 })).toBe('unavailable')
+        expect(api.loadErrorKind({ status: 504 })).toBe('timeout')
+        expect(api.loadErrorKind({ crossDomain: true, message: 'Request has been terminated' })).toBe('network')
+        expect(api.loadErrorKind({ status: 400 })).toBe('unknown')
+        expect(api.loadErrorReason('unavailable')).toBe('The service is unavailable right now. Try again later.')
+        expect(api.failure('mkdirFailed', 'quota')).toBe('Could not create the folder: quota')
+    })
+
+    it('words delete results and validates names', () => {
+        const { api } = load({ search: '?kailo_theme=light&kailo_locale=zh-CN' })
+        expect(api.deleteResult(3, '', false)).toBe('已将 3 项移到回收站')
+        expect(api.deleteResult(1, 'a.docx', true)).toBe('已删除「a.docx」')
+        expect(api.deleteResult(2, '', true)).toBe('已删除 2 项')
+        expect(api.validName('周报')).toBe(true)
+        expect(api.validName(' ')).toBe(false)
+        expect(api.validName('a/b')).toBe(false)
+        expect(api.validName('..')).toBe(false)
+    })
+
+    it('asks a name in its own Kailo dialog when Kailo cannot (top level)', async () => {
+        const { api } = load({ embedded: false, search: '?kailo_theme=light&kailo_locale=zh-CN' })
+        expect(api.prompt({ title: '新建文件夹', label: '名称' })).toBe(null)
+        const answer = api.askName({ title: '新建文件夹', label: '名称', value: '新建文件夹', confirmLabel: '新建', maxLength: 255 })
+        const dialog = document.querySelector('.kailo-dialog')
+        expect(dialog.getAttribute('role')).toBe('dialog')
+        expect(dialog.querySelector('.kailo-dialog-title').textContent).toBe('新建文件夹')
+        const input = dialog.querySelector('input')
+        const ok = dialog.querySelector('.kailo-button-primary')
+        expect(input.value).toBe('新建文件夹')
+        input.value = '   '
+        input.dispatchEvent(new Event('input'))
+        expect(ok.disabled).toBe(true)
+        input.value = ' 周报 '
+        input.dispatchEvent(new Event('input'))
+        expect(ok.disabled).toBe(false)
+        ok.click()
+        await expect(answer).resolves.toBe('周报')
+        expect(document.querySelector('.kailo-dialog')).toBe(null)
+        const cancelled = api.askName({ title: 'x', label: 'y' })
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+        await expect(cancelled).resolves.toBe(null)
+    })
+
+    it('asks through Kailo when the host shows prompts', () => {
+        const { api, host, posted } = load({ search: '?kailo_theme=light&kailo_locale=zh-CN', features: FEATURES + ' prompt' })
+        host({ theme: 'light', locale: 'zh-CN', features: [...FEATURES.split(' '), 'prompt'] })
+        const asked = api.askName({ title: '新建文件夹', label: '名称', value: '新建文件夹', confirmLabel: '新建', maxLength: 255 })
+        expect(asked).toBeInstanceOf(Promise)
+        expect(document.querySelector('.kailo-dialog')).toBe(null)
+        expect(posted('prompt')[0].prompt).toMatchObject({ title: '新建文件夹', label: '名称', value: '新建文件夹', confirmLabel: '新建', maxLength: 255 })
+    })
+
+    it('draws the top-level header from the same page declaration', () => {
+        const { api } = load({ embedded: false, search: '?kailo_theme=light&kailo_locale=zh-CN' })
+        expect(api.localPage()).toBe(null)
+        expect(typeof api.onLocalPage(() => {})).toBe('function')
+    })
+})

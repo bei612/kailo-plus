@@ -41,7 +41,9 @@ export function docsApiConfig(preferences) {
         plugins: false,
         layout: {toolbar: {file: {settings: false}}},
         unit,
-        features: {spellcheck: {mode: check, change: false}},
+        // DD-167 (20 §15.1): no "new feature" tips over the document
+        // (Common.UI.FeaturesManager.isFeatureEnabled('featuresTips', true)).
+        features: {spellcheck: {mode: check, change: false}, featuresTips: false},
     }}});
 }
 
@@ -93,6 +95,9 @@ export function launchAction(url, publicOrigin, locale, theme) {
     }
     action.searchParams.set('ui', locale);
     action.searchParams.set('lang', locale);
+    // DD-167: the region (number, date and default proofing formats) follows the
+    // same Kailo language (editor-wopi.ejs: editorConfig.region = rs).
+    action.searchParams.set('rs', locale);
     if (theme === 'light' || theme === 'dark') action.searchParams.set('thm', theme === 'dark' ? '2' : '1');
     return action.toString();
 }

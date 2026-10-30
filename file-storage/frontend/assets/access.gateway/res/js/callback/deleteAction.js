@@ -100,8 +100,18 @@ export default function (pydio) {
                         })
                     }
                     pydio.getContextHolder().setSelectedNodes([]);
+                    // DD-167 (20 §13.4(2)): the result of the user's action, through Kailo's toast.
+                    if (kailo && kailo.kailoMode && kailo.kailoMode() && kailo.deleteResult) {
+                        const gone = permanent || !!(moreValues && moreValues.removePermanently)
+                        pydio.UI.displayMessage('SUCCESS', kailo.deleteResult(nodes.length, nodes.length === 1 ? nodes[0].getLabel() : '', gone));
+                    }
                 }).catch(e => {
-                    pydio.UI.displayMessage('ERROR', e.Title || e.message);
+                    const reason = e.Title || e.message;
+                    if (kailo && kailo.kailoMode && kailo.kailoMode() && kailo.failure) {
+                        pydio.UI.displayMessage('ERROR', kailo.failure('deleteFailed', reason));
+                        return;
+                    }
+                    pydio.UI.displayMessage('ERROR', reason);
                 });
             }
         });

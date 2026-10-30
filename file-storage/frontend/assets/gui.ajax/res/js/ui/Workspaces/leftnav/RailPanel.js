@@ -502,16 +502,13 @@ let RailPanel = ({
         </div>
     )
 
-    if (hosted) {
+    // DD-167 (20 §15.1): Kailo mode, framed or top level, never shows the
+    // native rail or personal shell; 收藏 is a full list in the content area.
+    if (hosted || hidePersonalShell) {
         const gateway = user.getActiveRepositoryObject().accessType === 'gateway'
         let paneContent = null
         if (!closed && listPane === 'bookmarks') {
-            paneContent = (
-                <div className={"kailo-list-pane-favorites"} style={{height:'100%', display:'flex', flexDirection:'column', width:'100%', overflow:'hidden'}}>
-                    <div className={"kailo-list-pane-title"}>{kailoCells().text('bookmarks')}</div>
-                    <BookmarksList pydio={pydio} open={true} asPopover={false} useCache={true} onRequestClose={()=>{}}/>
-                </div>
-            )
+            paneContent = null
         } else if (!closed && gateway) {
             paneContent = wsBar('')
         }

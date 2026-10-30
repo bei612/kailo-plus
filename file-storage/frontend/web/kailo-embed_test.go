@@ -142,7 +142,7 @@ func TestKailoEmbedParameters(t *testing.T) {
 	// Root-absolute: the head precedes <base> and the page is also served at
 	// nested paths such as /login/callback.
 	order := []string{`<meta name="kailo-web-origin" content="http://kailo.example.invalid:58090">`,
-		`<meta name="kailo-embed-features" content="page toast confirm shortcuts">`, `"/plug/kailo.embed/kailo-theme-tokens.css?v=v1%26x"`,
+		`<meta name="kailo-embed-features" content="page toast confirm shortcuts prompt">`, `"/plug/kailo.embed/kailo-theme-tokens.css?v=v1%26x"`,
 		`"/plug/kailo.embed/kailo-overlay.css?v=v1%26x"`, `"/plug/kailo.embed/kailo-embed.js?v=v1%26x"`, `"/plug/kailo.embed/kailo-cells.js?v=v1%26x"`}
 	last := -1
 	for _, want := range order {

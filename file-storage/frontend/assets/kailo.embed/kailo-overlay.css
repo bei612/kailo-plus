@@ -65,8 +65,8 @@ body.react-mui-context,
     max-width: 420px;
     padding: 24px;
     text-align: center;
-    font-size: 14px;
-    line-height: 22px;
+    font-size: var(--kailo-text-body);
+    line-height: 1.57;
     color: var(--kailo-color-muted-foreground);
 }
 
@@ -180,8 +180,8 @@ body.react-mui-context,
 .kailo-list-pane-title,
 :root[data-kailo-runtime] .user-workspaces-list .workspaces-list-section-title,
 :root[data-kailo-runtime] .user-workspaces-list > div > div:first-child > div[style*="text-transform"] {
-    font-size: 11px !important;
-    line-height: 14px !important;
+    font-size: var(--kailo-text-overline) !important;
+    line-height: 1.27 !important;
     font-weight: 600 !important;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -195,7 +195,7 @@ body.react-mui-context,
 :root[data-kailo-runtime] .workspace-entry {
     min-height: 32px;
     box-sizing: border-box;
-    font-size: 13px;
+    font-size: var(--kailo-text-callout);
     font-weight: 500;
     color: var(--kailo-color-foreground);
 }
@@ -205,8 +205,8 @@ body.react-mui-context,
 }
 
 :root[data-kailo-runtime] .workspace-entry .workspace-label {
-    font-size: 13px;
-    line-height: 20px;
+    font-size: var(--kailo-text-callout);
+    line-height: 1.54;
 }
 
 /* Monochrome line icons in navigation (spec §4 图标). */
@@ -288,8 +288,8 @@ body.react-mui-context,
 :root[data-kailo-runtime] .main-files-list:not(.material-list-grid):not(.table-mode) .material-list-entry .material-list-line-1 {
     flex: 1;
     min-width: 0;
-    font-size: 14px !important;
-    line-height: 20px !important;
+    font-size: var(--kailo-text-body) !important;
+    line-height: 1.43 !important;
     font-weight: 500 !important;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -299,8 +299,8 @@ body.react-mui-context,
 :root[data-kailo-runtime] .main-files-list:not(.material-list-grid):not(.table-mode) .material-list-entry .material-list-line-2 {
     flex: none;
     margin-left: 16px;
-    font-size: 12px !important;
-    line-height: 16px !important;
+    font-size: var(--kailo-text-caption) !important;
+    line-height: 1.33 !important;
     color: var(--kailo-color-muted-foreground);
     white-space: nowrap;
 }
@@ -340,7 +340,7 @@ body.react-mui-context,
 :root[data-kailo-runtime] .react-mui-context [role="menuitem"] {
     min-height: 30px !important;
     line-height: 30px !important;
-    font-size: 13px !important;
+    font-size: var(--kailo-text-callout) !important;
     border-radius: 6px;
 }
 
@@ -395,7 +395,7 @@ body.react-mui-context,
 }
 
 :root[data-kailo-runtime] .main-files-list .material-list-entry .metadata_chunk {
-    font-size: 12px !important;
+    font-size: var(--kailo-text-caption) !important;
     color: var(--kailo-color-muted-foreground) !important;
 }
 
@@ -407,8 +407,8 @@ body.react-mui-context,
 
 /* ---- List pane group titles: Overline 11/14 600 muted uppercase -------- */
 :root[data-kailo-runtime] .user-workspaces-list .section-title {
-    font-size: 11px !important;
-    line-height: 14px !important;
+    font-size: var(--kailo-text-overline) !important;
+    line-height: 1.27 !important;
     font-weight: 600 !important;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -429,8 +429,8 @@ body.react-mui-context,
 
 /* ---- Dialog title and scrim (spec §3 对话框) ---------------------------- */
 :root[data-kailo-runtime] .react-mui-context [role="dialog"] h3 {
-    font-size: 17px !important;
-    line-height: 24px !important;
+    font-size: var(--kailo-text-title2) !important;
+    line-height: 1.41 !important;
     font-weight: 600 !important;
     color: var(--kailo-color-foreground) !important;
 }
@@ -447,13 +447,13 @@ body.react-mui-context,
 /* ---- Upload dialog: brand line icon, no Material blue ------------------ */
 :root[data-kailo-runtime] .drop-transfer-list {
     color: var(--kailo-color-muted-foreground) !important;
-    font-size: 14px !important;
+    font-size: var(--kailo-text-body) !important;
 }
 
 :root[data-kailo-runtime] .drop-transfer-list > div {
-    font-size: 14px !important;
+    font-size: var(--kailo-text-body) !important;
     font-weight: 400 !important;
-    line-height: 20px !important;
+    line-height: 1.43 !important;
 }
 
 :root[data-kailo-runtime] .drop-transfer-list .mdi-cloud-upload::before {
@@ -502,8 +502,8 @@ body.react-mui-context,
     background-color: color-mix(in srgb, var(--kailo-color-selected) 60%, transparent);
     color: var(--kailo-color-selected-foreground);
     font-family: var(--kailo-font-sans);
-    font-size: 14px;
-    line-height: 20px;
+    font-size: var(--kailo-text-body);
+    line-height: 1.43;
     font-weight: 500;
     pointer-events: none;
 }
@@ -567,7 +567,7 @@ body.react-mui-context,
     background-color: var(--kailo-color-background);
     box-shadow: var(--kailo-shadow-xs);
     color: var(--kailo-color-foreground);
-    font: 500 13px/20px var(--kailo-font-sans);
+    font: 500 var(--kailo-text-callout)/1.54 var(--kailo-font-sans);
     cursor: pointer;
 }
 
@@ -586,7 +586,7 @@ body.react-mui-context,
     align-items: center;
     gap: 8px;
     padding: 12px 16px;
-    font: 600 14px/20px var(--kailo-font-sans);
+    font: 600 var(--kailo-text-body)/1.43 var(--kailo-font-sans);
     color: var(--kailo-color-foreground);
     background-color: var(--kailo-color-background);
 }
@@ -648,12 +648,12 @@ body.react-mui-context,
 }
 
 .kailo-admin-empty-title {
-    font: 600 17px/24px var(--kailo-font-sans);
+    font: 600 var(--kailo-text-title2)/1.41 var(--kailo-font-sans);
     color: var(--kailo-color-foreground);
 }
 
 .kailo-admin-empty-body {
-    font: 400 14px/20px var(--kailo-font-sans);
+    font: 400 var(--kailo-text-body)/1.43 var(--kailo-font-sans);
     color: var(--kailo-color-muted-foreground);
 }
 
@@ -674,7 +674,7 @@ body.react-mui-context,
 .kailo-admin-surface-title {
     flex: none;
     padding: 16px 24px 0;
-    font: 600 15px/24px var(--kailo-font-sans);
+    font: 600 var(--kailo-text-headline)/1.6 var(--kailo-font-sans);
 }
 
 .kailo-admin-surface-content {
@@ -736,7 +736,7 @@ body.react-mui-context,
 .kailo-admin-surface-content th,
 .kailo-admin-surface-content th span {
     color: var(--kailo-color-muted-foreground) !important;
-    font-size: 12px;
+    font-size: var(--kailo-text-caption);
     font-weight: 500;
 }
 
@@ -781,7 +781,7 @@ body.react-mui-context,
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font: 600 15px/24px var(--kailo-font-sans);
+    font: 600 var(--kailo-text-headline)/1.6 var(--kailo-font-sans);
 }
 
 .kailo-admin-detail-close {
@@ -827,7 +827,7 @@ body.react-mui-context,
     gap: 12px;
     padding: 10px 0;
     border-bottom: 1px solid var(--kailo-color-border);
-    font: 400 13px/20px var(--kailo-font-sans);
+    font: 400 var(--kailo-text-callout)/1.54 var(--kailo-font-sans);
 }
 
 .kailo-admin-fact dt {
@@ -839,4 +839,1336 @@ body.react-mui-context,
     margin: 0;
     color: var(--kailo-color-muted-foreground);
     overflow-wrap: anywhere;
+}
+
+/* ======================================================================
+ * DD-167 component page productization (07 §4.8.10, 20 §15).
+ * Text sizes only from --kailo-text-* (scaled by Kailo's text size dial),
+ * ⌘± zoom on the application root, list density from Kailo's preference.
+ * ====================================================================== */
+
+/* ---- Zoom (07 §4.8.10): the body is the application root; floating layers
+ * (menus, dialogs, tooltips) are inside it and zoom with the content. The
+ * body keeps the viewport size in its own pixels: one scroll container. */
+:root[data-kailo-zoomed] body {
+    zoom: var(--kailo-zoom);
+    width: calc(100vw / var(--kailo-zoom));
+    height: calc(100vh / var(--kailo-zoom));
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* ---- Native text on Kailo steps (Material UI v0 writes sizes inline) --- */
+:root[data-kailo-runtime] body.react-mui-context,
+:root[data-kailo-runtime] .react-mui-context {
+    font-size: var(--kailo-text-body);
+}
+
+:root[data-kailo-runtime] .react-mui-context button,
+:root[data-kailo-runtime] .react-mui-context button span {
+    font-size: var(--kailo-text-callout) !important;
+}
+
+:root[data-kailo-runtime] .react-mui-context [role="dialog"] input,
+:root[data-kailo-runtime] .react-mui-context [role="dialog"] textarea,
+:root[data-kailo-runtime] .react-mui-context [role="dialog"] label,
+:root[data-kailo-runtime] .react-mui-context [role="dialog"] p,
+:root[data-kailo-runtime] .react-mui-context .info-panel-card,
+:root[data-kailo-runtime] .react-mui-context .info-panel-card div,
+:root[data-kailo-runtime] .react-mui-context .info-panel-card span:not(.mdi):not([class*="mdi-"]) {
+    font-size: var(--kailo-text-callout) !important;
+}
+
+:root[data-kailo-runtime] .react-mui-context .workspace-entry .workspace-label,
+:root[data-kailo-runtime] .react-mui-context .workspace-entry {
+    font-size: var(--kailo-text-callout) !important;
+}
+
+/* ---- Shared Kailo controls (20 §9) -------------------------------------- */
+.kailo-icon {
+    flex: none;
+    display: block;
+}
+
+.kailo-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 12px;
+    border-radius: var(--kailo-radius-lg, 8px);
+    border: 1px solid transparent;
+    font: 500 var(--kailo-text-callout)/1.54 var(--kailo-font-sans);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color var(--kailo-duration-fast) var(--kailo-ease-standard), box-shadow var(--kailo-duration-fast) var(--kailo-ease-standard);
+}
+
+.kailo-button:focus-visible,
+.kailo-icon-button:focus-visible,
+.kailo-pager-page:focus-visible,
+.kailo-segment:focus-visible,
+.kailo-menu-item:focus-visible,
+.kailo-page-tab:focus-visible,
+.kailo-card:focus-visible,
+.kailo-tr:focus-visible,
+.kailo-link:focus-visible,
+.kailo-crumb-link:focus-visible {
+    outline: none;
+    box-shadow: var(--kailo-focus-ring);
+}
+
+.kailo-button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.kailo-button-primary {
+    background-color: var(--kailo-color-brand);
+    color: var(--kailo-color-on-brand, #fff);
+}
+
+.kailo-button-primary:hover:not(:disabled) {
+    background-color: var(--kailo-color-brand-hover);
+}
+
+.kailo-button-primary:active:not(:disabled) {
+    background-color: var(--kailo-color-brand-pressed);
+    transform: translateY(1px);
+}
+
+.kailo-button-secondary {
+    background-color: var(--kailo-color-background);
+    border-color: var(--kailo-color-line-strong);
+    color: var(--kailo-color-foreground);
+    box-shadow: var(--kailo-shadow-xs);
+}
+
+.kailo-button-secondary:hover:not(:disabled),
+.kailo-button-ghost:hover:not(:disabled) {
+    background-color: var(--kailo-color-hover);
+}
+
+.kailo-button-ghost {
+    background-color: transparent;
+    color: var(--kailo-color-text-secondary, var(--kailo-color-muted-foreground));
+}
+
+.kailo-icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--kailo-radius-lg, 8px);
+    background-color: transparent;
+    color: var(--kailo-color-muted-foreground);
+    cursor: pointer;
+}
+
+.kailo-icon-button:hover:not(:disabled) {
+    background-color: var(--kailo-color-hover);
+    color: var(--kailo-color-foreground);
+}
+
+.kailo-icon-button:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.kailo-icon-button-on {
+    background-color: var(--kailo-color-selected);
+    color: var(--kailo-color-selected-foreground);
+}
+
+.kailo-more-dots {
+    font: 600 var(--kailo-text-body)/1 var(--kailo-font-sans);
+    letter-spacing: 1px;
+}
+
+.kailo-select {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    color: var(--kailo-color-muted-foreground);
+}
+
+.kailo-select select {
+    appearance: none;
+    height: 28px;
+    padding: 0 26px 0 10px;
+    border: 1px solid var(--kailo-color-line-strong);
+    border-radius: var(--kailo-radius-md, 6px);
+    background-color: var(--kailo-color-background);
+    color: var(--kailo-color-foreground);
+    font: 400 var(--kailo-text-caption)/1.34 var(--kailo-font-sans);
+    cursor: pointer;
+}
+
+.kailo-select select:focus-visible {
+    outline: none;
+    border-color: var(--kailo-color-brand);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--kailo-color-brand) 15%, transparent);
+}
+
+.kailo-select .kailo-icon {
+    position: absolute;
+    right: 8px;
+    pointer-events: none;
+}
+
+.kailo-menu-anchor {
+    position: relative;
+}
+
+.kailo-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 1600;
+    min-width: 180px;
+    padding: 4px;
+    border-radius: var(--kailo-radius-xl, 12px);
+    background-color: var(--kailo-color-popover);
+    color: var(--kailo-color-popover-foreground);
+    box-shadow: var(--kailo-shadow-md);
+    border: 1px solid var(--kailo-color-border);
+}
+
+.kailo-menu-title {
+    padding: 6px 8px 4px;
+    font: 600 var(--kailo-text-overline)/1.27 var(--kailo-font-sans);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--kailo-color-muted-foreground);
+}
+
+.kailo-menu-item {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 30px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--kailo-radius-md, 6px);
+    background: transparent;
+    color: inherit;
+    font: 400 var(--kailo-text-callout)/1.54 var(--kailo-font-sans);
+    text-align: left;
+    cursor: pointer;
+}
+
+.kailo-menu-item:hover:not(:disabled) {
+    background-color: var(--kailo-color-hover);
+}
+
+.kailo-menu-item-on {
+    color: var(--kailo-color-selected-foreground);
+    font-weight: 500;
+}
+
+.kailo-menu-item-label {
+    flex: 1;
+}
+
+.kailo-menu-item-hint {
+    margin-left: 16px;
+    color: var(--kailo-color-muted-foreground);
+    font-size: var(--kailo-text-caption);
+}
+
+.kailo-segmented {
+    display: inline-flex;
+    padding: 2px;
+    gap: 2px;
+    border-radius: var(--kailo-radius-lg, 8px);
+    background-color: var(--kailo-color-hover);
+}
+
+.kailo-segment {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: var(--kailo-radius-md, 6px);
+    background: transparent;
+    color: var(--kailo-color-muted-foreground);
+    cursor: pointer;
+}
+
+.kailo-segment-on {
+    background-color: var(--kailo-color-background);
+    color: var(--kailo-color-foreground);
+    box-shadow: var(--kailo-shadow-xs);
+}
+
+/* ---- Top-level header (no Kailo frame): Kailo's page header (20 §13.2) - */
+.kailo-top-level {
+    background-color: var(--kailo-color-background) !important;
+}
+
+.kailo-page-header {
+    flex: none;
+    background-color: var(--kailo-color-background);
+    color: var(--kailo-color-foreground);
+    font-family: var(--kailo-font-sans);
+}
+
+.kailo-page-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 52px;
+    padding: 0 16px 0 20px;
+    border-bottom: 1px solid var(--kailo-color-border);
+}
+
+.kailo-category-block {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--kailo-radius-lg, 8px);
+    background-color: var(--kailo-color-selected);
+    color: var(--kailo-color-selected-foreground);
+}
+
+.kailo-crumbs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.kailo-crumb {
+    font: 400 var(--kailo-text-callout)/1.54 var(--kailo-font-sans);
+    color: var(--kailo-color-muted-foreground);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.kailo-crumb-link {
+    border: 0;
+    background: transparent;
+    padding: 2px 6px;
+    border-radius: var(--kailo-radius-md, 6px);
+    cursor: pointer;
+}
+
+.kailo-crumb-link:hover {
+    background-color: var(--kailo-color-hover);
+    color: var(--kailo-color-foreground);
+}
+
+.kailo-crumb-product {
+    padding: 2px 4px 2px 6px;
+}
+
+.kailo-crumb-current {
+    padding: 2px 6px;
+    font: 600 var(--kailo-text-headline)/1.6 var(--kailo-font-sans);
+    color: var(--kailo-color-foreground);
+}
+
+.kailo-crumb-sep {
+    color: var(--kailo-color-muted-foreground);
+}
+
+.kailo-page-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.kailo-page-tabs {
+    display: flex;
+    gap: 20px;
+    height: 40px;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--kailo-color-border);
+}
+
+.kailo-page-tab {
+    position: relative;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font: 500 var(--kailo-text-callout)/1.54 var(--kailo-font-sans);
+    color: var(--kailo-color-muted-foreground);
+    cursor: pointer;
+}
+
+.kailo-page-tab:hover {
+    color: var(--kailo-color-foreground);
+}
+
+.kailo-page-tab-on {
+    color: var(--kailo-color-foreground);
+}
+
+.kailo-page-tab-on::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    border-radius: 2px;
+    background-color: var(--kailo-color-brand);
+}
+
+/* ---- Files page frame (20 §15.1): content plane, no floating cards ---- */
+:root[data-kailo-runtime] .kailo-fs-template {
+    background-color: var(--kailo-color-background) !important;
+}
+
+:root[data-kailo-runtime] .kailo-fs-template .desktop-container {
+    background-color: var(--kailo-color-background);
+}
+
+.kailo-files-page {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--kailo-color-background);
+    color: var(--kailo-color-foreground);
+    font-family: var(--kailo-font-sans);
+}
+
+.kailo-files-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+}
+
+.kailo-list-column {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+}
+
+.kailo-list-column > .main-files-list,
+.kailo-list-column > .kailo-scroll {
+    flex: 1;
+    min-height: 0;
+    transition: opacity var(--kailo-duration-base) var(--kailo-ease-standard);
+}
+
+.kailo-scroll {
+    overflow: auto;
+}
+
+/* Paging, sorting, refresh: old rows stay at 60 % under the progress line. */
+.kailo-list-busy > .main-files-list,
+.kailo-list-busy > .kailo-scroll,
+.kailo-panel.kailo-list-busy > .kailo-table {
+    opacity: 0.6;
+}
+
+:root[data-kailo-runtime] .kailo-fs-template .layout-fill.vertical_layout,
+:root[data-kailo-runtime] .kailo-list-column .main-files-list {
+    background-color: var(--kailo-color-background) !important;
+    border-radius: 0 !important;
+}
+
+/* Details panel: docked, flat, left line (20 §13.2). */
+:root[data-kailo-runtime] .kailo-files-body > div:last-child:not(.kailo-list-column) {
+    border-left: 1px solid var(--kailo-color-border);
+    background-color: var(--kailo-color-background) !important;
+}
+
+/* ---- Toolbar 44 ----------------------------------------------------------- */
+.kailo-toolbar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 44px;
+    padding: 0 12px 0 16px;
+    border-bottom: 1px solid var(--kailo-color-border);
+    background-color: var(--kailo-color-background);
+}
+
+.kailo-search-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: 280px;
+    max-width: 40%;
+    height: 32px;
+    padding: 0 6px 0 10px;
+    border: 1px solid var(--kailo-color-line-strong);
+    border-radius: var(--kailo-radius-md, 6px);
+    background-color: var(--kailo-color-background);
+    color: var(--kailo-color-muted-foreground);
+}
+
+.kailo-search-field:focus-within {
+    border-color: var(--kailo-color-brand);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--kailo-color-brand) 15%, transparent);
+}
+
+.kailo-search-field input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--kailo-color-foreground);
+    font: 400 var(--kailo-text-callout)/1.54 var(--kailo-font-sans);
+}
+
+.kailo-search-field input::-webkit-search-cancel-button {
+    display: none;
+}
+
+.kailo-search-field input::placeholder {
+    color: var(--kailo-color-muted-foreground);
+}
+
+.kailo-search-clear {
+    display: inline-flex;
+    border: 0;
+    padding: 4px;
+    border-radius: var(--kailo-radius-sm, 4px);
+    background: transparent;
+    color: var(--kailo-color-muted-foreground);
+    cursor: pointer;
+}
+
+.kailo-search-clear:hover {
+    background-color: var(--kailo-color-hover);
+}
+
+.kailo-toolbar-selection {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    overflow: hidden;
+}
+
+:root[data-kailo-runtime] .kailo-toolbar-selection button {
+    height: 28px !important;
+    line-height: 28px !important;
+    border-radius: var(--kailo-radius-md, 6px) !important;
+}
+
+:root[data-kailo-runtime] .kailo-toolbar-selection button span {
+    font-size: var(--kailo-text-callout) !important;
+    color: var(--kailo-color-text-secondary, var(--kailo-color-foreground)) !important;
+}
+
+.kailo-toolbar-spacer,
+.kailo-pager-spacer {
+    flex: 1;
+}
+
+.kailo-toolbar-sort {
+    height: 28px;
+    padding: 0 8px;
+}
+
+/* ---- Files table (20 §9 列表, §15.3) -------------------------------------- */
+:root {
+    --kailo-row-height: 40px;
+}
+
+:root[data-kailo-density="compact"] {
+    --kailo-row-height: 32px;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .toolbarTableHeader {
+    display: block !important;
+    height: 36px !important;
+    border-bottom: 1px solid var(--kailo-color-border);
+    background-color: var(--kailo-color-background) !important;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .toolbarTableHeader .mui-toolbar-group {
+    display: flex !important;
+    width: 100%;
+    height: 36px;
+    padding: 0 !important;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .header_cell {
+    display: flex !important;
+    align-items: center;
+    height: 36px;
+    padding: 0 12px !important;
+    font: 600 var(--kailo-text-overline)/1.27 var(--kailo-font-sans) !important;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--kailo-color-muted-foreground) !important;
+    background: transparent !important;
+    cursor: default;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .header_cell.sortable {
+    cursor: pointer;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .header_cell.sortable:hover {
+    color: var(--kailo-color-foreground) !important;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .header_cell.sortable::after {
+    content: "";
+    width: 12px;
+    height: 12px;
+    margin-left: 4px;
+    opacity: 0;
+    background-color: currentColor;
+    -webkit-mask: var(--kailo-cells-sort-icon) center / contain no-repeat;
+    mask: var(--kailo-cells-sort-icon) center / contain no-repeat;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .header_cell.sortable:hover::after {
+    opacity: 0.6;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .header_cell.active-sort-asc,
+:root[data-kailo-runtime] .kailo-files-table .header_cell.active-sort-desc {
+    color: var(--kailo-color-foreground) !important;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .header_cell.active-sort-asc::after,
+:root[data-kailo-runtime] .kailo-files-table .header_cell.active-sort-desc::after {
+    opacity: 1;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .header_cell.active-sort-desc::after {
+    transform: rotate(180deg);
+}
+
+:root {
+    --kailo-cells-sort-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 19V5'/%3E%3Cpath d='m5 12 7-7 7 7'/%3E%3C/svg%3E");
+}
+
+:root[data-kailo-runtime] .kailo-files-table .material-list-entry {
+    height: var(--kailo-row-height) !important;
+    min-height: var(--kailo-row-height) !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: center;
+    border-bottom: 1px solid var(--kailo-color-border) !important;
+    box-sizing: border-box;
+    background-color: var(--kailo-color-background);
+}
+
+:root[data-kailo-runtime] .kailo-files-table .material-list-entry:hover:not(.selected) {
+    background-color: var(--kailo-color-hover) !important;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .material-list-entry.selected,
+:root[data-kailo-runtime] .kailo-files-table .material-list-entry.selected-dark {
+    background-color: var(--kailo-color-selected) !important;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .material-list-text {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    display: flex !important;
+    align-items: center;
+    padding: 0 !important;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .material-list-line-1 {
+    display: flex !important;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .material-list-line-2,
+:root[data-kailo-runtime] .kailo-files-table .material-list-line-3 {
+    display: none !important;
+}
+
+:root[data-kailo-runtime] .kailo-files-table span.cell,
+:root[data-kailo-runtime] .kailo-files-table .header_cell {
+    box-sizing: border-box;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+:root[data-kailo-runtime] .kailo-files-table span.cell {
+    display: flex !important;
+    align-items: center;
+    height: 100%;
+    padding: 0 12px !important;
+    font: 400 var(--kailo-text-callout)/1.54 var(--kailo-font-sans) !important;
+    color: var(--kailo-color-muted-foreground) !important;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .cell-ajxp_label {
+    flex: 1 1 auto;
+    min-width: 200px !important;
+}
+
+:root[data-kailo-runtime] .kailo-files-table span.cell.cell-ajxp_label {
+    padding-left: 16px !important;
+    font: 500 var(--kailo-text-body)/1.43 var(--kailo-font-sans) !important;
+    color: var(--kailo-color-foreground) !important;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .header_cell.cell-ajxp_label {
+    padding-left: 48px !important;
+}
+
+:root[data-kailo-runtime] .kailo-files-table span.cell.cell-ajxp_label > span {
+    display: flex !important;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    margin: 0 !important;
+}
+
+:root[data-kailo-runtime] .kailo-files-table span.cell.cell-ajxp_label > span > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .cell-ajxp_label .mimefont-container {
+    width: 22px !important;
+    height: 22px !important;
+    min-width: 22px;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .cell-ajxp_label .mimefont {
+    font-size: 20px !important;
+    line-height: 22px !important;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .cell-ajxp_modiftime,
+:root[data-kailo-runtime] .kailo-files-table .cell-ajxp_dirname {
+    flex: 0 0 168px;
+    width: 168px !important;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .cell-ajxp_dirname {
+    flex-basis: 240px;
+    width: 240px !important;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .cell-bytesize {
+    flex: 0 0 104px;
+    width: 104px !important;
+    justify-content: flex-end;
+    text-align: right;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .material-list-actions {
+    flex: 0 0 auto;
+    min-width: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0 8px 0 0 !important;
+    height: 100%;
+}
+
+:root[data-kailo-runtime] .kailo-files-table .toolbarTableHeader::after {
+    content: none;
+}
+
+.kailo-cell-muted {
+    color: var(--kailo-color-muted-foreground);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.kailo-cell-number {
+    font-variant-numeric: tabular-nums;
+}
+
+/* Grid view: cards on the content plane. */
+:root[data-kailo-runtime] .kailo-files-grid .material-list-entry {
+    border-radius: var(--kailo-radius-xl, 12px) !important;
+}
+
+:root[data-kailo-runtime] .kailo-files-grid .material-list-line-1 {
+    font: 500 var(--kailo-text-callout)/1.54 var(--kailo-font-sans) !important;
+    color: var(--kailo-color-foreground) !important;
+}
+
+/* ---- Plain tables (主页 recent, 收藏) with the same grammar ----------------- */
+.kailo-table {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.kailo-table-head,
+.kailo-tr {
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--kailo-color-border);
+}
+
+.kailo-table-head {
+    height: 36px;
+}
+
+.kailo-tr {
+    height: var(--kailo-row-height);
+    cursor: default;
+}
+
+.kailo-tr:hover {
+    background-color: var(--kailo-color-hover);
+}
+
+.kailo-th {
+    padding: 0 12px;
+    font: 600 var(--kailo-text-overline)/1.27 var(--kailo-font-sans);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--kailo-color-muted-foreground);
+}
+
+.kailo-td {
+    padding: 0 12px;
+    min-width: 0;
+    font: 400 var(--kailo-text-callout)/1.54 var(--kailo-font-sans);
+}
+
+.kailo-col-name {
+    flex: 1 1 auto;
+    min-width: 200px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-left: 16px;
+}
+
+.kailo-th.kailo-col-name {
+    padding-left: 48px;
+}
+
+.kailo-col-name .mimefont-container {
+    width: 22px !important;
+    height: 22px !important;
+    min-width: 22px;
+    margin: 0 !important;
+    background: transparent !important;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+}
+
+.kailo-col-name .mimefont {
+    font-size: 20px !important;
+    line-height: 22px !important;
+}
+
+.kailo-col-location {
+    flex: 0 0 240px;
+}
+
+.kailo-col-modified {
+    flex: 0 0 168px;
+}
+
+.kailo-col-size {
+    flex: 0 0 104px;
+    text-align: right;
+}
+
+.kailo-col-actions {
+    flex: 0 0 52px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.kailo-link {
+    min-width: 0;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--kailo-color-foreground);
+    font: 500 var(--kailo-text-body)/1.43 var(--kailo-font-sans);
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+    border-radius: var(--kailo-radius-sm, 4px);
+}
+
+.kailo-link:hover {
+    color: var(--kailo-color-brand-text);
+}
+
+.kailo-row-action {
+    width: 28px;
+    height: 28px;
+    color: var(--kailo-color-brand);
+}
+
+/* ---- Pagination bar (20 §15.3) ---------------------------------------- */
+.kailo-files-footer {
+    flex: none;
+    position: relative;
+}
+
+.kailo-pager {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 44px;
+    padding: 0 12px 0 16px;
+    border-top: 1px solid var(--kailo-color-border);
+    background-color: var(--kailo-color-background);
+    font-family: var(--kailo-font-sans);
+}
+
+.kailo-pager-total,
+.kailo-pager-position {
+    font: 400 var(--kailo-text-caption)/1.34 var(--kailo-font-sans);
+    color: var(--kailo-color-muted-foreground);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.kailo-pager-pages {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.kailo-pager-pages .kailo-icon-button {
+    width: 28px;
+    height: 28px;
+}
+
+.kailo-pager-page {
+    min-width: 28px;
+    height: 28px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: var(--kailo-radius-md, 6px);
+    background: transparent;
+    color: var(--kailo-color-text-secondary, var(--kailo-color-foreground));
+    font: 500 var(--kailo-text-caption)/1.34 var(--kailo-font-sans);
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+}
+
+.kailo-pager-page:hover {
+    background-color: var(--kailo-color-hover);
+}
+
+.kailo-pager-page-current {
+    background-color: var(--kailo-color-selected);
+    color: var(--kailo-color-selected-foreground);
+}
+
+.kailo-pager-gap {
+    min-width: 20px;
+    text-align: center;
+    color: var(--kailo-color-muted-foreground);
+}
+
+.kailo-pager-compact {
+    display: inline-flex;
+    height: 32px;
+    gap: 4px;
+    padding: 0;
+    border: 0;
+}
+
+.kailo-progress {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -1px;
+    height: 2px;
+    overflow: hidden;
+    background-color: color-mix(in srgb, var(--kailo-color-brand) 18%, transparent);
+}
+
+.kailo-progress::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 30%;
+    background-color: var(--kailo-color-brand);
+    animation: kailo-progress 1.2s var(--kailo-ease-in-out) infinite;
+}
+
+@keyframes kailo-progress {
+    from { left: -30%; }
+    to { left: 100%; }
+}
+
+.kailo-still-loading {
+    position: absolute;
+    left: 50%;
+    bottom: 56px;
+    transform: translateX(-50%);
+    padding: 6px 12px;
+    border-radius: var(--kailo-radius-lg, 8px);
+    background-color: var(--kailo-color-popover);
+    box-shadow: var(--kailo-shadow-sm);
+    font: 400 var(--kailo-text-caption)/1.34 var(--kailo-font-sans);
+    color: var(--kailo-color-muted-foreground);
+}
+
+/* ---- States (20 §9 空态, §15.4) ----------------------------------------- */
+.kailo-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 320px;
+    height: 100%;
+    padding: 48px 24px;
+    box-sizing: border-box;
+    text-align: center;
+    font-family: var(--kailo-font-sans);
+}
+
+.kailo-state-illustration {
+    position: relative;
+    display: block;
+    width: 64px;
+    height: 64px;
+    margin-bottom: 8px;
+}
+
+.kailo-gradient-start { stop-color: var(--kailo-color-brand-400); }
+.kailo-gradient-mid { stop-color: var(--kailo-color-brand); }
+.kailo-gradient-end { stop-color: hsl(var(--kailo-hsl-chart-5)); }
+
+.kailo-state-title {
+    font: 600 var(--kailo-text-title2)/1.41 var(--kailo-font-sans);
+    color: var(--kailo-color-foreground);
+}
+
+.kailo-state-body {
+    max-width: 380px;
+    font: 400 var(--kailo-text-body)/1.43 var(--kailo-font-sans);
+    color: var(--kailo-color-muted-foreground);
+}
+
+.kailo-state .kailo-button {
+    margin-top: 12px;
+}
+
+.kailo-state-small {
+    min-height: 200px;
+    gap: 4px;
+}
+
+.kailo-state-small .kailo-state-title {
+    font: 600 var(--kailo-text-headline)/1.6 var(--kailo-font-sans);
+}
+
+.kailo-inline-error-block {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 16px;
+    padding: 12px 16px;
+    border: 1px solid var(--kailo-color-border);
+    border-radius: var(--kailo-radius-xl, 12px);
+    background-color: var(--kailo-color-danger-soft);
+    font-family: var(--kailo-font-sans);
+}
+
+.kailo-inline-error-icon {
+    color: var(--kailo-color-danger-text);
+}
+
+.kailo-inline-error-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.kailo-inline-error-title {
+    font: 600 var(--kailo-text-body)/1.43 var(--kailo-font-sans);
+    color: var(--kailo-color-foreground);
+}
+
+.kailo-inline-error-reason {
+    font: 400 var(--kailo-text-callout)/1.54 var(--kailo-font-sans);
+    color: var(--kailo-color-text-secondary, var(--kailo-color-muted-foreground));
+}
+
+/* Skeleton: same shape as the list, no spinner (20 §15.4). */
+.kailo-skeleton {
+    display: flex;
+    flex-direction: column;
+}
+
+.kailo-skeleton-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--kailo-color-border);
+}
+
+.kailo-skeleton-block {
+    border-radius: var(--kailo-radius-sm, 4px);
+    background: linear-gradient(90deg, var(--kailo-color-hover) 0%, var(--kailo-color-pressed, var(--kailo-color-hover)) 50%, var(--kailo-color-hover) 100%);
+    background-size: 200% 100%;
+    animation: kailo-shimmer 1.4s linear infinite;
+}
+
+.kailo-skeleton-icon {
+    width: 20px;
+    height: 20px;
+}
+
+.kailo-skeleton-line {
+    height: 10px;
+}
+
+.kailo-skeleton-grid {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 16px;
+}
+
+.kailo-skeleton-card {
+    width: 160px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.kailo-skeleton-thumb {
+    height: 120px;
+    border-radius: var(--kailo-radius-xl, 12px);
+}
+
+@keyframes kailo-shimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+}
+
+/* ---- 主页 (20 §15.1) ------------------------------------------------------ */
+.kailo-home {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--kailo-color-background);
+    color: var(--kailo-color-foreground);
+    font-family: var(--kailo-font-sans);
+}
+
+.kailo-home-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.kailo-section-title {
+    margin: 0 0 12px;
+    font: 600 var(--kailo-text-title2)/1.41 var(--kailo-font-sans);
+    color: var(--kailo-color-foreground);
+}
+
+.kailo-location-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+}
+
+.kailo-card {
+    border: 1px solid var(--kailo-color-border);
+    border-radius: var(--kailo-radius-xl, 12px);
+    background-color: var(--kailo-color-card, var(--kailo-color-background));
+    color: var(--kailo-color-foreground);
+    font-family: var(--kailo-font-sans);
+}
+
+.kailo-location-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    text-align: left;
+    cursor: pointer;
+    transition: box-shadow var(--kailo-duration-fast) var(--kailo-ease-standard), transform var(--kailo-duration-fast) var(--kailo-ease-standard);
+}
+
+.kailo-location-card:hover:not(:disabled) {
+    box-shadow: var(--kailo-shadow-sm);
+    transform: translateY(-1px);
+}
+
+.kailo-location-card:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+.kailo-location-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--kailo-radius-lg, 8px);
+    background-color: var(--kailo-color-selected);
+    color: var(--kailo-color-selected-foreground);
+}
+
+.kailo-location-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.kailo-location-title {
+    font: 600 var(--kailo-text-body)/1.43 var(--kailo-font-sans);
+}
+
+.kailo-location-count {
+    font: 400 var(--kailo-text-caption)/1.34 var(--kailo-font-sans);
+    color: var(--kailo-color-muted-foreground);
+    min-height: 16px;
+}
+
+.kailo-location-chevron {
+    color: var(--kailo-color-muted-foreground);
+}
+
+.kailo-panel {
+    border: 1px solid var(--kailo-color-border);
+    border-radius: var(--kailo-radius-xl, 12px);
+    overflow: hidden;
+    background-color: var(--kailo-color-background);
+}
+
+.kailo-panel .kailo-tr:last-child {
+    border-bottom: 0;
+}
+
+.kailo-panel .kailo-pager {
+    border-top: 1px solid var(--kailo-color-border);
+}
+
+/* ---- Location pane header 40: Overline + count + one icon button -------- */
+:root[data-kailo-runtime] .kailo-list-pane .section-title {
+    display: flex !important;
+    align-items: center;
+    min-height: 40px;
+    box-sizing: border-box;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+}
+
+.kailo-pane-count {
+    margin-left: 6px;
+    font-weight: 500;
+    letter-spacing: 0;
+    color: var(--kailo-color-muted-foreground);
+    opacity: 0.8;
+}
+
+/* ---- Own one-line dialog (no Kailo host): Kailo dialog (20 §9) --------- */
+.kailo-dialog-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 3500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgb(0 0 0 / 40%);
+    backdrop-filter: blur(2px);
+}
+
+[data-kailo-theme="dark"] .kailo-dialog-scrim {
+    background-color: rgb(0 0 0 / 60%);
+}
+
+.kailo-dialog {
+    width: min(480px, calc(100% - 32px));
+    box-sizing: border-box;
+    padding: 20px 24px;
+    border-radius: var(--kailo-radius-2xl, 16px);
+    background-color: var(--kailo-color-popover);
+    color: var(--kailo-color-popover-foreground);
+    box-shadow: var(--kailo-shadow-xl);
+    font-family: var(--kailo-font-sans);
+}
+
+.kailo-dialog-title {
+    margin: 0 0 12px;
+    font: 600 var(--kailo-text-title2)/1.41 var(--kailo-font-sans);
+}
+
+.kailo-dialog-description {
+    margin: 0 0 12px;
+    font: 400 var(--kailo-text-body)/1.43 var(--kailo-font-sans);
+    color: var(--kailo-color-muted-foreground);
+}
+
+.kailo-dialog-label {
+    display: block;
+    margin-bottom: 6px;
+    font: 500 var(--kailo-text-callout)/1.54 var(--kailo-font-sans);
+}
+
+.kailo-dialog-input {
+    width: 100%;
+    height: 34px;
+    box-sizing: border-box;
+    padding: 0 10px;
+    border: 1px solid var(--kailo-color-line-strong);
+    border-radius: var(--kailo-radius-md, 6px);
+    background-color: var(--kailo-color-background);
+    color: var(--kailo-color-foreground);
+    font: 400 var(--kailo-text-body)/1.43 var(--kailo-font-sans);
+    outline: none;
+}
+
+.kailo-dialog-input:focus {
+    border-color: var(--kailo-color-brand);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--kailo-color-brand) 15%, transparent);
+}
+
+.kailo-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 20px;
 }

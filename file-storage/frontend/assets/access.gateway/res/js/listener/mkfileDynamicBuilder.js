@@ -120,6 +120,44 @@ class Builder {
                                 //console.log('Create files', collection.Children);
                             });
                         };
+                        // DD-167 (07 §4.8.10): Kailo's dialog asks the name, Kailo's toast reports the result.
+                        const kailo = window.KailoCells
+                        if (kailo && kailo.kailoMode && kailo.kailoMode() && kailo.askName) {
+                            Promise.resolve(kailo.askName({
+                                title: kailo.text('newFileTitle', tpl.Label),
+                                label: kailo.text('newFileLabel'),
+                                value: pathLabel,
+                                confirmLabel: kailo.text('mkdirConfirm'),
+                                cancelLabel: kailo.text('cancel'),
+                                maxLength: 255,
+                            })).then(value => {
+                                const name = String(value || '').trim()
+                                if (!name) {
+                                    return
+                                }
+                                if (!kailo.validName(name)) {
+                                    pydio.UI.displayMessage('ERROR', kailo.failure('newFileFailed', kailo.text('mkdirInvalid')))
+                                    return
+                                }
+                                if (knownChildren.indexOf(name.toLowerCase()) >= 0) {
+                                    pydio.UI.displayMessage('ERROR', kailo.text('mkdirExists', name))
+                                    return
+                                }
+                                const api = new TreeServiceApi(PydioApi.getRestClient({silent: true}));
+                                const request = new RestCreateNodesRequest();
+                                const node = new TreeNode();
+                                node.Path = pathDir + '/' + name;
+                                node.Type = TreeNodeType.constructFromObject('LEAF');
+                                request.Nodes = [node];
+                                request.TemplateUUID = tpl.UUID;
+                                api.createNodes(request).then(() => {
+                                    pydio.UI.displayMessage('SUCCESS', kailo.text('newFileDone', name))
+                                }).catch(e => {
+                                    pydio.UI.displayMessage('ERROR', kailo.failure('newFileFailed', e && (e.Title || e.message)))
+                                })
+                            })
+                            return
+                        }
                         pydio.UI.openComponentInModal('PydioReactUI', 'PromptDialog', {
                             dialogTitleId:156,
                             legendId:tpl.Label,

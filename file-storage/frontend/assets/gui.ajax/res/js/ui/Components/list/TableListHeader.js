@@ -40,6 +40,16 @@ export default class TableListHeader extends React.Component{
     // },
 
     render(){
+        // DD-167 (20 §15.3): in Kailo mode the header row holds the column
+        // titles only; paging lives in the bar under the list.
+        const kailo = typeof window !== 'undefined' && window.KailoCells
+        if(kailo && kailo.kailoMode && kailo.kailoMode()) {
+            return (
+                <div className="mui-toolbar toolbarTableHeader kailo-table-header">
+                    <SortColumns displayMode="tableHeader" {...this.props} columnClicked={this.props.onHeaderClick}/>
+                </div>
+            );
+        }
         let paginator;
         if(this.props.node.getMetadata().get("paginationData") && this.props.node.getMetadata().get("paginationData").get('total') > 1){
             paginator = <ListPaginator dataModel={this.props.dm} node={this.props.node}/>;

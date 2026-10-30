@@ -1227,15 +1227,16 @@ let SimpleList = createReactClass({
                     }
                 }
             }
-            emptyState = <EmptyStateView {...emptyStateProps} {...actionProps}/> ;
+            // DD-167 (20 §15.4): Kailo-mode lists render their own states.
+            emptyState = emptyStateProps.kailoRender ? emptyStateProps.kailoRender(actionProps) : <EmptyStateView {...emptyStateProps} {...actionProps}/> ;
 
         }else if(emptyStateProps && emptyStateProps.checkEmptyState && emptyStateProps.checkEmptyState(node)){
 
-            emptyState = <EmptyStateView {...emptyStateProps}/> ;
+            emptyState = emptyStateProps.kailoRender ? emptyStateProps.kailoRender({}) : <EmptyStateView {...emptyStateProps}/> ;
 
         } else if(errorStateProps && !node.isLoading() && node.getLoadError()) {
 
-            emptyState = <EmptyStateView
+            emptyState = errorStateProps.kailoRender ? errorStateProps.kailoRender(node.getLoadError(), () => this.reload()) : <EmptyStateView
                 {...errorStateProps}
                 secondaryTextId={node.getLoadError().message}
                 actionCallback={() => this.reload()}
@@ -1249,7 +1250,7 @@ let SimpleList = createReactClass({
         let content = elements;
         let cH, c2H;
         if(!elements.length && usePlaceHolder) {
-            content = <PlaceHolders {...this.props}/>
+            content = this.props.kailoPlaceHolder || <PlaceHolders {...this.props}/>
         }
         if(emptyState) {
 

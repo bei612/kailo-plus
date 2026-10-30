@@ -55,6 +55,25 @@ const SearchConstants = {
 export {SearchConstants};
 
 
+// DD-167 (20 §15.3): in Kailo mode search results are pages with a total
+// ("共 N 条", "第 x / y 页"), not a growing list with "load more".
+export function kailoSearchPaging() {
+    const kailo = typeof window !== 'undefined' && window.KailoCells
+    return !!(kailo && kailo.kailoMode && kailo.kailoMode())
+}
+
+export function kailoSearchPageSize() {
+    const kailo = typeof window !== 'undefined' && window.KailoCells
+    let stored = 0
+    try {
+        const pydio = Pydio.getInstance()
+        stored = pydio && pydio.user ? pydio.user.getLayoutPreference('FSTemplate.Kailo.PageSize', 0) : 0
+    } catch (e) {
+        stored = 0
+    }
+    return kailo && kailo.normalizePageSize ? kailo.normalizePageSize(stored, 'list') : 20
+}
+
 export default function withSearch(Component, historyIdentifier, defaultScope, bindToContextNode = true){
 
     return class WithSearch extends React.Component {
@@ -68,6 +87,9 @@ export default function withSearch(Component, historyIdentifier, defaultScope, b
                 dataModel: props.dataModel || props.pydio.getContextHolder() || emptyDataModel(),
                 values,
                 limit: 30,
+                // DD-167 (20 §15.3): Kailo-mode results are pages (page, pageSize, resultsCount).
+                page: 1,
+                pageSize: kailoSearchPageSize(),
                 empty: true,
                 searchLoading: false,
                 facets:[],
@@ -182,7 +204,10 @@ export default function withSearch(Component, historyIdentifier, defaultScope, b
         }
 
         performSearch() {
-            const {values, limit, dataModel, activeFacets, sortField, sortDesc} = this.state;
+            const {values, dataModel, activeFacets, sortField, sortDesc} = this.state;
+            const paged = kailoSearchPaging();
+            const limit = paged ? this.state.pageSize : this.state.limit;
+            const from = paged ? (Math.max(1, this.state.page) - 1) * this.state.pageSize : 0;
             const searchRootNode = dataModel.getSearchNode();
             searchRootNode.getMetadata().set('search_values', values);
             searchRootNode.getMetadata().set('active_facets', activeFacets);
@@ -196,6 +221,9 @@ export default function withSearch(Component, historyIdentifier, defaultScope, b
             }
             searchRootNode.setChildren([]);
             searchRootNode.setLoaded(false);
+            if (searchRootNode.setLoadError) {
+                searchRootNode.setLoadError(null);
+            }
             let {scope, ...searchValues} = values;
             if(scope === 'previous_context' && searchRootNode.getMetadata().get('previous_context')) {
                 scope = searchRootNode.getMetadata().get('previous_context');
@@ -215,7 +243,7 @@ export default function withSearch(Component, historyIdentifier, defaultScope, b
             searchRootNode.setLoading(true);
             searchRootNode.notify("loading");
             const api = new SearchApi(Pydio.getInstance());
-            api.search(this.mergeFacets(values, activeFacets), scope, limit, false, sortField, sortDesc).then(response => {
+            api.search(this.mergeFacets(values, activeFacets), scope, limit, false, sortField, sortDesc, from).then(response => {
                 searchRootNode.clear();
                 const res = response.Results || []
                 res.forEach((node, i) => {
@@ -229,14 +257,19 @@ export default function withSearch(Component, historyIdentifier, defaultScope, b
                 }
                 this.setState({
                     searchLoading: false,
+                    searchError: null,
                     facets: response.Facets ||[],
-                    resultsCount: response.Total || res.length
+                    resultsCount: response.Total || (from + res.length)
                 });
-            }).catch(()=>{
+            }).catch((e)=>{
                 searchRootNode.clear();
                 searchRootNode.setLoading(false);
+                // DD-167 (20 §15.4): the failure is the list's inline state in Kailo mode.
+                if (paged) {
+                    searchRootNode.setLoadError(e && typeof e === 'object' ? e : {message: String(e || '')});
+                }
                 searchRootNode.notify("loaded");
-                this.setState({searchLoading: false});
+                this.setState({searchLoading: false, searchError: e || {}});
             });
 
         }
@@ -277,7 +310,7 @@ export default function withSearch(Component, historyIdentifier, defaultScope, b
             } else {
                 this.performSearchD.cancel()
             }
-            this.setState({values: {scope, ...other}, facets:[], activeFacets:[]}, searchCallback);
+            this.setState({values: {scope, ...other}, facets:[], activeFacets:[], page: 1}, searchCallback);
             if(onUpdateSearch){
                 onUpdateSearch({values: newValues});
             }
@@ -334,8 +367,16 @@ export default function withSearch(Component, historyIdentifier, defaultScope, b
             this.setState({limit}, this.performSearch.bind(this));
         }
 
+        setPage(page){
+            this.setState({page: Math.max(1, parseInt(page) || 1)}, this.performSearch.bind(this));
+        }
+
+        setPageSize(pageSize){
+            this.setState({pageSize, page: 1}, this.performSearch.bind(this));
+        }
+
         setSortField(sortField, sortDesc) {
-            this.setState({sortField, sortDesc}, this.performSearch.bind(this))
+            this.setState({sortField, sortDesc, page: 1}, this.performSearch.bind(this))
         }
 
         toggleFacet(facet, toggle){
@@ -346,7 +387,7 @@ export default function withSearch(Component, historyIdentifier, defaultScope, b
             } else {
                 newFacets = activeFacets.filter(s => !(s.FieldName===facet.FieldName && s.Label === facet.Label))
             }
-            this.setState({activeFacets:newFacets}, this.performSearch.bind(this))
+            this.setState({activeFacets:newFacets, page: 1}, this.performSearch.bind(this))
         }
 
         mergeFacets(values = {}, facets = []){
@@ -496,6 +537,9 @@ export default function withSearch(Component, historyIdentifier, defaultScope, b
                 submitSearch:this.performSearch.bind(this),
                 setValues:this.setValues.bind(this),
                 setLimit:this.setLimit.bind(this),
+                setPage:this.setPage.bind(this),
+                setPageSize:this.setPageSize.bind(this),
+                paged:kailoSearchPaging(),
                 setSortField:this.setSortField.bind(this),
                 toggleFacet:this.toggleFacet.bind(this),
                 humanizeValues:this.humanize.bind(this),

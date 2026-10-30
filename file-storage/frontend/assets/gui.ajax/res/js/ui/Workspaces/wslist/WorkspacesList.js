@@ -32,6 +32,8 @@ import Facets from "../search/components/Facets";
 import SearchSorter from "../search/components/SearchSorter";
 const {ThemedContainers:{Popover}} = Pydio.requireLib('hoc');
 
+const kailoPane = () => !!(typeof window !== 'undefined' && window.KailoCells && window.KailoCells.kailoMode && window.KailoCells.kailoMode())
+
 class Entries extends React.Component{
 
     constructor(props) {
@@ -118,9 +120,11 @@ class Entries extends React.Component{
                     <div key="shared-title" className="section-title" style={titleStyle}>
                         <span style={{cursor:'pointer'}} title={filterHint} onClick={()=>{this.setState({toggleFilter: true})}}>
                             {title}
-                            {entries.length > 0 && <span style={{fontSize: 12, opacity: '0.4',marginLeft: 3}} className={"mdi mdi-filter"}/>}
+                            {/* DD-167 (20 §15.1): pane header = Overline title + count + one icon button. */}
+                            {kailoPane() && entries.length > 0 && <span className={"kailo-pane-count"}>{entries.length}</span>}
+                            {!kailoPane() && entries.length > 0 && <span style={{fontSize: 12, opacity: '0.4',marginLeft: 3}} className={"mdi mdi-filter"}/>}
                         </span>
-                        {listSettings}
+                        {!kailoPane() && listSettings}
                         {createAction}
                     </div>
                 }

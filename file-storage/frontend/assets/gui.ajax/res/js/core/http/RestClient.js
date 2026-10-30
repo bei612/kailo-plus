@@ -270,6 +270,9 @@ class RestClient extends ApiClient{
             reason = reason.error
             replace = true
         }
+        // DD-167 (20 §15.4): callers keep the HTTP status (403 is its own
+        // state in Kailo mode: access, not an error to retry).
+        const status = reason && reason.response ? reason.response.status : (reason && reason.status) || 0;
         let msg = reason.message;
         if (reason.response && reason.response.body){
             msg = reason.response.body
@@ -287,23 +290,30 @@ class RestClient extends ApiClient{
         if (reason.response && reason.response.status === 404) {
             // 404 may happen
             console.info('404 not found', msg);
-            return {message: msg};
+            return {message: msg, status};
         }
         if (reason.response && reason.response.status === 503) {
             // 404 may happen
             console.warn('Service currently unavailable', msg);
-            return {message: msg};
+            return {message: msg, status};
         }
         if (reason.response && reason.response.status === 423) {
             // 423 may happen
             console.warn('Resource currently locked', msg);
-            return {message: msg};
+            return {message: msg, status};
         }
         if(this.pydio && this.pydio.UI && !(this.options && this.options.silent)) {
             this.pydio.UI.displayMessage('ERROR', msg);
         }
         if(replace){
-            return {message: msg};
+            return {message: msg, status};
+        }
+        if (reason && typeof reason === 'object' && status && reason.status === undefined) {
+            try {
+                reason.status = status;
+            } catch (e) {
+                // frozen error object: the status stays on its response
+            }
         }
         if (console) {
             console.error(reason);

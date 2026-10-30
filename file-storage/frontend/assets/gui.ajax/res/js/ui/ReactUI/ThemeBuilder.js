@@ -206,7 +206,10 @@ export default class ThemeBuilder {
         if (!presentation) {
             return
         }
-        const key = JSON.stringify([!!presentation.dark, presentation.tokens || {}])
+        // DD-167 (07 §4.8.10): the text size dial rebuilds the theme too (MUI
+        // typography and the native px sizes follow typeScale).
+        const scale = typeof presentation.typeScale === 'number' && presentation.typeScale > 0 ? presentation.typeScale : 1
+        const key = JSON.stringify([!!presentation.dark, presentation.tokens || {}, presentation.fontSize || 'default', scale])
         if (key === this._hostPresentation) {
             return
         }
@@ -214,6 +217,7 @@ export default class ThemeBuilder {
         this._hostPresentation = key
         this.userTheme = 'mui3'
         this.dark = !!presentation.dark
+        this.typeScale = scale
         if (!first) {
             this.requireRefresh()
         }
@@ -509,7 +513,8 @@ export default class ThemeBuilder {
 
         themeCusto['@mui'] = createTheme({
             typography: kailo ? {
-                fontSize: 13,
+                // Kailo's Callout step (13) times the text size dial (--kailo-text-callout).
+                fontSize: Math.round(13 * (this.typeScale || 1) * 100) / 100,
                 fontFamily: kailo.fontFamily
             } : {
                 fontSize: 13
@@ -536,7 +541,7 @@ export default class ThemeBuilder {
                     styleOverrides: {tooltip: {
                         backgroundColor: systemDark ? 'var(--kailo-color-accent)' : 'var(--kailo-color-foreground)',
                         color: systemDark ? 'var(--kailo-color-foreground)' : 'var(--kailo-color-background)',
-                        fontSize: 12, lineHeight: '16px', fontWeight: 500, borderRadius: 6, padding: '4px 8px',
+                        fontSize: 'var(--kailo-text-caption, 12px)', lineHeight: 1.34, fontWeight: 500, borderRadius: 6, padding: '4px 8px',
                         boxShadow: 'var(--kailo-shadow-sm)',
                     }},
                 },

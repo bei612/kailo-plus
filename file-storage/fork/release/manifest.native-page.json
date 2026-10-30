@@ -1,7 +1,7 @@
 {
   "id": "{{releaseId}}",
   "componentTypeKey": "cells",
-  "version": "1.5.0-native-page",
+  "version": "1.6.0-native-page",
   "class": "APPLICATION",
   "platformPortKey": "NONE",
   "manifestSchemaVersion": 1,
@@ -79,7 +79,8 @@
         "defaultValue": "true",
         "label": {"ZH_CN": "拼写检查", "EN": "Spell checking"},
         "description": {"ZH_CN": "在文档编辑器中标出拼写错误", "EN": "Underline misspelled words in the document editor"}
-      }
+      },
+      {"key":"appearance.listDensity","settingsCategory":"APPEARANCE","valueType":"ENUM","options":[{"value":"comfortable","label":{"ZH_CN":"舒适","EN":"Comfortable"}},{"value":"compact","label":{"ZH_CN":"紧凑","EN":"Compact"}}],"defaultValue":"comfortable","label":{"ZH_CN":"列表密度","EN":"List density"},"description":{"ZH_CN":"列表与表格的行高","EN":"Row height of lists and tables"}}
     ],
     "adminSurfaces": [
       {

@@ -37,6 +37,16 @@ const {ListColumnsParser} = Pydio.requireLib('hoc');
 import OverlayIcon from './OverlayIcon'
 import {debounce} from 'lodash'
 import {muiThemeable} from 'material-ui/styles'
+import {kailoColumns} from '../kailo/columns'
+import {KailoEmptyState, KailoLoadError, KailoSkeleton} from '../kailo/KailoStateView'
+import {kt, kailoCells, kailoMode} from '../kailo/useKailo'
+
+// DD-167 (20 §15.1): Kailo mode shows the files as a list (one line per
+// entry, columns, 40/32 px rows) or a grid; the native two-line list,
+// masonry and pages modes are not offered there.
+export function kailoDisplayMode(mode) {
+    return String(mode || '').indexOf('grid') === 0 ? 'grid-160' : 'detail'
+}
 
 class MainFilesList extends React.Component {
     static propTypes = {
@@ -65,6 +75,9 @@ class MainFilesList extends React.Component {
         }
         if(fixedDisplayMode) {
             dMode = fixedDisplayMode;
+        } else if(kailoMode()) {
+            dMode = kailoDisplayMode(dMode);
+            tSize = dMode === 'grid-160' ? 160 : tSize;
         }
 
         this.state = {
@@ -114,11 +127,35 @@ class MainFilesList extends React.Component {
                 pinBookmarks: this.getPrefValue('FilesList.PinBookmarks', false)
             })
             if(!fixedDisplayMode) {
-                const displayMode = this.getPrefValue('FilesList.DisplayMode', 'list')
-                this.setState({displayMode})
+                let displayMode = this.getPrefValue('FilesList.DisplayMode', 'list')
+                if(kailoMode()) {
+                    displayMode = kailoDisplayMode(displayMode)
+                }
+                if(displayMode !== this.state.displayMode) {
+                    this.setState({displayMode}, () => {
+                        this.recomputeThumbnailsDimension(displayMode.indexOf('grid-') === 0 ? parseInt(displayMode.split('-')[1]) : null)
+                        if(onDisplayModeChange) {
+                            onDisplayModeChange(displayMode)
+                        }
+                    })
+                }
             }
         }
         pydio.observe('reload_layout_preferences', this._prefObserver)
+        // DD-167: Kailo's language, text size, zoom and list density apply in place.
+        const k = kailoCells()
+        if(k && kailoMode()) {
+            const bump = () => this.setState({kailoTick: (this.state.kailoTick || 0) + 1})
+            this._kailoStops = [k.subscribe && k.subscribe(bump), k.onListDensity && k.onListDensity(bump)].filter(Boolean)
+            // The toolbar's sort menu (20 §15.3): same sorting as a column header click.
+            this._kailoSort = (key) => {
+                const column = kailoColumns(() => null, false, pydio)[key]
+                if(column && this.refs.list && this.refs.list.onColumnSort) {
+                    this.refs.list.onColumnSort({...column, name: key}, null, false)
+                }
+            }
+            pydio.observe('kailo_sort_request', this._kailoSort)
+        }
 
         this.recomputeThumbnailsDimension();
         this._thumbObserver = debounce(this.recomputeThumbnailsDimension.bind(this), 500);
@@ -134,6 +171,12 @@ class MainFilesList extends React.Component {
 
     componentWillUnmount() {
         const {dataModel, pydio} = this.props;
+        if(this._kailoStops) {
+            this._kailoStops.forEach(stop => stop())
+        }
+        if(this._kailoSort) {
+            pydio.stopObserving('kailo_sort_request', this._kailoSort)
+        }
         dataModel.stopObserving("context_changed", this._contextObserver);
         pydio.stopObserving('reload_layout_preferences', this._prefObserver)
 
@@ -177,6 +220,9 @@ class MainFilesList extends React.Component {
                 })
             }
             let dMode = this.getPrefValue('FilesList.DisplayMode', originalDisplayMode || 'list');
+            if(!fixedDisplayMode && kailoMode()) {
+                dMode = kailoDisplayMode(dMode)
+            }
             if(fixedDisplayMode) {
                 dMode = fixedDisplayMode
             } else if(prevState.displayMode !== dMode && dMode.indexOf('grid-') === 0){
@@ -887,6 +933,62 @@ class MainFilesList extends React.Component {
             }
         }
 
+        // DD-167 (20 §15.1, §15.3, §15.4): the Kailo-mode list — columns, row
+        // height from Kailo's list density, skeleton, empty, error and access states.
+        let kailoProps = {};
+        const kailoList = kailoMode() && !this.props.fixedDisplayMode && !this.props.horizontalRibbon;
+        if(kailoList) {
+            const k = kailoCells();
+            const rowHeight = k && k.rowHeight ? k.rowHeight() : 40;
+            const grid = dMode === 'grid';
+            if(!grid) {
+                elementHeight = rowHeight;
+                tableKeys = kailoColumns((node) => this.tableEntryRenderCell(node), !!searchResults, pydio);
+                sortKeys = undefined;
+                entryRenderSecondLine = undefined;
+                className += ' kailo-files-table';
+            } else {
+                className += ' kailo-files-grid';
+            }
+            const meta = contextNode.getMetadata();
+            const readOnly = meta.get('node_readonly') === 'true' || meta.get('level_readonly') === 'true' || !canUpload;
+            const recycle = dataModel.getRootNode().getMetadata().get('repo_has_recycle');
+            const inRecycle = !!recycle && contextNode.getPath() === recycle;
+            let empty;
+            if(searchResults) {
+                if(searchEmpty) {
+                    empty = {icon: 'search', title: kt('emptySearchStart'), body: kt('emptySearchStartBody')};
+                } else {
+                    empty = {small: true, title: kt('emptyFiltered'), body: kt('emptyFilteredBody')};
+                }
+            } else if(inRecycle) {
+                empty = {icon: 'trash', title: kt('emptyRecycleBin'), body: kt('emptyRecycleBinBody')};
+            } else if(readOnly) {
+                // Read-only members get no creation entry (DD-164), only the explanation.
+                empty = {icon: 'folder-open', title: kt('emptyReadOnly'), body: kt('emptyReadOnlyBody')};
+            } else {
+                empty = {icon: 'folder-open', title: kt('emptyFolder'), body: kt('emptyFolderBody'),
+                    actionLabel: kt('upload'), onAction: () => pydio.Controller.fireAction('upload')};
+            }
+            const skeleton = <KailoSkeleton grid={grid} rowHeight={rowHeight} rows={10}/>;
+            emptyStateProps = {
+                checkEmptyState: emptyStateProps && emptyStateProps.checkEmptyState,
+                kailoRender: () => (searchResults && searchLoading) ? skeleton : <KailoEmptyState {...empty}/>,
+            };
+            errorStateProps = {
+                kailoRender: (error, retry) => (
+                    <KailoLoadError
+                        error={error}
+                        titleKey={searchResults ? 'loadFailedSearch' : 'loadFailed'}
+                        forbiddenKey={'forbiddenTitle'}
+                        forbiddenHint={'forbiddenOwner'}
+                        onRetry={retry}
+                    />
+                ),
+            };
+            kailoProps = {kailoPlaceHolder: skeleton, skipParentNavigation: true};
+        }
+
         if(dMode.indexOf('masonry')=== 0) {
             let cWidth = 220
             if(dMode.indexOf('masonry-')=== 0){
@@ -989,6 +1091,7 @@ class MainFilesList extends React.Component {
                 hideToolbar={true}
                 customToolbar={<CellsMessageToolbar pydio={pydio}/>}
                 {...groupProps}
+                {...kailoProps}
             />
         );
     }

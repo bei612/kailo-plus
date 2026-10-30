@@ -23,9 +23,12 @@ describe('native ONLYOFFICE launch (DD-132)', () => {
             plugins: false,
             layout: {toolbar: {file: {settings: false}}},
             unit: 'cm',
-            features: {spellcheck: {mode: true, change: false}},
+            features: {spellcheck: {mode: true, change: false}, featuresTips: false},
         }}});
         expect(config({})).toMatchObject({unit: 'cm', features: {spellcheck: {mode: true}}});
+        // DD-167: the editor's "new feature" tips stay closed for every preference set.
+        expect(config({}).features.featuresTips).toBe(false);
+        expect(config({'documents.spellcheck': false}).features.featuresTips).toBe(false);
     });
 
     it('applies valid Kailo document preferences', () => {
@@ -74,6 +77,7 @@ describe('native ONLYOFFICE launch (DD-132)', () => {
         expect(action.origin).toBe(origin);
         expect(action.searchParams.get('ui')).toBe('zh-CN');
         expect(action.searchParams.get('lang')).toBe('zh-CN');
+        expect(action.searchParams.get('rs')).toBe('zh-CN');
         expect(action.searchParams.get('dchat')).toBe('1');
         expect(action.searchParams.get('wopisrc')).toBe('http://cells.example/wopi/files/u');
     });

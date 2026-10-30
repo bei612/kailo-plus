@@ -29,7 +29,7 @@ class SearchApi {
         this.pydio = pydio;
     }
 
-    search(values, scope, limit, minimalStats = false, sortField = '', sortDesc = false){
+    search(values, scope, limit, minimalStats = false, sortField = '', sortDesc = false, from = 0){
 
 
         let query = new TreeQuery();
@@ -100,6 +100,10 @@ class SearchApi {
         let request = new TreeSearchRequest();
         request.Query = query;
         request.Size = limit;
+        // DD-167 (20 §15.3): Kailo search results are served page by page.
+        if(from > 0) {
+            request.From = from;
+        }
         if(minimalStats) {
             request.StatFlags = [4];
         }

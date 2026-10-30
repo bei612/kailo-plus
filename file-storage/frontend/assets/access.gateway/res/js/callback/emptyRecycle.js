@@ -40,14 +40,22 @@ export default function (pydio) {
                 deleteRequest.Nodes = [n];
                 nativeDelete(pydio, deleteRequest).then(r => {
                     if (!r) return;
-                    if (r.DeleteJobs){
+                    if (kailo && kailo.kailoMode && kailo.kailoMode() && kailo.text) {
+                        // DD-167: one short result in Kailo's words, not the job labels.
+                        pydio.UI.displayMessage('SUCCESS', kailo.text('emptiedRecycle'));
+                    } else if (r.DeleteJobs){
                         r.DeleteJobs.forEach(j => {
                             pydio.UI.displayMessage('SUCCESS', j.Label);
                         })
                     }
                     pydio.getContextHolder().requireContextChange(pydio.getContextHolder().getRootNode());
                 }).catch(e => {
-                    pydio.UI.displayMessage('ERROR', e.Title || e.message);
+                    const reason = e.Title || e.message;
+                    if (kailo && kailo.kailoMode && kailo.kailoMode() && kailo.failure) {
+                        pydio.UI.displayMessage('ERROR', kailo.failure('emptyRecycleFailed', reason));
+                        return;
+                    }
+                    pydio.UI.displayMessage('ERROR', reason);
                 });
             }
         });

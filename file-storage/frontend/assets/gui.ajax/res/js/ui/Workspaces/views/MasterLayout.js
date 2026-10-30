@@ -87,6 +87,22 @@ class MasterLayout extends React.Component{
             elements = <ThemeProvider theme={muiTheme['@mui']}>{elements}</ThemeProvider>
         }
 
+        // DD-167 (07 §4.8.7(1)): a top-level visit in Kailo mode draws Kailo's
+        // page header itself, above the location pane and the content.
+        const {kailoHeader} = this.props;
+        if(kailoHeader) {
+            return(connectDropTarget(
+                <div
+                    style={{...style, overflow:'hidden', flexDirection:'column'}}
+                    className={allClasses.join(' ') + ' kailo-top-level'}
+                    onClick={this.closeDrawer.bind(this)}
+                    onContextMenu={onContextMenu}>
+                    {kailoHeader}
+                    <div className="kailo-shell-body" style={{flex: 1, minHeight: 0, display: 'flex', position: 'relative'}}>{elements}</div>
+                </div>
+            ));
+        }
+
         return(connectDropTarget(
             <div
                 style={{...style, overflow:'hidden'}}

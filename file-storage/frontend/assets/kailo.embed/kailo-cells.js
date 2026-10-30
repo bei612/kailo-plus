@@ -185,9 +185,22 @@
         };
     }
 
+    // DD-167 (07 §4.8.10): Kailo's text size dial (13 / 14 / 15 px body) and
+    // its ⌘± zoom. Older runtimes and hosts leave them out: the defaults.
+    var FONT_SIZES = {smaller: 13 / 14, 'default': 1, larger: 15 / 14};
+
+    function typeState(s) {
+        var fontSize = s && Object.prototype.hasOwnProperty.call(FONT_SIZES, s.fontSize) ? s.fontSize : 'default';
+        var zoom = s && typeof s.zoom === 'number' && isFinite(s.zoom) && s.zoom >= 0.75 && s.zoom <= 1.5 ? s.zoom : 1;
+        var scale = s && typeof s.typeScale === 'number' && isFinite(s.typeScale) && s.typeScale > 0 ? s.typeScale : FONT_SIZES[fontSize];
+        return {fontSize: fontSize, zoom: zoom, typeScale: scale};
+    }
+
     function presentation() {
         var s = embedState();
-        return {theme: s.theme, dark: s.theme === 'dark', locale: s.locale, language: nativeLanguage(s.locale), embedded: !!s.embedded};
+        var type = typeState(s);
+        return {theme: s.theme, dark: s.theme === 'dark', locale: s.locale, language: nativeLanguage(s.locale), embedded: !!s.embedded,
+            fontSize: type.fontSize, zoom: type.zoom, typeScale: type.typeScale};
     }
 
     // The native language the page must show, or '' while the account
@@ -350,6 +363,36 @@
             dsFlat: '扁平（只经云盘访问）', dsStructured: '结构化（与目录结构一致）', dsReadOnly: '只读存储', yes: '是',
             dsVersioning: '版本保留', dsNoVersioning: '不保留版本', dsEncryption: '加密', dsEncrypted: '已启用', dsNotEncrypted: '未启用',
             dsPeer: '服务节点', close: '关闭',
+            // DD-167 (20 §15): lists, states, host dialogs.
+            total: '共 {0} 条', pageOf: '第 {0} / {1} 页', perPage: '每页 {0} 条', prevPage: '上一页', nextPage: '下一页',
+            pageCompact: '{0} / {1}', stillLoading: '仍在载入…', retry: '重试',
+            colName: '名称', colModified: '修改时间', colSize: '大小', colKind: '类型', colLocation: '所在位置', colModifier: '修改者',
+            folderKind: '文件夹', fileKind: '{0} 文件',
+            sortBy: '排序', sortName: '名称', sortModified: '修改时间', sortSize: '大小', sortAsc: '升序', sortDesc: '降序',
+            viewList: '列表视图', viewGrid: '网格视图', details: '详情', searchHere: '在「{0}」中搜索', searchAll: '搜索文件',
+            clearSearch: '清除检索', back: '返回',
+            loadFailed: '未能载入文件', loadFailedRecent: '未能载入最近使用', loadFailedFavorites: '未能载入收藏',
+            loadFailedSearch: '未能载入搜索结果', loadFailedLocations: '未能载入位置',
+            reasonNetwork: '网络不可达，请检查网络后重试。', reasonUnavailable: '服务暂不可用，请稍后重试。',
+            reasonTimeout: '请求超时，请稍后重试。', reasonGone: '内容已不存在，可能已被移动或删除。', reasonUnknown: '请稍后重试。',
+            forbiddenTitle: '你没有访问此位置的权限', forbiddenFile: '你没有访问此文件的权限',
+            forbiddenAdmin: '请联系管理员为你开通访问权限。', forbiddenOwner: '请所有者分享给你后再打开。',
+            emptyFolder: '还没有文件', emptyFolderBody: '上传文件或新建文件夹开始使用。',
+            emptyReadOnly: '这里还没有内容', emptyReadOnlyBody: '有人分享给你后会显示在这里。',
+            emptyRecycleBin: '回收站是空的', emptyRecycleBinBody: '删除的文件会先移到这里，可以在这里恢复。',
+            emptyFiltered: '没有符合条件的文件', emptyFilteredBody: '换个关键词试试。',
+            emptySearchStart: '输入关键词搜索文件', emptySearchStartBody: '按名称或内容搜索当前位置中的文件。',
+            emptyFavorites: '还没有收藏', emptyFavoritesBody: '在文件菜单中选择“收藏”，常用的文件和文件夹会显示在这里。',
+            emptyRecent: '最近没有使用过文件', emptyRecentBody: '打开或编辑过的文件会显示在这里。',
+            unconfigured: '云盘尚未完成设置', unconfiguredBody: '请管理员在 Kailo 管理区完成设置。',
+            recent: '最近使用', items: '{0} 项', spaces: '{0} 个空间', openLocation: '打开', recycle: '回收站',
+            mkdirLabel: '名称', mkdirDefault: '新建文件夹', mkdirConfirm: '新建', mkdirExists: '已有同名的文件或文件夹「{0}」',
+            mkdirFailed: '未能新建文件夹', mkdirDone: '已新建文件夹「{0}」', mkdirInvalid: '名称不能包含 / 或 \\',
+            newFileTitle: '新建{0}', newFileLabel: '文件名', newFileDone: '已新建「{0}」', newFileFailed: '未能新建文件',
+            deletedMany: '已删除 {0} 项', deletedOne: '已删除「{0}」', recycledMany: '已将 {0} 项移到回收站', recycledOne: '已将「{0}」移到回收站',
+            deleteFailed: '未能删除', emptiedRecycle: '已清空回收站', emptyRecycleFailed: '未能清空回收站',
+            renameLabel: '名称', renameConfirm: '重命名', newDoc: '新建文档',
+            more: '更多', product: '云盘', unfavorite: '移出收藏',
         },
         en: {
             home: 'Home', files: 'All files', bookmarks: 'Favorites', search: 'Search results',
@@ -369,13 +412,46 @@
             dsFlat: 'Flat (accessed through Files only)', dsStructured: 'Structured (mirrors the folder tree)', dsReadOnly: 'Read-only storage', yes: 'Yes',
             dsVersioning: 'Version retention', dsNoVersioning: 'No versions kept', dsEncryption: 'Encryption', dsEncrypted: 'On', dsNotEncrypted: 'Off',
             dsPeer: 'Service node', close: 'Close',
+            // DD-167 (20 §15): lists, states, host dialogs.
+            total: '{0} items', pageOf: 'Page {0} of {1}', perPage: '{0} per page', prevPage: 'Previous page', nextPage: 'Next page',
+            pageCompact: '{0} / {1}', stillLoading: 'Still loading…', retry: 'Retry',
+            colName: 'Name', colModified: 'Modified', colSize: 'Size', colKind: 'Kind', colLocation: 'Location', colModifier: 'Modified by',
+            folderKind: 'Folder', fileKind: '{0} file',
+            sortBy: 'Sort', sortName: 'Name', sortModified: 'Modified', sortSize: 'Size', sortAsc: 'Ascending', sortDesc: 'Descending',
+            viewList: 'List view', viewGrid: 'Grid view', details: 'Details', searchHere: 'Search in "{0}"', searchAll: 'Search files',
+            clearSearch: 'Clear search', back: 'Back',
+            loadFailed: 'Could not load the files', loadFailedRecent: 'Could not load recent files', loadFailedFavorites: 'Could not load favorites',
+            loadFailedSearch: 'Could not load the search results', loadFailedLocations: 'Could not load the locations',
+            reasonNetwork: 'The network is unreachable. Check your connection and try again.', reasonUnavailable: 'The service is unavailable right now. Try again later.',
+            reasonTimeout: 'The request timed out. Try again later.', reasonGone: 'This item no longer exists. It may have been moved or deleted.', reasonUnknown: 'Try again later.',
+            forbiddenTitle: 'You don\'t have access to this location', forbiddenFile: 'You don\'t have access to this file',
+            forbiddenAdmin: 'Ask your administrator for access.', forbiddenOwner: 'Ask the owner to share it with you.',
+            emptyFolder: 'No files yet', emptyFolderBody: 'Upload files or create a folder to get started.',
+            emptyReadOnly: 'Nothing here yet', emptyReadOnlyBody: 'Items shared with you will appear here.',
+            emptyRecycleBin: 'The recycle bin is empty', emptyRecycleBinBody: 'Deleted items move here first and can be restored from here.',
+            emptyFiltered: 'No matching files', emptyFilteredBody: 'Try a different keyword.',
+            emptySearchStart: 'Search for files', emptySearchStartBody: 'Search by name or content in the current location.',
+            emptyFavorites: 'No favorites yet', emptyFavoritesBody: 'Choose "Add to favorites" in a file\'s menu to keep it here.',
+            emptyRecent: 'No recent files', emptyRecentBody: 'Files you open or edit will appear here.',
+            unconfigured: 'Files is not set up yet', unconfiguredBody: 'Ask an administrator to finish the setup in the Kailo admin area.',
+            recent: 'Recent', items: '{0} items', spaces: '{0} spaces', openLocation: 'Open', recycle: 'Recycle bin',
+            mkdirLabel: 'Name', mkdirDefault: 'New folder', mkdirConfirm: 'Create', mkdirExists: 'An item named "{0}" already exists',
+            mkdirFailed: 'Could not create the folder', mkdirDone: 'Created folder "{0}"', mkdirInvalid: 'Names cannot contain / or \\',
+            newFileTitle: 'New {0}', newFileLabel: 'File name', newFileDone: 'Created "{0}"', newFileFailed: 'Could not create the file',
+            deletedMany: 'Deleted {0} items', deletedOne: 'Deleted "{0}"', recycledMany: 'Moved {0} items to the recycle bin', recycledOne: 'Moved "{0}" to the recycle bin',
+            deleteFailed: 'Could not delete', emptiedRecycle: 'Emptied the recycle bin', emptyRecycleFailed: 'Could not empty the recycle bin',
+            renameLabel: 'Name', renameConfirm: 'Rename', newDoc: 'New document',
+            more: 'More', product: 'Files', unfavorite: 'Remove from favorites',
         }
     };
 
-    function text(key, arg) {
+    function text(key, arg, arg2) {
         var table = TEXT[embedState().locale === 'en' ? 'en' : 'zh-CN'];
         var value = table[key] || TEXT['zh-CN'][key] || key;
-        return arg === undefined ? value : value.replace('{0}', String(arg));
+        if (arg !== undefined) {
+            value = value.replace('{0}', String(arg));
+        }
+        return arg2 === undefined ? value : value.replace('{1}', String(arg2));
     }
 
     function clip(value, max) {
@@ -812,7 +888,23 @@
             } catch {
                 templates = [];
             }
-            templates.filter(function (tpl) { return tpl && typeof tpl.callback === 'function' && tpl.alt; }).slice(0, 3).forEach(function (tpl, i) {
+            templates = templates.filter(function (tpl) { return tpl && typeof tpl.callback === 'function' && tpl.alt; });
+            // 20 §15.1: "新建文档" is a secondary action (the word-processing
+            // template); the other templates stay in the "more" menu.
+            var docIndex = -1;
+            templates.forEach(function (tpl, i) {
+                if (docIndex < 0 && /\.docx?$|\.odt$|word|文档/i.test(String(tpl.alt))) {
+                    docIndex = i;
+                }
+            });
+            if (docIndex >= 0) {
+                actions.push({id: 'mkfile:' + docIndex, label: text('newDoc'), variant: 'secondary', icon: 'plus'});
+                handlers['mkfile:' + docIndex] = function () { templates[docIndex].callback(); };
+            }
+            templates.slice(0, 4).forEach(function (tpl, i) {
+                if (i === docIndex) {
+                    return;
+                }
                 actions.push({id: 'mkfile:' + i, label: clip(text('newFile', tpl.alt), 40), variant: 'menu', icon: 'plus'});
                 handlers['mkfile:' + i] = function () { tpl.callback(); };
             });
@@ -864,7 +956,11 @@
     }
 
     function schedulePage() {
-        if (!hosted || pageTimer !== null) {
+        if (!hosted) {
+            scheduleLocalPage();
+            return;
+        }
+        if (pageTimer !== null) {
             return;
         }
         pageTimer = window.setTimeout(syncPage, 30);
@@ -1001,7 +1097,7 @@
     }
 
     function watchPydio(pydio) {
-        if (!hosted || !pydio || !pydio.observe) {
+        if (!(hosted || kailoMode()) || !pydio || !pydio.observe) {
             return;
         }
         var later = function () { schedulePage(); };
@@ -1135,6 +1231,412 @@
     }
     watchIconFont(0);
 
+    // ---- DD-167 lists, states and host dialogs (07 §4.8.10, 20 §15) ---------
+
+    // List density: Kailo's 外观 › 列表密度 (manifest preference
+    // appearance.listDensity), comfortable 40 px / compact 32 px rows.
+    var DENSITY_KEY = 'appearance.listDensity';
+    var densityListeners = [];
+
+    function listDensity() {
+        var values = null;
+        try {
+            values = embed && typeof embed.getPreferences === 'function' ? embed.getPreferences() : null;
+        } catch {
+            values = null;
+        }
+        return values && values[DENSITY_KEY] === 'compact' ? 'compact' : 'comfortable';
+    }
+
+    function rowHeight() {
+        return listDensity() === 'compact' ? 32 : 40;
+    }
+
+    function markDensity() {
+        var root = document.documentElement;
+        if (root) {
+            root.setAttribute('data-kailo-density', listDensity());
+        }
+    }
+    markDensity();
+
+    if (embed && typeof embed.onPreferencesChange === 'function') {
+        embed.onPreferencesChange(function (values, changed) {
+            if (changed && changed.indexOf && changed.indexOf(DENSITY_KEY) < 0) {
+                return;
+            }
+            markDensity();
+            var density = listDensity();
+            densityListeners.slice().forEach(function (fn) {
+                try {
+                    fn(density);
+                } catch {
+                    /* consumer errors stay local */
+                }
+            });
+        });
+    }
+
+    // Pagination (20 §15.3): page sizes per view, page numbers with gaps.
+    var PAGE_SIZES = {list: [20, 50, 100], grid: [24, 48, 96]};
+
+    function pageSizes(view) {
+        return PAGE_SIZES[view === 'grid' ? 'grid' : 'list'].slice();
+    }
+
+    // A stored size for the given view; the same step of the other view maps over.
+    function normalizePageSize(size, view) {
+        var sizes = pageSizes(view);
+        var n = Number(size);
+        if (sizes.indexOf(n) >= 0) {
+            return n;
+        }
+        var i = PAGE_SIZES[view === 'grid' ? 'list' : 'grid'].indexOf(n);
+        return i >= 0 ? sizes[i] : sizes[0];
+    }
+
+    // {total, page, pages, size}: pages >= 1, page clamped into [1, pages]
+    // (a page past the end shows the last one, 20 §15.3).
+    function paging(total, page, size) {
+        var t = Math.max(0, Math.floor(Number(total) || 0));
+        var s = Math.max(1, Math.floor(Number(size) || 1));
+        var pages = Math.max(1, Math.ceil(t / s));
+        var p = Math.min(pages, Math.max(1, Math.floor(Number(page) || 1)));
+        return {total: t, page: p, pages: pages, size: s};
+    }
+
+    // Page buttons: all when at most 7, else first, last and the current
+    // neighbourhood with 'gap' markers, always 7 slots.
+    function pageItems(page, pages) {
+        var out = [];
+        var i;
+        if (pages <= 7) {
+            for (i = 1; i <= pages; i += 1) {
+                out.push(i);
+            }
+            return out;
+        }
+        if (page <= 4) {
+            return [1, 2, 3, 4, 5, 'gap', pages];
+        }
+        if (page >= pages - 3) {
+            return [1, 'gap', pages - 4, pages - 3, pages - 2, pages - 1, pages];
+        }
+        return [1, 'gap', page - 1, page, page + 1, 'gap', pages];
+    }
+
+    // Load failure -> state (20 §15.4): forbidden keeps its own state (no
+    // retry, no internal code); the others are inline errors with a reason.
+    function loadErrorKind(error) {
+        if (!error) {
+            return 'unknown';
+        }
+        var status = Number(error.status || error.statusCode || (error.response && error.response.status) || 0);
+        var body = String(error.code || error.message || '');
+        if (status === 403 || body.indexOf('KAILO_MANAGED') >= 0 || body.indexOf('KAILO_ADMIN_REQUIRED') >= 0) {
+            return 'forbidden';
+        }
+        if (status === 404 || status === 410) {
+            return 'gone';
+        }
+        if (status === 408 || status === 504 || /timeout/i.test(body)) {
+            return 'timeout';
+        }
+        if (status >= 500) {
+            return 'unavailable';
+        }
+        if (!status && (error.crossDomain || /network|failed to fetch|offline/i.test(body))) {
+            return 'network';
+        }
+        return 'unknown';
+    }
+
+    var REASONS = {network: 'reasonNetwork', unavailable: 'reasonUnavailable', timeout: 'reasonTimeout', gone: 'reasonGone', unknown: 'reasonUnknown'};
+
+    function loadErrorReason(kind) {
+        return text(REASONS[kind] || 'reasonUnknown');
+    }
+
+    // Kailo's one-line text dialog (07 §4.8.10): a Promise of the trimmed
+    // answer (null on cancel), or null when the page must draw its own.
+    function prompt(options) {
+        if (!embed || typeof embed.prompt !== 'function' || !options) {
+            return null;
+        }
+        try {
+            return embed.prompt(options) || null;
+        } catch {
+            return null;
+        }
+    }
+
+    // The page's own one-line dialog when Kailo cannot show it (top level or
+    // an older Kailo): the same Kailo dialog (20 §9: title Title 2, label and
+    // field, actions right, main action last; Esc and the scrim cancel; the
+    // main action is disabled while the text is empty or too long).
+    function ownPrompt(options) {
+        var opts = options || {};
+        var max = Math.max(1, Math.min(255, Math.floor(Number(opts.maxLength) || 255)));
+        return new Promise(function (resolve) {
+            var previous = document.activeElement;
+            var scrim = document.createElement('div');
+            scrim.className = 'kailo-dialog-scrim';
+            var box = document.createElement('div');
+            box.className = 'kailo-dialog';
+            box.setAttribute('role', 'dialog');
+            box.setAttribute('aria-modal', 'true');
+            var title = document.createElement('h2');
+            title.className = 'kailo-dialog-title';
+            title.id = 'kailo-dialog-title';
+            title.textContent = clip(opts.title, 120);
+            box.setAttribute('aria-labelledby', title.id);
+            box.appendChild(title);
+            if (opts.description) {
+                var description = document.createElement('p');
+                description.className = 'kailo-dialog-description';
+                description.textContent = clip(opts.description, 400);
+                box.appendChild(description);
+            }
+            var label = document.createElement('label');
+            label.className = 'kailo-dialog-label';
+            label.setAttribute('for', 'kailo-dialog-input');
+            label.textContent = clip(opts.label, 80);
+            box.appendChild(label);
+            var input = document.createElement('input');
+            input.className = 'kailo-dialog-input';
+            input.id = 'kailo-dialog-input';
+            input.type = 'text';
+            input.autocomplete = 'off';
+            input.spellcheck = false;
+            input.maxLength = max;
+            input.value = String(opts.value || '').slice(0, max);
+            if (opts.placeholder) {
+                input.placeholder = clip(opts.placeholder, 80);
+            }
+            box.appendChild(input);
+            var actions = document.createElement('div');
+            actions.className = 'kailo-dialog-actions';
+            var cancel = document.createElement('button');
+            cancel.type = 'button';
+            cancel.className = 'kailo-button kailo-button-secondary';
+            cancel.textContent = clip(opts.cancelLabel || text('cancel'), 24);
+            var ok = document.createElement('button');
+            ok.type = 'button';
+            ok.className = 'kailo-button kailo-button-primary';
+            ok.textContent = clip(opts.confirmLabel || text('mkdirConfirm'), 24);
+            actions.appendChild(cancel);
+            actions.appendChild(ok);
+            box.appendChild(actions);
+            scrim.appendChild(box);
+            var value = function () { return input.value.trim(); };
+            var sync = function () {
+                var v = value();
+                ok.disabled = !v || v.length > max;
+            };
+            var done = false;
+            var finish = function (answer) {
+                if (done) {
+                    return;
+                }
+                done = true;
+                document.removeEventListener('keydown', onKey, true);
+                if (scrim.parentNode) {
+                    scrim.parentNode.removeChild(scrim);
+                }
+                if (previous && typeof previous.focus === 'function') {
+                    try {
+                        previous.focus();
+                    } catch {
+                        /* the element left the page */
+                    }
+                }
+                resolve(answer);
+            };
+            var onKey = function (event) {
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    finish(null);
+                } else if (event.key === 'Enter' && event.target === input && !ok.disabled) {
+                    event.preventDefault();
+                    finish(value());
+                }
+            };
+            input.addEventListener('input', sync);
+            cancel.addEventListener('click', function () { finish(null); });
+            ok.addEventListener('click', function () {
+                if (!ok.disabled) {
+                    finish(value());
+                }
+            });
+            scrim.addEventListener('mousedown', function (event) {
+                if (event.target === scrim) {
+                    finish(null);
+                }
+            });
+            document.addEventListener('keydown', onKey, true);
+            sync();
+            (document.body || document.documentElement).appendChild(scrim);
+            try {
+                input.focus();
+                input.select();
+            } catch {
+                /* not focusable in this environment */
+            }
+        });
+    }
+
+    // One name from the user: Kailo's dialog when it shows prompts, else the
+    // page's own Kailo-styled dialog. Promise of the trimmed text or null.
+    function askName(options) {
+        return prompt(options) || ownPrompt(options);
+    }
+
+    // A file or folder name the native tree accepts: not empty, no path separators.
+    function validName(name) {
+        var n = String(name === undefined || name === null ? '' : name).trim();
+        return !!n && n !== '.' && n !== '..' && n.indexOf('/') < 0 && n.indexOf('\\') < 0 && !hasControlOrBackslash(n);
+    }
+
+    // A failed write (20 §15.4): "未能…" with the reason, in the page language.
+    function failure(key, reason) {
+        var r = clip(reason, 200);
+        return text(key) + (r ? (embedState().locale === 'en' ? ': ' : '：') + r : '');
+    }
+
+    // Result of a delete (20 §13.4(2)): "已删除 n 项" / "已移到回收站".
+    function deleteResult(count, name, permanent) {
+        var n = Number(count) || 0;
+        var one = n === 1 && name;
+        if (permanent) {
+            return text(one ? 'deletedOne' : 'deletedMany', one ? clip(name, 80) : n);
+        }
+        return text(one ? 'recycledOne' : 'recycledMany', one ? clip(name, 80) : n);
+    }
+
+    // ⌘± zoom inside the page (07 §4.8.10): the body carries zoom (overlay
+    // CSS), so floating layers zoom with the content. Chrome's CSS zoom
+    // reports rectangles and pointer coordinates in viewport pixels while
+    // positions inside the zoomed body are in its own pixels; the native
+    // popovers and context menus position themselves from those numbers, so
+    // while zoomed both are reported in the body's pixels.
+    var typeListeners = [];
+    var zoomGeometry = false;
+
+    function currentZoom() {
+        return typeState(embedState()).zoom;
+    }
+
+    function installZoomGeometry() {
+        if (zoomGeometry) {
+            return;
+        }
+        var El = window.Element;
+        var Mouse = window.MouseEvent;
+        if (!El || !El.prototype || typeof El.prototype.getBoundingClientRect !== 'function') {
+            return;
+        }
+        zoomGeometry = true;
+        var rect = El.prototype.getBoundingClientRect;
+        El.prototype.getBoundingClientRect = function () {
+            var r = rect.apply(this, arguments);
+            var z = currentZoom();
+            if (z === 1 || this === document.documentElement) {
+                return r;
+            }
+            var x = r.left / z;
+            var y = r.top / z;
+            var w = r.width / z;
+            var h = r.height / z;
+            return {x: x, y: y, left: x, top: y, width: w, height: h, right: x + w, bottom: y + h, toJSON: function () { return this; }};
+        };
+        if (Mouse && Mouse.prototype && Object.getOwnPropertyDescriptor) {
+            ['clientX', 'clientY', 'pageX', 'pageY'].forEach(function (name) {
+                var d = Object.getOwnPropertyDescriptor(Mouse.prototype, name);
+                if (d && typeof d.get === 'function' && d.configurable) {
+                    Object.defineProperty(Mouse.prototype, name, {
+                        configurable: true,
+                        enumerable: d.enumerable,
+                        get: function () {
+                            var v = d.get.call(this);
+                            var z = currentZoom();
+                            return z === 1 ? v : v / z;
+                        },
+                    });
+                }
+            });
+        }
+    }
+
+    function typeChanged() {
+        if (currentZoom() !== 1) {
+            installZoomGeometry();
+        }
+        var t = typeState(embedState());
+        typeListeners.slice().forEach(function (fn) {
+            try {
+                fn(t);
+            } catch {
+                /* consumer errors stay local */
+            }
+        });
+    }
+    if (currentZoom() !== 1) {
+        installZoomGeometry();
+    }
+
+    function listenerList(list) {
+        return function (fn) {
+            if (typeof fn === 'function') {
+                list.push(fn);
+            }
+            return function () {
+                var i = list.indexOf(fn);
+                if (i >= 0) {
+                    list.splice(i, 1);
+                }
+            };
+        };
+    }
+
+    // Header at top level (no Kailo frame): the page draws the same header
+    // (title, breadcrumbs, tabs, actions) itself in Kailo style (07 §4.8.7(1)).
+    var localPageListeners = [];
+    var localPageTimer = null;
+
+    function scheduleLocalPage() {
+        if (hosted || !kailoMode() || adminSurfacePage() || localPageTimer !== null || !localPageListeners.length) {
+            return;
+        }
+        localPageTimer = window.setTimeout(function () {
+            localPageTimer = null;
+            var page = null;
+            try {
+                page = buildPage(window.pydio);
+            } catch {
+                page = null;
+            }
+            localPageListeners.slice().forEach(function (fn) {
+                try {
+                    fn(page);
+                } catch {
+                    /* consumer errors stay local */
+                }
+            });
+        }, 30);
+    }
+
+    function localPage() {
+        if (hosted || !kailoMode()) {
+            return null;
+        }
+        try {
+            return buildPage(window.pydio);
+        } catch {
+            return null;
+        }
+    }
+
     window.KailoCells = {
         presentation: presentation,
         // Native language id Kailo imposes on the page (Controller.setUser
@@ -1198,9 +1700,35 @@
         },
         setEditor: setEditor,
         setShareOpener: function (fn) { shareOpener = typeof fn === 'function' ? fn : null; schedulePage(); },
+        // DD-167 (07 §4.8.10, 20 §15): density, paging, states, host dialogs, type dials.
+        listDensity: listDensity,
+        rowHeight: rowHeight,
+        onListDensity: listenerList(densityListeners),
+        pageSizes: pageSizes,
+        normalizePageSize: normalizePageSize,
+        paging: paging,
+        pageItems: pageItems,
+        loadErrorKind: loadErrorKind,
+        loadErrorReason: loadErrorReason,
+        prompt: prompt,
+        askName: askName,
+        validName: validName,
+        deleteResult: deleteResult,
+        failure: failure,
+        zoom: currentZoom,
+        onTypeChange: listenerList(typeListeners),
+        // Kailo mode at top level: the page draws Kailo's header itself.
+        localPage: localPage,
+        onLocalPage: function (fn) {
+            var stop = listenerList(localPageListeners)(fn);
+            scheduleLocalPage();
+            return stop;
+        },
+        navigatePage: function (target) { navigate(target); },
+        runPageAction: function (id, selection) { runAction(id, selection); },
         _internal: {nativeLanguage: nativeLanguage, kailoLocale: kailoLocale, safeReturnPath: safeReturnPath, params: params,
             buildPage: buildPage, syncPage: syncPage, navigate: navigate, runAction: runAction, dropTargetName: dropTargetName,
-            relativePaths: relativePaths}
+            relativePaths: relativePaths, typeState: typeState}
     };
 
     // The native re-render after a theme change can outlast the runtime's
@@ -1232,6 +1760,9 @@
                 setHosted(hostHandles('page'));
             }
             notify();
+            if (changed && (changed.fontSize || changed.zoom)) {
+                typeChanged();
+            }
             if (changed && changed.locale) {
                 schedulePage();
             }

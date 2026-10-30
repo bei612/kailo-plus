@@ -92,8 +92,9 @@ func kailoPlatformLogoutURL(raw string) error {
 
 // kailoEmbedFeatures are the DD-157 page-shell features this build implements
 // (07 §4.8.7): Kailo draws the page header, toasts and destructive confirmations
-// and owns the global chords. Read by kailo-embed.js, so it precedes the runtime.
-const kailoEmbedFeatures = "page toast confirm shortcuts"
+// and owns the global chords; DD-167 (07 §4.8.10) adds prompt, Kailo's one-line
+// text dialog (new folder and file names). Read by kailo-embed.js, so it precedes the runtime.
+const kailoEmbedFeatures = "page toast confirm shortcuts prompt"
 
 // kailoHead places, before the native styles and boot script (07 §4.7.1):
 // the Kailo web origin (KAILO_FRAME_ANCESTORS, the frame-ancestors fact), the

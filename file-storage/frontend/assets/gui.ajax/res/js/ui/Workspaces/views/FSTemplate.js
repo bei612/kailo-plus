@@ -40,6 +40,11 @@ import genUuid from 'uuid4'
 import AppBarRight from "./AppBarRight";
 import {ModalSearch} from "../search/ModalSearch";
 import {workspaceChatShown} from "./kailoChat";
+import KailoToolbar from "../kailo/KailoToolbar";
+import KailoFilesFooter from "../kailo/KailoFilesFooter";
+import KailoTopHeader from "../kailo/KailoTopHeader";
+import KailoFavorites from "../kailo/KailoFavorites";
+import {requestPageSize, storedPageSize} from "../kailo/paging";
 
 const CurrentTemplateKey = 'FSTemplate'
 const TemplatesKey = 'FSTemplatePresets'
@@ -68,6 +73,9 @@ class FSTemplate extends React.Component {
         const kailo = typeof window !== 'undefined' && window.KailoCells
         const kailoMode = !!(kailo && kailo.kailoMode && kailo.kailoMode())
         return {
+            // DD-167 (20 §15.1): in Kailo mode the details panel shows for a selection
+            // (its toggle stays on by default); without a selection the list is full width.
+            kailoInfoOpen: uPref('FSTemplate.Kailo.InfoPanel', true),
             infoPanelOpen: uPref('FSTemplate.infoPanelOpen', true), // open by default
             chatOpen: uPref('FSTemplate.chatOpen', false), // closed by default
             chatDetached: kailoMode ? false : uPref('FSTemplate.chatDetached', true), // detached by default
@@ -150,6 +158,23 @@ class FSTemplate extends React.Component {
                 pydio.UI.openComponentInModal('ShareDialog', 'CompositeDialog', {pydio, selection})
             })
         }
+        if(this.state.kailoMode) {
+            const dm = pydio.getContextHolder()
+            this._selObserver = () => {
+                const selected = dm.getSelectedNodes().length
+                if((selected > 0) !== !!this.state.hasSelection) {
+                    this.setState({hasSelection: selected > 0}, () => this.resizeAfterTransition())
+                }
+            }
+            dm.observe('selection_changed', this._selObserver)
+            if(kailo && kailo.onListPane) {
+                this._stopListPane = kailo.onListPane((pane) => this.setState({kailoPane: pane}))
+            }
+            if(kailo && kailo.onPageHosted) {
+                // Top level vs inside Kailo can change once Kailo answered.
+                this._stopHosted2 = kailo.onPageHosted(() => this.forceUpdate())
+            }
+        }
         pydio.observe('context_changed', this._ctxObserver)
         pydio.observe('set_layout_preference', this._prefObserver)
         pydio.observe('reload_layout_preferences', this._reloadPrefObserver)
@@ -160,6 +185,15 @@ class FSTemplate extends React.Component {
         if(this._stopPageHosted) {
             this._stopPageHosted()
         }
+        if(this._selObserver) {
+            pydio.getContextHolder().stopObserving('selection_changed', this._selObserver)
+        }
+        if(this._stopListPane) {
+            this._stopListPane()
+        }
+        if(this._stopHosted2) {
+            this._stopHosted2()
+        }
         pydio.stopObserving('context_changed', this._ctxObserver)
         pydio.stopObserving('set_layout_preference', this._prefObserver)
         pydio.stopObserving('reload_layout_preferences', this._reloadPrefObserver)
@@ -168,13 +202,13 @@ class FSTemplate extends React.Component {
         }.bind(this));
     }
 
-    toggleAndStore(keyName) {
+    toggleAndStore(keyName, prefKey) {
         const value = this.state[keyName]
         const newValue = !value;
         const {pydio} = this.props;
         this.setState({[keyName]: newValue}, ()=> {
             this.resizeAfterTransition()
-            pydio.user.setLayoutPreference('FSTemplate.' + keyName, !!newValue)
+            pydio.user.setLayoutPreference(prefKey || ('FSTemplate.' + keyName), !!newValue)
         })
     }
 
@@ -347,6 +381,143 @@ class FSTemplate extends React.Component {
         return actions
     }
 
+    // DD-167 (20 §15.1): the Kailo-mode files page. Kailo (or, at top level,
+    // the page itself in Kailo style) draws the header and tabs; the location
+    // pane is on the left; the content is toolbar 44 + list + pagination bar,
+    // with the details panel docked on the right for a selection.
+    kailoView(mode) {
+        const {pydio} = this.props
+        const node = pydio.getContextHolder().getContextNode()
+        const target = mode === 'grid' ? 'grid-160' : 'detail'
+        pydio.user.setLayoutPreference('FSTemplate.FilesList.DisplayMode', target)
+        pydio.notify('reload_layout_preferences')
+        // The page size follows the view (20/50/100 or 24/48/96).
+        if(node && node.isLoaded && node.isLoaded() && pydio.getContextHolder().getSearchNode() !== node) {
+            requestPageSize(pydio.getContextHolder(), node, storedPageSize(pydio, mode === 'grid' ? 'grid' : 'list'))
+        }
+    }
+
+    kailoSearch(term) {
+        const {searchTools} = this.props
+        searchTools.setValues({basenameOrContent: term, scope: 'previous_context'})
+    }
+
+    renderKailo({styles, style, props, ListComponent, searchView, searchTools, leftPanelProps, tutorialComponent, displayMode, sortingInfo, parentWidth, rightAdditionalTemplates}) {
+        const {pydio, muiTheme} = this.props
+        const kailo = window.KailoCells
+        const hosted = !!(kailo && kailo.pageHosted && kailo.pageHosted())
+        const pane = (kailo && kailo.listPane && kailo.listPane()) || 'files'
+        const {drawerOpen, kailoInfoOpen, hasSelection, listBusy} = this.state
+        const dm = pydio.getContextHolder()
+        const homepage = pydio.user && pydio.user.activeRepository === 'homepage'
+        const repo = pydio.user ? pydio.user.getActiveRepositoryObject() : null
+        const ctx = dm.getContextNode()
+        const locationName = ctx && ctx.getPath && ctx.getPath() !== '/' && ctx.getPath() !== '' ? ctx.getLabel() : (repo ? ((kailo.locationLabel && kailo.locationLabel(repo.getSlug())) || repo.getLabel()) : '')
+        const infoVisible = !!kailoInfoOpen && !!hasSelection && pane !== 'bookmarks'
+        const kailoLeftProps = {...leftPanelProps, closed: leftPanelProps.closed && !searchView}
+        const header = hosted ? null : <KailoTopHeader/>
+        let content
+        if(pane === 'bookmarks' && !homepage) {
+            content = <KailoFavorites pydio={pydio}/>
+        } else {
+            const mainToolbars = ["change_main", "info_panel", "info_panel_share", "info_panel_edit_share"]
+            const {Toolbar} = Pydio.requireLib('components')
+            const selectionToolbar = hasSelection ? (
+                <Toolbar
+                    pydio={pydio}
+                    id="main-toolbar"
+                    toolbars={mainToolbars}
+                    groupOtherList={["change", "other"]}
+                    renderingType="button"
+                    toolbarStyle={{overflow:'hidden'}}
+                    flatButtonStyle={styles.flatButtonStyle}
+                    buttonStyle={styles.flatButtonLabelStyle}
+                />
+            ) : null
+            const view = String(displayMode || '').indexOf('grid') === 0 ? 'grid' : 'list'
+            content = (
+                <div className="kailo-files-page">
+                    <KailoToolbar
+                        locationName={searchView ? '' : locationName}
+                        searchView={searchView}
+                        searchTerm={searchView && searchTools.values ? searchTools.values.basenameOrContent : ''}
+                        onSearch={(term) => this.kailoSearch(term)}
+                        onClearSearch={() => searchView && this.unsetSearchView()}
+                        selectionToolbar={selectionToolbar}
+                        view={view}
+                        onView={searchView ? null : (mode) => this.kailoView(mode)}
+                        sortingInfo={sortingInfo}
+                        onSort={searchView ? null : (key) => pydio.notify('kailo_sort_request', key)}
+                        infoOpen={kailoInfoOpen}
+                        onToggleInfo={() => this.toggleAndStore('kailoInfoOpen', 'FSTemplate.Kailo.InfoPanel')}
+                    />
+                    <div className="kailo-files-body" ref={this.parentRef}>
+                        <div className={"kailo-list-column" + (listBusy ? " kailo-list-busy" : "")}>
+                            <ListComponent
+                                ref="list"
+                                key={searchView?"search-results":"files-list"}
+                                pydio={pydio}
+                                dataModel={dm}
+                                searchResults={searchView}
+                                searchScope={searchTools.values ? searchTools.values.scope : null}
+                                searchLoading={searchTools.searchLoading}
+                                searchEmpty={searchTools.empty}
+                                onDisplayModeChange={(dMode) => this.setState({displayMode: dMode})}
+                                onSortingInfoChange={(si) => {
+                                    const {sortingInfo={}} = this.state;
+                                    if(sortingInfo.attribute !== si.attribute || sortingInfo.direction !== si.direction) {
+                                        this.setState({sortingInfo: si})
+                                    }
+                                }}
+                                style={{flex: 1, minHeight: 0}}
+                            />
+                            <KailoFilesFooter
+                                pydio={pydio}
+                                dataModel={dm}
+                                displayMode={displayMode}
+                                searchView={searchView}
+                                searchTools={searchTools}
+                                onBusy={(busy) => { if(busy !== !!this.state.listBusy) { this.setState({listBusy: busy}) } }}
+                            />
+                        </div>
+                        <MultiColumnPanel
+                            {...props}
+                            closed={!infoVisible}
+                            afterResize={()=>this.resizeAfterTransition()}
+                            storageKey={'FSTemplate.MultiColumn.InfoPanel'}
+                            dataModel={dm}
+                            onRequestClose={()=>{this.toggleAndStore('kailoInfoOpen', 'FSTemplate.Kailo.InfoPanel')}}
+                            onContentChange={this.infoPanelContentChange.bind(this)}
+                            style={{...styles.infoPanel.masterStyle}}
+                            mainEmptyStateProps={{
+                                iconClassName:'',
+                                primaryTextId:'ajax_gui.infopanel.empty.select.file',
+                                style:{minHeight: 180, backgroundColor: 'transparent', padding:'0 20px'}
+                            }}
+                            additionalTemplates={rightAdditionalTemplates}
+                            parentWidth={parentWidth}
+                        />
+                    </div>
+                </div>
+            )
+        }
+        return (
+            <MasterLayout
+                pydio={pydio}
+                style={{...style, ...styles.masterStyle}}
+                classes={['vertical_fit', 'react-fs-template', 'kailo-fs-template', 'display-mode-' + displayMode]}
+                tutorialComponent={tutorialComponent}
+                drawerOpen={drawerOpen}
+                leftPanelProps={kailoLeftProps}
+                kailoHeader={header}
+                onCloseDrawerRequested={()=>{this.setState({drawerOpen:false})}}
+            >
+                {content}
+                <EditionPanel {...props}/>
+            </MasterLayout>
+        )
+    }
+
     render () {
 
         const {muiTheme, pydio} = this.props;
@@ -440,8 +611,12 @@ class FSTemplate extends React.Component {
 
         // Temporary switch between files list versions
         let ListComponent = MainFilesList
-        if (pydio.Registry.findEditorById('editor.bnote')) {
+        if (pydio.Registry.findEditorById('editor.bnote') && !this.state.kailoMode) {
             ListComponent = MainFilesListV2
+        }
+
+        if(this.state.kailoMode) {
+            return this.renderKailo({styles, style, props, ListComponent, searchView, searchTools, leftPanelProps, tutorialComponent, displayMode, sortingInfo, parentWidth, rightAdditionalTemplates})
         }
 
         return (
