@@ -423,6 +423,8 @@ enum PlatformMessageKey {
   messagesReactionsYou,
   messagesReactionsYouRemove,
   messagesReactionsReactedWith,
+  messagesTaskCompleted,
+  messagesTaskIncomplete,
   messagesReactionsFailed,
   messagesActionsLabel,
   messagesActionsDismiss,
@@ -6079,6 +6081,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '你（点击移除）',
   ),
   PlatformMessageKey.messagesReactionsReactedWith: ('reacted with', '使用了表情'),
+  PlatformMessageKey.messagesTaskCompleted: ('Completed task', '已完成的任务'),
+  PlatformMessageKey.messagesTaskIncomplete: ('Incomplete task', '未完成的任务'),
   PlatformMessageKey.messagesReactionsFailed: (
     'Failed to update the reaction.',
     '未能更新回应。',
