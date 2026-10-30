@@ -101,3 +101,24 @@ func TestCheckOwnershipOrRoleMissingLookupFailsClosed(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, decision.LookupFailed)
 }
+
+// Kailo DD-164(3): with CreatorMinRole set, a creator who became a viewer no
+// longer passes the ownership path.
+func TestCheckOwnershipOrRoleCreatorMinRole(t *testing.T) {
+	lookup := func() (string, error) { return "u-1", nil }
+	viewer := OwnershipRequest{UserID: "u-1", Role: types.TenantRoleViewer, Enforce: true,
+		CreatorMinRole: types.TenantRoleContributor}
+	if _, err := CheckOwnershipOrRole(viewer, types.TenantRoleAdmin, lookup); !errors.Is(err, ErrOwnershipForbidden) {
+		t.Fatalf("viewer creator: %v", err)
+	}
+	contributor := viewer
+	contributor.Role = types.TenantRoleContributor
+	if _, err := CheckOwnershipOrRole(contributor, types.TenantRoleAdmin, lookup); err != nil {
+		t.Fatalf("contributor creator: %v", err)
+	}
+	native := viewer
+	native.CreatorMinRole = ""
+	if _, err := CheckOwnershipOrRole(native, types.TenantRoleAdmin, lookup); err != nil {
+		t.Fatalf("native creator: %v", err)
+	}
+}

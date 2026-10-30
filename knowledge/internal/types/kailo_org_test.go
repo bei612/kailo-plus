@@ -19,10 +19,22 @@ func TestDeploymentKailoMembershipIsMemberOfTheServedTenantOnly(t *testing.T) {
 }
 
 func TestKailoRoleMapping(t *testing.T) {
-	if KailoRoleAdmin.NativeTenantRole() != TenantRoleAdmin {
-		t.Fatal("Kailo admin must be native admin")
+	cases := []struct {
+		scope KailoScope
+		want  TenantRole
+	}{
+		{KailoScope{Role: KailoRoleAdmin}, TenantRoleAdmin},
+		{KailoScope{Role: KailoRoleAdmin, Create: true}, TenantRoleAdmin},
+		{KailoScope{Role: KailoRoleMember, Create: true}, TenantRoleContributor},
+		// DD-164(3): a member without Kailo create only reads.
+		{KailoScope{Role: KailoRoleMember}, TenantRoleViewer},
 	}
-	if KailoRoleMember.NativeTenantRole() != TenantRoleContributor {
-		t.Fatal("Kailo member must be native contributor")
+	for _, c := range cases {
+		if got := c.scope.NativeRole(); got != c.want {
+			t.Fatalf("%+v -> %q, want %q", c.scope, got, c.want)
+		}
+	}
+	if DeploymentKailoMembership("t", "n").Tenant.NativeRole() != TenantRoleContributor {
+		t.Fatal("before the directory every login is a contributor")
 	}
 }

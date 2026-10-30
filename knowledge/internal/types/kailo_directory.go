@@ -7,12 +7,16 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // Kailo member directory (Kailo DD-133(4), 07 §4.7.4): the read-only full
-// snapshot Core answers to this component instance's own directory client
-// (contracts/api/component_member_directory.schema.json). Roles and
-// memberships of the Kailo Tenant this instance serves come only from it.
+// snapshot Core answers to this component instance's own directory client.
+// This instance reads schema 2 only (DD-164(2),
+// contracts/api/component_member_directory_v2.schema.json): schema 1 plus
+// Kailo create permissions and the Resource-level share projection. Roles,
+// memberships and knowledge base shares of the Kailo Tenant this instance
+// serves come only from it.
 
 // KailoDirectoryRole is a role in the directory (SpiceDB manage → ADMIN).
 type KailoDirectoryRole string
@@ -50,6 +54,7 @@ type KailoDirectoryIdentity struct {
 type KailoDirectoryMembership struct {
 	WorkspaceID string             `json:"workspaceId"`
 	Role        KailoDirectoryRole `json:"role"`
+	Create      bool               `json:"create"`
 }
 
 // KailoDirectoryMember is one ACTIVE HUMAN member in the binding scope.
@@ -57,28 +62,91 @@ type KailoDirectoryMember struct {
 	PrincipalID string                     `json:"principalId"`
 	DisplayName string                     `json:"displayName"`
 	TenantRole  KailoDirectoryRole         `json:"tenantRole"`
+	TenantCreate bool                      `json:"tenantCreate"`
 	Identities  []KailoDirectoryIdentity   `json:"identities"`
 	Workspaces  []KailoDirectoryMembership `json:"workspaces"`
 }
 
-// KailoMemberDirectory is one complete directory snapshot.
+// Share subject kinds and accesses of the share projection (DD-164(4)).
+const (
+	KailoShareSubjectPrincipal = "PRINCIPAL"
+	KailoShareSubjectWorkspace = "WORKSPACE"
+	KailoShareSubjectTenant    = "TENANT"
+	KailoShareAccessRead       = "READ"
+	KailoShareAccessWrite      = "WRITE"
+	// KailoSharedKnowledgeBase is the native type this component projects;
+	// shares of other native types (folders) belong to other components.
+	KailoSharedKnowledgeBase = "knowledge_base"
+	KailoSharedFolder        = "folder"
+)
+
+// KailoShareSubject is the grantee of one share grant.
+type KailoShareSubject struct {
+	Kind        string `json:"kind"`
+	PrincipalID string `json:"principalId,omitempty"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+}
+
+// KailoShareGrant is one grant on a component shared object.
+type KailoShareGrant struct {
+	Subject KailoShareSubject `json:"subject"`
+	Access  string            `json:"access"`
+}
+
+// KailoDirectoryShare is one ACTIVE component.shared_object Resource of the
+// binding with its complete grant list (owner first as WRITE).
+type KailoDirectoryShare struct {
+	ResourceID       string            `json:"resourceId"`
+	NativeType       string            `json:"nativeType"`
+	NativeID         string            `json:"nativeId"`
+	OwnerPrincipalID string            `json:"ownerPrincipalId"`
+	Grants           []KailoShareGrant `json:"grants"`
+}
+
+// KailoMemberDirectory is one complete directory snapshot (schema 2).
 type KailoMemberDirectory struct {
+	Schema           int                       `json:"schema"`
 	BindingID        string                    `json:"bindingId"`
 	DirectoryVersion string                    `json:"directoryVersion"`
 	Tenant           KailoDirectoryTenant      `json:"tenant"`
 	Workspaces       []KailoDirectoryWorkspace `json:"workspaces"`
 	Members          []KailoDirectoryMember    `json:"members"`
+	Shares           []KailoDirectoryShare     `json:"shares"`
 }
+
+// KailoDirectorySchema is the only directory schema this instance reads.
+const KailoDirectorySchema = 2
 
 // The wire forms keep every required member as a pointer so an absent field
 // is told apart from an empty one; unknown fields are refused (the schema is
 // additionalProperties=false everywhere).
 type wireDirectory struct {
+	Schema           *int                      `json:"schema"`
 	BindingID        *string                   `json:"bindingId"`
 	DirectoryVersion *string                   `json:"directoryVersion"`
 	Tenant           *wireDirectoryTenant      `json:"tenant"`
 	Workspaces       *[]wireDirectoryWorkspace `json:"workspaces"`
 	Members          *[]wireDirectoryMember    `json:"members"`
+	Shares           *[]wireDirectoryShare     `json:"shares"`
+}
+
+type wireShareSubject struct {
+	Kind        *string `json:"kind"`
+	PrincipalID *string `json:"principalId"`
+	WorkspaceID *string `json:"workspaceId"`
+}
+
+type wireShareGrant struct {
+	Subject *wireShareSubject `json:"subject"`
+	Access  *string           `json:"access"`
+}
+
+type wireDirectoryShare struct {
+	ResourceID       *string           `json:"resourceId"`
+	NativeType       *string           `json:"nativeType"`
+	NativeID         *string           `json:"nativeId"`
+	OwnerPrincipalID *string           `json:"ownerPrincipalId"`
+	Grants           *[]wireShareGrant `json:"grants"`
 }
 
 type wireDirectoryTenant struct {
@@ -100,12 +168,14 @@ type wireDirectoryIdentity struct {
 type wireDirectoryMembership struct {
 	WorkspaceID *string `json:"workspaceId"`
 	Role        *string `json:"role"`
+	Create      *bool   `json:"create"`
 }
 
 type wireDirectoryMember struct {
 	PrincipalID *string                    `json:"principalId"`
 	DisplayName *string                    `json:"displayName"`
 	TenantRole  *string                    `json:"tenantRole"`
+	TenantCreate *bool                     `json:"tenantCreate"`
 	Identities  *[]wireDirectoryIdentity   `json:"identities"`
 	Workspaces  *[]wireDirectoryMembership `json:"workspaces"`
 }
@@ -141,6 +211,11 @@ func ParseKailoMemberDirectory(raw []byte) (*KailoMemberDirectory, error) {
 	if dec.More() {
 		return nil, invalidDirectory("trailing data")
 	}
+	if wire.Schema == nil || *wire.Schema != KailoDirectorySchema {
+		// Schema 1 (no create permissions, no shares) is never read as
+		// schema 2: the last applied state stays (DD-164(2)).
+		return nil, invalidDirectory("schema")
+	}
 	if wire.BindingID == nil || !kailoDirectoryUUID.MatchString(*wire.BindingID) {
 		return nil, invalidDirectory("bindingId")
 	}
@@ -151,15 +226,17 @@ func ParseKailoMemberDirectory(raw []byte) (*KailoMemberDirectory, error) {
 		wire.Tenant.Name == nil {
 		return nil, invalidDirectory("tenant")
 	}
-	if wire.Workspaces == nil || wire.Members == nil {
-		return nil, invalidDirectory("workspaces and members are required")
+	if wire.Workspaces == nil || wire.Members == nil || wire.Shares == nil {
+		return nil, invalidDirectory("workspaces, members and shares are required")
 	}
 	out := &KailoMemberDirectory{
+		Schema:           KailoDirectorySchema,
 		BindingID:        strings.ToLower(*wire.BindingID),
 		DirectoryVersion: *wire.DirectoryVersion,
 		Tenant:           KailoDirectoryTenant{TenantID: strings.ToLower(*wire.Tenant.TenantID), Name: *wire.Tenant.Name},
 		Workspaces:       []KailoDirectoryWorkspace{},
 		Members:          []KailoDirectoryMember{},
+		Shares:           []KailoDirectoryShare{},
 	}
 	known := map[string]bool{}
 	for _, ws := range *wire.Workspaces {
@@ -177,13 +254,14 @@ func ParseKailoMemberDirectory(raw []byte) (*KailoMemberDirectory, error) {
 	for _, m := range *wire.Members {
 		role, ok := directoryRole(m.TenantRole)
 		if m.PrincipalID == nil || !kailoDirectoryUUID.MatchString(*m.PrincipalID) || m.DisplayName == nil || !ok ||
-			m.Identities == nil || m.Workspaces == nil {
+			m.TenantCreate == nil || m.Identities == nil || m.Workspaces == nil {
 			return nil, invalidDirectory("member")
 		}
 		member := KailoDirectoryMember{
-			PrincipalID: strings.ToLower(*m.PrincipalID),
-			DisplayName: *m.DisplayName,
-			TenantRole:  role,
+			PrincipalID:  strings.ToLower(*m.PrincipalID),
+			DisplayName:  *m.DisplayName,
+			TenantRole:   role,
+			TenantCreate: *m.TenantCreate,
 			Identities:  []KailoDirectoryIdentity{},
 			Workspaces:  []KailoDirectoryMembership{},
 		}
@@ -204,7 +282,7 @@ func ParseKailoMemberDirectory(raw []byte) (*KailoMemberDirectory, error) {
 		seen := map[string]bool{}
 		for _, ws := range *m.Workspaces {
 			wsRole, ok := directoryRole(ws.Role)
-			if ws.WorkspaceID == nil || !ok {
+			if ws.WorkspaceID == nil || !ok || ws.Create == nil {
 				return nil, invalidDirectory("membership")
 			}
 			id := strings.ToLower(*ws.WorkspaceID)
@@ -212,11 +290,74 @@ func ParseKailoMemberDirectory(raw []byte) (*KailoMemberDirectory, error) {
 				return nil, invalidDirectory("membership outside the snapshot workspaces")
 			}
 			seen[id] = true
-			member.Workspaces = append(member.Workspaces, KailoDirectoryMembership{WorkspaceID: id, Role: wsRole})
+			member.Workspaces = append(member.Workspaces,
+				KailoDirectoryMembership{WorkspaceID: id, Role: wsRole, Create: *ws.Create})
 		}
 		out.Members = append(out.Members, member)
 	}
+	resources := map[string]bool{}
+	for _, sh := range *wire.Shares {
+		share, err := parseDirectoryShare(sh, known)
+		if err != nil {
+			return nil, err
+		}
+		if resources[share.ResourceID] {
+			return nil, invalidDirectory("duplicate share")
+		}
+		resources[share.ResourceID] = true
+		out.Shares = append(out.Shares, share)
+	}
 	return out, nil
+}
+
+// kailoShareNativeID is 1-255 visible characters (07 §4.7.4 share intents).
+var kailoShareNativeID = regexp.MustCompile(`^[\x21-\x7e]{1,255}$`)
+
+func parseDirectoryShare(sh wireDirectoryShare, workspaces map[string]bool) (KailoDirectoryShare, error) {
+	var share KailoDirectoryShare
+	if sh.ResourceID == nil || !kailoDirectoryUUID.MatchString(*sh.ResourceID) ||
+		sh.OwnerPrincipalID == nil || !kailoDirectoryUUID.MatchString(*sh.OwnerPrincipalID) ||
+		sh.NativeType == nil || (*sh.NativeType != KailoSharedKnowledgeBase && *sh.NativeType != KailoSharedFolder) ||
+		sh.NativeID == nil || !kailoShareNativeID.MatchString(*sh.NativeID) || sh.Grants == nil {
+		return share, invalidDirectory("share")
+	}
+	share = KailoDirectoryShare{
+		ResourceID:       strings.ToLower(*sh.ResourceID),
+		NativeType:       *sh.NativeType,
+		NativeID:         *sh.NativeID,
+		OwnerPrincipalID: strings.ToLower(*sh.OwnerPrincipalID),
+		Grants:           []KailoShareGrant{},
+	}
+	for _, g := range *sh.Grants {
+		if g.Subject == nil || g.Subject.Kind == nil || g.Access == nil ||
+			(*g.Access != KailoShareAccessRead && *g.Access != KailoShareAccessWrite) {
+			return share, invalidDirectory("share grant")
+		}
+		subject := KailoShareSubject{Kind: *g.Subject.Kind}
+		switch subject.Kind {
+		case KailoShareSubjectPrincipal:
+			if g.Subject.PrincipalID == nil || !kailoDirectoryUUID.MatchString(*g.Subject.PrincipalID) ||
+				g.Subject.WorkspaceID != nil {
+				return share, invalidDirectory("share principal")
+			}
+			subject.PrincipalID = strings.ToLower(*g.Subject.PrincipalID)
+		case KailoShareSubjectWorkspace:
+			if g.Subject.WorkspaceID == nil || g.Subject.PrincipalID != nil ||
+				!workspaces[strings.ToLower(*g.Subject.WorkspaceID)] {
+				return share, invalidDirectory("share workspace outside the snapshot")
+			}
+			subject.WorkspaceID = strings.ToLower(*g.Subject.WorkspaceID)
+		case KailoShareSubjectTenant:
+			if g.Subject.PrincipalID != nil || g.Subject.WorkspaceID != nil || *g.Access != KailoShareAccessRead {
+				// All Tenant members only ever READ (tenant#member reader).
+				return share, invalidDirectory("share tenant")
+			}
+		default:
+			return share, invalidDirectory("share subject")
+		}
+		share.Grants = append(share.Grants, KailoShareGrant{Subject: subject, Access: *g.Access})
+	}
+	return share, nil
 }
 
 // MemberFor returns the member holding issuer+subject, or nil.
@@ -254,28 +395,124 @@ func (d *KailoMemberDirectory) TenantName(fallback string) string {
 	return NormaliseKailoName(fallback)
 }
 
-// Membership maps one directory member onto the native projection (07
-// §4.7.4 WeKnora table): Tenant ADMIN → admin of the Tenant space and of
-// every Workspace space in the snapshot; MEMBER → contributor of the Tenant
-// space and of the Workspace spaces they belong to. A Workspace-level ADMIN
-// does not raise the native role: administrators come only from the Tenant.
+// Membership maps one directory member onto the native projection
+// (DD-164(3), 07 §4.7.4 "schema 2 角色派生"): Tenant ADMIN → admin of the
+// Tenant space and of every Workspace space in the snapshot; otherwise the
+// Tenant space role follows tenantCreate (contributor) or not (viewer), and
+// each Workspace space the member belongs to follows that Workspace's role
+// (ADMIN → admin) and create (contributor, else viewer).
 func (d *KailoMemberDirectory) Membership(m *KailoDirectoryMember, fallbackTenantName string) *KailoMembership {
 	membership := &KailoMembership{Tenant: KailoScope{
-		ID:   d.Tenant.TenantID,
-		Name: d.TenantName(fallbackTenantName),
-		Role: KailoRoleMember,
+		ID:     d.Tenant.TenantID,
+		Name:   d.TenantName(fallbackTenantName),
+		Role:   KailoRoleMember,
+		Create: m.TenantCreate,
 	}}
 	if m.TenantRole == KailoDirectoryRoleAdmin {
 		membership.Tenant.Role = KailoRoleAdmin
+		membership.Tenant.Create = true
 		for _, ws := range d.Workspaces {
 			membership.Workspaces = append(membership.Workspaces,
-				KailoScope{ID: ws.WorkspaceID, Name: d.workspaceName(ws.WorkspaceID), Role: KailoRoleAdmin})
+				KailoScope{ID: ws.WorkspaceID, Name: d.workspaceName(ws.WorkspaceID), Role: KailoRoleAdmin, Create: true})
 		}
 		return membership
 	}
 	for _, ws := range m.Workspaces {
+		role := KailoRoleMember
+		if ws.Role == KailoDirectoryRoleAdmin {
+			role = KailoRoleAdmin
+		}
 		membership.Workspaces = append(membership.Workspaces,
-			KailoScope{ID: ws.WorkspaceID, Name: d.workspaceName(ws.WorkspaceID), Role: KailoRoleMember})
+			KailoScope{ID: ws.WorkspaceID, Name: d.workspaceName(ws.WorkspaceID), Role: role, Create: ws.Create})
 	}
 	return membership
 }
+
+// MemberByPrincipal returns the member with principalID, or nil.
+func (d *KailoMemberDirectory) MemberByPrincipal(principalID string) *KailoDirectoryMember {
+	for i := range d.Members {
+		if d.Members[i].PrincipalID == principalID {
+			return &d.Members[i]
+		}
+	}
+	return nil
+}
+
+// ParseRecordedKailoMemberDirectory reads the snapshot this instance
+// recorded. A snapshot recorded before the schema 2 upgrade (schema 1, no
+// create permissions and no shares) keeps its schema 1 meaning until the
+// first schema 2 snapshot is applied: every member keeps the contributor
+// projection it had, nobody is refused at login for the upgrade alone.
+func ParseRecordedKailoMemberDirectory(raw []byte) (*KailoMemberDirectory, error) {
+	if snapshot, err := ParseKailoMemberDirectory(raw); err == nil {
+		return snapshot, nil
+	}
+	var legacy map[string]interface{}
+	if err := json.Unmarshal(raw, &legacy); err != nil {
+		return nil, invalidDirectory("recorded snapshot")
+	}
+	if _, upgraded := legacy["schema"]; upgraded {
+		return nil, invalidDirectory("recorded snapshot")
+	}
+	legacy["schema"] = KailoDirectorySchema
+	legacy["shares"] = []interface{}{}
+	members, _ := legacy["members"].([]interface{})
+	for _, m := range members {
+		member, ok := m.(map[string]interface{})
+		if !ok {
+			return nil, invalidDirectory("recorded member")
+		}
+		member["tenantCreate"] = true
+		workspaces, _ := member["workspaces"].([]interface{})
+		for _, ws := range workspaces {
+			if membership, ok := ws.(map[string]interface{}); ok {
+				membership["create"] = true
+			}
+		}
+	}
+	upgraded, err := json.Marshal(legacy)
+	if err != nil {
+		return nil, invalidDirectory("recorded snapshot")
+	}
+	snapshot, err := ParseKailoMemberDirectory(upgraded)
+	if err != nil {
+		return nil, err
+	}
+	snapshot.Schema = 1
+	return snapshot, nil
+}
+
+// Receipt failure kinds and outcomes (DD-164(4)⑥,
+// contracts/api/component_directory_receipt_request.schema.json).
+const (
+	KailoReceiptKindTenant    = "TENANT"
+	KailoReceiptKindMember    = "MEMBER"
+	KailoReceiptKindWorkspace = "WORKSPACE"
+	KailoReceiptKindShare     = "SHARE"
+	KailoReceiptApplied       = "APPLIED"
+	KailoReceiptFailed        = "FAILED"
+	// KailoReceiptMaxFailures bounds the reported items (contract maxItems).
+	KailoReceiptMaxFailures = 100
+)
+
+// KailoReceiptFailure is one item the component could not converge. It
+// names Kailo ids and a reason code only, never personal data.
+type KailoReceiptFailure struct {
+	Kind       string `json:"kind"`
+	Ref        string `json:"ref"`
+	ReasonCode string `json:"reasonCode"`
+}
+
+// KailoDirectoryApplyResult is the outcome of converging one snapshot.
+type KailoDirectoryApplyResult struct {
+	// Applied is false when the snapshot's version was already recorded.
+	Applied bool
+	// AppliedAt is when the recorded snapshot was completely applied.
+	AppliedAt time.Time
+	// Failures are the items skipped while applying the recorded snapshot.
+	Failures []KailoReceiptFailure
+}
+
+// WorkspaceDisplayName is the exported form of workspaceName for the share
+// projection's per-Workspace organisations.
+func (d *KailoMemberDirectory) WorkspaceDisplayName(id string) string { return d.workspaceName(id) }

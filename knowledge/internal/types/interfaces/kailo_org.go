@@ -17,13 +17,17 @@ type KailoOrgService interface {
 	SyncLogin(ctx context.Context, user *types.User, membership *types.KailoMembership) (*types.Tenant, error)
 
 	// ApplyDirectory converges every mapped space, membership and role with
-	// one complete member directory snapshot (DD-133(4), 07 §4.7.4):
+	// one complete member directory snapshot (DD-133(4), 07 §4.7.4), knowledge
+	// base shares included (DD-164(4)):
 	// pre-provisions accounts for identities of this instance's issuer,
 	// removes everyone no longer in the snapshot (revoking their sessions)
 	// and records the snapshot only after all of it succeeded. It returns
 	// applied=false when the snapshot's version is the one already recorded.
+	// The result also carries the share projection items it skipped
+	// (DD-164(4)) for the receipt; an unchanged version answers with the
+	// recorded result.
 	ApplyDirectory(ctx context.Context, issuer, fallbackTenantName string,
-		directory *types.KailoMemberDirectory) (applied bool, err error)
+		directory *types.KailoMemberDirectory) (*types.KailoDirectoryApplyResult, error)
 
 	// DirectorySnapshot returns the last completely applied snapshot for the
 	// binding, or nil when no directory has been delivered for it yet.

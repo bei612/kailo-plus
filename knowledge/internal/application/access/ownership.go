@@ -23,6 +23,11 @@ type OwnershipRequest struct {
 	APIKey               bool
 	CrossTenantSuperuser bool
 	Enforce              bool
+	// CreatorMinRole, when set, is the space role the creator must still
+	// hold for the ownership path: in Kailo mode a member without Kailo
+	// `create` on the space is a viewer and no longer writes even what they
+	// created there (Kailo DD-164(3)).
+	CreatorMinRole types.TenantRole
 }
 
 // OwnershipDecision contains the details adapters need for logs and audits.
@@ -62,7 +67,8 @@ func CheckOwnershipOrRole(
 		decision.LookupFailed = true
 		return decision, err
 	}
-	if creator != "" && creator == request.UserID {
+	if creator != "" && creator == request.UserID &&
+		(request.CreatorMinRole == "" || request.Role.HasPermission(request.CreatorMinRole)) {
 		return decision, nil
 	}
 	return decision, ErrOwnershipForbidden

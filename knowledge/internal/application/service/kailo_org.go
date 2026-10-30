@@ -31,7 +31,8 @@ const kailoSyncActor = "kailo-org-sync"
 //     the members of W — only once the platform member directory supplies
 //     Workspace memberships.
 //   - Kailo admin → native admin (and admin of every Workspace space);
-//     member → contributor. Until the directory supplies roles every person
+//     a member with Kailo `create` on the scope → contributor, without it →
+//     viewer (DD-164(3)). Until the directory supplies roles every person
 //     is a contributor: no administrator is granted inside the component.
 //     Ownership is never granted natively.
 //
@@ -89,14 +90,14 @@ func (s *kailoOrgService) syncLocked(
 		return nil, err
 	}
 	desired := map[uint64]kailoDesiredSpace{
-		tenantSpace.ID: {space: tenantSpace, role: membership.Tenant.Role.NativeTenantRole(), org: types.OrgRoleAdmin},
+		tenantSpace.ID: {space: tenantSpace, role: membership.Tenant.NativeRole(), org: types.OrgRoleAdmin},
 	}
 	for _, ws := range membership.Workspaces {
 		space, err := s.ensureSpace(ctx, types.KailoWorkspaceScopeRef(ws.ID), ws.Name)
 		if err != nil {
 			return nil, err
 		}
-		role := ws.Role.NativeTenantRole()
+		role := ws.NativeRole()
 		if membership.Tenant.Role == types.KailoRoleAdmin {
 			role = types.TenantRoleAdmin
 		}

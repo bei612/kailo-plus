@@ -92,6 +92,10 @@ type Organization struct {
 	// (Kailo DD-133). Its member spaces are the Tenant's mapped spaces and
 	// cannot be edited natively.
 	KailoTenantRef *string `json:"kailo_tenant_ref,omitempty" gorm:"column:kailo_tenant_ref;type:varchar(160);uniqueIndex:idx_organizations_kailo_tenant_ref"`
+	// KailoShareRef ("workspace:<id>") marks the Kailo-managed organisation
+	// whose only member space is that Kailo Workspace's space: the native
+	// target of a knowledge base shared with the Workspace (DD-164(4)).
+	KailoShareRef *string `json:"kailo_share_ref,omitempty" gorm:"column:kailo_share_ref;type:varchar(160);uniqueIndex:idx_organizations_kailo_share_ref"`
 	// Creation time
 	CreatedAt time.Time `json:"created_at"`
 	// Last updated time
@@ -210,6 +214,9 @@ type KnowledgeBaseShare struct {
 	SourceTenantID uint64 `json:"source_tenant_id" gorm:"not null;index"`
 	// Permission level (admin/editor/viewer)
 	Permission OrgMemberRole `json:"permission" gorm:"type:varchar(32);not null;default:'viewer'"`
+	// KailoResourceRef is the Kailo Resource (component.shared_object) this
+	// row projects (DD-164(4)); nil for a native share.
+	KailoResourceRef *string `json:"kailo_resource_ref,omitempty" gorm:"column:kailo_resource_ref;type:varchar(36);index:idx_kb_shares_kailo_resource_ref"`
 	// Creation time
 	CreatedAt time.Time `json:"created_at"`
 	// Last updated time

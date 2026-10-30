@@ -44,8 +44,13 @@ var kailoClosedRoutes = []kailoClosedRoute{
 	kailoRoute(http.MethodPost, `/me/invitations/[^/]+/accept`),
 	kailoRoute(http.MethodPost, `/me/invitations/[^/]+/decline`),
 	kailoRoute(http.MethodPost, `/me/invitations/accept-by-token`),
-	// Organisations: membership and discovery. Sharing a knowledge base or
-	// agent to the Kailo Tenant organisation stays open.
+	// Knowledge base shares are a projection of Kailo authorization
+	// (DD-164(4)): the directory sync writes them, the page asks Kailo.
+	kailoRoute(http.MethodPost, `/knowledge-bases/[^/]+/shares`),
+	kailoRoute(http.MethodPut, `/knowledge-bases/[^/]+/shares/[^/]+`),
+	kailoRoute(http.MethodDelete, `/knowledge-bases/[^/]+/shares/[^/]+`),
+	// Organisations: membership and discovery. Sharing an agent to the Kailo
+	// Tenant organisation stays open.
 	kailoRoute(http.MethodPost, `/organizations`),
 	kailoRoute(http.MethodGet, `/organizations/preview/[^/]+`),
 	kailoRoute(http.MethodPost, `/organizations/join`),

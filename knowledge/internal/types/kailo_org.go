@@ -22,22 +22,31 @@ const (
 	KailoRoleMember KailoScopeRole = "member"
 )
 
-// NativeTenantRole derives the native space role from the Kailo role:
-// administrators manage the space (models, settings, every knowledge base);
-// members create knowledge bases and agents, edit their own and read
-// everything else in the space. Ownership is never granted natively.
-func (r KailoScopeRole) NativeTenantRole() TenantRole {
-	if r == KailoRoleAdmin {
-		return TenantRoleAdmin
-	}
-	return TenantRoleContributor
-}
-
 // KailoScope is one Kailo Tenant or Workspace and the person's role in it.
 type KailoScope struct {
 	ID   string
 	Name string
 	Role KailoScopeRole
+	// Create is Kailo's create permission on the scope (directory schema 2:
+	// tenantCreate, workspaces[].create). Only a scope with create gets
+	// write access to content (Kailo DD-164(3)).
+	Create bool
+}
+
+// NativeRole derives the native space role from Kailo (DD-164(3), 07
+// §4.7.4 "schema 2 角色派生"): an administrator manages the space; a member
+// with Kailo `create` on the scope is a contributor (creates knowledge bases
+// and agents, edits their own); every other member only reads. Ownership is
+// never granted natively.
+func (s KailoScope) NativeRole() TenantRole {
+	switch {
+	case s.Role == KailoRoleAdmin:
+		return TenantRoleAdmin
+	case s.Create:
+		return TenantRoleContributor
+	default:
+		return TenantRoleViewer
+	}
 }
 
 // KailoMembership is what Kailo says about one person for this component
@@ -52,12 +61,14 @@ type KailoMembership struct {
 }
 
 // DeploymentKailoMembership is the membership known before the member
-// directory exists: member of the deployment's Tenant, nothing else.
+// directory exists: contributor of the deployment's Tenant space (07 §4.7.4
+// "成员目录未交付时"), nothing else and never an administrator.
 func DeploymentKailoMembership(tenantID, tenantName string) *KailoMembership {
 	return &KailoMembership{Tenant: KailoScope{
-		ID:   strings.TrimSpace(tenantID),
-		Name: NormaliseKailoName(tenantName),
-		Role: KailoRoleMember,
+		ID:     strings.TrimSpace(tenantID),
+		Name:   NormaliseKailoName(tenantName),
+		Role:   KailoRoleMember,
+		Create: true,
 	}}
 }
 

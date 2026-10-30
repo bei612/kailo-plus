@@ -237,6 +237,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewEvaluationService))
 	must(container.Provide(service.NewKailoOrgService))
 	must(container.Provide(service.NewKailoDirectorySyncRunner))
+	must(container.Provide(service.NewKailoShareIntentService))
 	must(container.Provide(service.NewUserService))
 	must(container.Provide(service.NewSystemSettingService))
 	must(container.Provide(func(
@@ -540,6 +541,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		return handler.NewSkillHandler(s, s)
 	}))
 	must(container.Provide(handler.NewOrganizationHandler))
+	must(container.Provide(handler.NewKailoShareIntentHandler))
 	must(container.Provide(handler.NewMemoryHandler))
 
 	// Data source handler

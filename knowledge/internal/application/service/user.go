@@ -599,7 +599,7 @@ func (s *userService) LoginWithOIDC(
 		return &types.OIDCCallbackResponse{Success: false, Message: "Account is disabled"}, nil
 	}
 	if s.config.KailoEnabled() {
-		if err := s.refreshOIDCProfile(ctx, user, userInfo); err != nil {
+		if err := s.refreshOIDCProfile(ctx, user, userInfo, directoryMembership != nil); err != nil {
 			return nil, err
 		}
 	}
