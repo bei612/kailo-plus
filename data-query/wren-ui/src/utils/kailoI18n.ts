@@ -31,7 +31,6 @@ const shell = {
     deployPending: '有未发布的更改',
     deployFailed: '模型未能发布',
     deployFailedHint: '请查看日志了解原因。',
-    dataSourceSettings: '数据源设置',
     addQuestionSqlPair: '添加问答对',
     addInstruction: '添加指令',
     actionFailed: '操作未完成',
@@ -57,10 +56,13 @@ const shell = {
     apiHistory: 'API 记录',
     owner: '创建者',
     ownerUnknown: '—',
-    adminOnly: '仅 Kailo 租户管理员可以修改',
-    adminRequiredTitle: '需要管理员',
-    adminRequiredOnboarding:
-      '数据源尚未连接。请联系 Kailo 租户管理员完成数据连接与建模。',
+    // DD-138(6) (`07` §4.8.5): admin surfaces and the first-use state.
+    adminSurfaceUnavailable: '该管理项不可用',
+    adminSurfaceUnavailableHint: '请从 Kailo 管理区重新打开该管理项。',
+    dataSourceMissingTitle: '尚未连接数据源',
+    dataSourceMissingHint: '请管理员在 Kailo 管理区连接数据源。',
+    projectResetDone: '项目已重置',
+    projectResetDoneHint: '请在 Kailo 管理区的“数据源连接”中重新连接数据源。',
     askAboutData: '了解你的数据',
     tryAsking: '可以试着这样提问',
     loading: '加载中…',
@@ -111,7 +113,6 @@ const shell = {
     deployPending: 'Undeployed changes',
     deployFailed: 'Models were not deployed',
     deployFailedHint: 'Check the log for the reason.',
-    dataSourceSettings: 'Data source settings',
     addQuestionSqlPair: 'Add question-SQL pair',
     addInstruction: 'Add instruction',
     actionFailed: 'Action did not complete',
@@ -138,10 +139,15 @@ const shell = {
     apiHistory: 'API history',
     owner: 'Created by',
     ownerUnknown: '—',
-    adminOnly: 'Only a Kailo Tenant administrator can change this',
-    adminRequiredTitle: 'Administrator required',
-    adminRequiredOnboarding:
-      'No data source is connected yet. Ask a Kailo Tenant administrator to connect and model the data.',
+    // DD-138(6) (`07` §4.8.5): admin surfaces and the first-use state.
+    adminSurfaceUnavailable: 'This admin item is unavailable',
+    adminSurfaceUnavailableHint: 'Open it again from the Kailo admin area.',
+    dataSourceMissingTitle: 'No data source connected yet',
+    dataSourceMissingHint:
+      'Ask an administrator to connect a data source in the Kailo admin area.',
+    projectResetDone: 'Project reset',
+    projectResetDoneHint:
+      'Connect a data source again under “Data source connection” in the Kailo admin area.',
     askAboutData: 'Know more about your data',
     tryAsking: 'Try asking some of the following questions',
     loading: 'Loading…',

@@ -269,3 +269,28 @@ registration, and acceptance with real Tenant members.
 测试（jest，未在本机运行）：`src/viewMetadata.test.ts` 的 `overlapping query identity reads`（refresh 被 preview
 超越、preview 被 focus 超越后采用最新结果、focus 与 visibility 重叠、当前读取确定失败仍报错）；新增
 `src/kailoActorName.test.ts`（标签优先级、分享与看板加入通知的目录名及三种回退）。
+
+## 管理面并入 Kailo 管理区（DD-138(6)，`07` §4.8.5，源码阶段）
+
+native page release 升到 `1.4.0-native-page`：`fork/release/manifest.native-page.json` 的
+`frontendPresentationContract.adminSurfaces` 声明三项，与 `wren-ui/src/utils/kailoAdminSurface.ts` 的
+`KAILO_ADMIN_SURFACES` 一致（`kailoAdminSurface.test.ts` 逐字段比对）。尚未构建、登记与换绑。
+
+| key | 分类 | path | 权限 | 内容 |
+|---|---|---|---|---|
+| `dataSources.connection` | `DATA_SOURCES` | `/kailo-admin/data-source` | `BINDING_MANAGE` | 无项目或无模型时为原首次接入流程（连接 → 选表 → 关系），之后为数据源连接设置 |
+| `semantic.modeling` | `DATA_SOURCES` | `/kailo-admin/modeling` | `BINDING_MANAGE` | 模型树与关系图；“发布模型”为页头主操作（顶层访问时在内容区） |
+| `system.project` | `SYSTEM` | `/kailo-admin/project` | `BINDING_MANAGE` | 回答语言与重置项目 |
+
+- `BINDING_MANAGE`：GOVERNED 的管理员即 binding scope 上的 Core `manage`（`isKailoAdmin` 与
+  `nativeProjectResolver(..., 'manage')` 同一判定）；STANDALONE 为目录派生的 Tenant admin。三项都是组件自有业务配置，`EDITABLE`。
+- 页面（`KailoAdminSurface`）只读 `KailoEmbed.adminSurface()`（无运行时退回 URL 参数），key 不是该路径声明的、缺失、
+  未知或会话不是管理员时显示“该管理项不可用”空态；没有外壳、页头、标签与其他管理项链接，就绪后 `setPage({title})`。
+- 关闭原生入口：去掉“建模”标签、`kailo:data-source-settings` 菜单、顶栏齿轮与“发布模型”、设置对话框
+  （`components/settings/index.tsx` 删除）、业务页到建模的视图链接与 `/setup` 重定向。业务页在没有已建模数据源时只显示
+  “请管理员在 Kailo 管理区连接数据源”空态。
+- 服务端：`middleware.ts` 在身份校验之后、任何页面之前，把 `/modeling`、`/setup`、`/setup/*` 一律 307 到 `/home`
+  （两种模式；保留语言前缀）；`/kailo-admin/*` 只有带且仅带一个格式正确、属于该路径声明的 `kailo_admin_surface` 时放行；
+  STANDALONE 另对非目录管理员重定向。写仍由原 resolver 判定。`/api/*`、`/_next/*`、`/kailo/*` 不受影响；
+  `docker/native-gateway.yaml` 只有 `/kailo-embed/` 静态页与 `/` 全量转发，没有绕过中间件的路径。
+- 模型由 Kailo 网关提供，组件内没有模型设置界面（设置对话框只有数据源与项目两项）。

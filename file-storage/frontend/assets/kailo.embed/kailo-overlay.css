@@ -605,3 +605,183 @@ body.react-mui-context,
 :root[data-kailo-runtime] .user-dashboard-template .desktop-container > div:first-child {
     background-color: transparent !important;
 }
+
+/* ---- Kailo admin surfaces (DD-138(6), 07 §4.8.5, 20 §13.2) --------------
+ * /kailo-admin/<surface> renders one admin function in the content area:
+ * surface background, padding 24 (lists 16 at the top), form width 720,
+ * read-only values as a definition list separated by 1 px lines. The cover
+ * hides the native page until the surface (or its empty state) is ready. */
+:root {
+    --kailo-cells-admin-empty-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='m5.7 5.7 12.6 12.6'/%3E%3C/svg%3E");
+    --kailo-cells-close-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6 6 18'/%3E%3Cpath d='m6 6 12 12'/%3E%3C/svg%3E");
+}
+
+.kailo-admin-cover {
+    position: fixed;
+    inset: 0;
+    z-index: 2900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--kailo-color-background);
+    color: var(--kailo-color-foreground);
+    font-family: var(--kailo-font-sans);
+}
+
+.kailo-admin-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    max-width: 360px;
+    padding: 24px;
+    text-align: center;
+}
+
+.kailo-admin-empty-icon {
+    width: 64px;
+    height: 64px;
+    margin-bottom: 8px;
+    background-color: var(--kailo-color-muted-foreground);
+    -webkit-mask: var(--kailo-cells-admin-empty-icon) center / contain no-repeat;
+    mask: var(--kailo-cells-admin-empty-icon) center / contain no-repeat;
+}
+
+.kailo-admin-empty-title {
+    font: 600 17px/24px var(--kailo-font-sans);
+    color: var(--kailo-color-foreground);
+}
+
+.kailo-admin-empty-body {
+    font: 400 14px/20px var(--kailo-font-sans);
+    color: var(--kailo-color-muted-foreground);
+}
+
+.app-canvas.kailo-admin-canvas {
+    background-color: var(--kailo-color-background);
+}
+
+.kailo-admin-surface {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--kailo-color-background);
+    color: var(--kailo-color-foreground);
+    font-family: var(--kailo-font-sans);
+}
+
+.kailo-admin-surface-title {
+    flex: none;
+    padding: 16px 24px 0;
+    font: 600 15px/24px var(--kailo-font-sans);
+}
+
+.kailo-admin-surface-content {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 16px 24px 24px;
+}
+
+.kailo-admin-surface-content .workspaces-board,
+.kailo-admin-surface-content .vertical-layout,
+.kailo-admin-surface-content .layout-fill {
+    background-color: transparent !important;
+}
+
+.kailo-admin-surface-content [class*="MuiPaper"],
+.kailo-admin-surface-content .layout-fill > div[style] {
+    box-shadow: none !important;
+}
+
+.kailo-admin-detail.paper-editor {
+    background-color: var(--kailo-color-background) !important;
+    border-left: 1px solid var(--kailo-color-border);
+    box-shadow: none !important;
+    border-radius: 0 !important;
+}
+
+.kailo-admin-detail-pane {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    font-family: var(--kailo-font-sans);
+    color: var(--kailo-color-foreground);
+}
+
+.kailo-admin-detail-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 44px;
+    padding: 0 8px 0 16px;
+    border-bottom: 1px solid var(--kailo-color-border);
+}
+
+.kailo-admin-detail-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 600 15px/24px var(--kailo-font-sans);
+}
+
+.kailo-admin-detail-close {
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border: 0;
+    border-radius: 8px;
+    padding: 0;
+    cursor: pointer;
+    background-color: transparent;
+    position: relative;
+}
+
+.kailo-admin-detail-close::before {
+    content: "";
+    position: absolute;
+    inset: 8px;
+    background-color: var(--kailo-color-muted-foreground);
+    -webkit-mask: var(--kailo-cells-close-icon) center / contain no-repeat;
+    mask: var(--kailo-cells-close-icon) center / contain no-repeat;
+}
+
+.kailo-admin-detail-close:hover {
+    background-color: var(--kailo-color-hover);
+}
+
+.kailo-admin-detail-close:focus-visible {
+    outline: none;
+    box-shadow: var(--kailo-focus-ring);
+}
+
+.kailo-admin-facts {
+    margin: 0;
+    padding: 8px 16px 24px;
+    max-width: 720px;
+    overflow: auto;
+}
+
+.kailo-admin-fact {
+    display: grid;
+    grid-template-columns: minmax(96px, 35%) 1fr;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--kailo-color-border);
+    font: 400 13px/20px var(--kailo-font-sans);
+}
+
+.kailo-admin-fact dt {
+    color: var(--kailo-color-foreground);
+    font-weight: 500;
+}
+
+.kailo-admin-fact dd {
+    margin: 0;
+    color: var(--kailo-color-muted-foreground);
+    overflow-wrap: anywhere;
+}

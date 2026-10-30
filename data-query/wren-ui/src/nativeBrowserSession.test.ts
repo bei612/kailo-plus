@@ -294,7 +294,7 @@ integration('native browser OIDC and original Next admission', () => {
   };
 
   const login = async (request: ReturnType<typeof browser>) => {
-    const first = await request('/setup/connection');
+    const first = await request('/home');
     expect(first.status).toBe(302);
     expect(first.headers.get('set-cookie')).toContain('HttpOnly');
     const consent = await fetch(first.headers.get('location')!, {
@@ -313,7 +313,7 @@ integration('native browser OIDC and original Next admission', () => {
     expect([302, 303]).toContain(callback.status);
     expect(callback.headers.get('set-cookie')).toContain('HttpOnly');
     for (const path of [
-      '/setup/connection',
+      '/home',
       '/api/graphql',
       '/_next/static/test.js',
     ]) {

@@ -1,7 +1,7 @@
 {
   "id": "{{releaseId}}",
   "componentTypeKey": "cells",
-  "version": "1.3.0-native-page",
+  "version": "1.4.0-native-page",
   "class": "APPLICATION",
   "platformPortKey": "NONE",
   "manifestSchemaVersion": 1,
@@ -79,6 +79,26 @@
         "defaultValue": "true",
         "label": {"ZH_CN": "拼写检查", "EN": "Spell checking"},
         "description": {"ZH_CN": "在文档编辑器中标出拼写错误", "EN": "Underline misspelled words in the document editor"}
+      }
+    ],
+    "adminSurfaces": [
+      {
+        "key": "storage.dataSources",
+        "adminCategory": "STORAGE",
+        "path": "/kailo-admin/data-sources",
+        "requiredPermission": "TENANT_MANAGE",
+        "access": "READ_ONLY",
+        "title": {"ZH_CN": "文件存储位置", "EN": "File storage locations"},
+        "description": {"ZH_CN": "文件存放的数据源、运行状态与版本保留策略，由部署声明", "EN": "Data sources holding the files, their status and version retention, declared by the deployment"}
+      },
+      {
+        "key": "files.metadata",
+        "adminCategory": "SYSTEM",
+        "path": "/kailo-admin/metadata",
+        "requiredPermission": "TENANT_MANAGE",
+        "access": "EDITABLE",
+        "title": {"ZH_CN": "文件元数据字段", "EN": "File metadata fields"},
+        "description": {"ZH_CN": "成员可为文件与文件夹填写的自定义字段，如标签、评分与选项", "EN": "Custom fields members can fill in on files and folders, such as tags, ratings and choices"}
       }
     ]
   }

@@ -1,14 +1,16 @@
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
-import { useSearchParams } from 'next/navigation';
 import { forwardRef, useEffect, useMemo, useRef } from 'react';
 import { notify } from '@/utils/kailoHost';
 import client from '@/apollo/client';
 import { runNativeMetadataWrite } from '@/utils/errorHandler';
 import styled from 'styled-components';
-import { FORM_MODE, MORE_ACTION, NODE_TYPE } from '@/utils/enum';
+import { FORM_MODE, MORE_ACTION, NODE_TYPE, Path } from '@/utils/enum';
 import { editCalculatedField } from '@/utils/modelingHelper';
-import SiderLayout from '@/components/layouts/SiderLayout';
+import AdminSurfaceLayout from '@/components/layouts/AdminSurfaceLayout';
+import KailoAdminSurface, {
+  useKailoAdminPage,
+} from '@/components/kailo/KailoAdminSurface';
 import ErrorCollapse from '@/components/ErrorCollapse';
 import MetadataDrawer from '@/components/pages/modeling/MetadataDrawer';
 import EditMetadataModal from '@/components/pages/modeling/EditMetadataModal';
@@ -23,8 +25,8 @@ import useRelationshipModal from '@/hooks/useRelationshipModal';
 import { convertFormValuesToIdentifier } from '@/hooks/useCombineFieldOptions';
 import { ClickPayload } from '@/components/diagram/Context';
 import { DeployStatusContext } from '@/components/deploy/Context';
-import { useDeploy } from '@/components/deploy/Deploy';
-import useKailoPage from '@/hooks/useKailoPage';
+import Deploy, { useDeploy } from '@/components/deploy/Deploy';
+import useKailoSession from '@/hooks/useKailoSession';
 import useKailoText, { kailoT } from '@/utils/kailoI18n';
 import { DIAGRAM } from '@/apollo/client/graphql/diagram';
 import { LIST_MODELS } from '@/apollo/client/graphql/model';
@@ -63,10 +65,28 @@ const DiagramWrapper = styled.div`
   height: 100%;
 `;
 
-export default function Modeling() {
+// Top-level visits only: inside Kailo 发布模型 is the page header action.
+const DeployBar = styled.div`
+  position: absolute;
+  top: 16px;
+  right: 24px;
+  z-index: 10;
+`;
+
+// DD-138(6) (`07` §4.8.5): the semantic modeling admin surface — the model
+// tree (content) and the diagram, nothing of the product shell around it.
+export default function ModelingSurface() {
+  return (
+    <KailoAdminSurface path={Path.AdminModeling}>
+      <Modeling />
+    </KailoAdminSurface>
+  );
+}
+
+export function Modeling() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const diagramRef = useRef(null);
+  const { hostPage } = useKailoSession();
 
   const { data, error: diagramError } = useDiagramQuery({
     fetchPolicy: 'no-cache',
@@ -212,15 +232,9 @@ export default function Modeling() {
   const t = useKailoText();
   const deploy = useDeploy(deployStatusQueryResult);
 
-  // DD-157: Kailo page header — 建模 (→ the open model or view), primary
-  // 发布模型 (busy while deploying, disabled when nothing is pending).
-  const openNode =
-    metadataDrawer.state.visible && diagramData
-      ? metadataDrawer.state.defaultValue
-      : null;
-  useKailoPage({
-    title: openNode?.displayName || t('navModeling'),
-    breadcrumbs: openNode ? [{ id: 'modeling', label: t('navModeling') }] : [],
+  // DD-138(6): Kailo draws "管理 › 数据源 › 语义建模"; the surface adds its
+  // primary 发布模型 (busy while deploying, disabled when nothing is pending).
+  useKailoAdminPage({
     ready: !!diagramData || !!diagramError,
     actions: [
       {
@@ -235,29 +249,7 @@ export default function Modeling() {
     onAction: (id) => {
       if (id === 'deploy' && !deploy.disabled) deploy.onDeploy();
     },
-    onBreadcrumb: (id) => {
-      if (id === 'modeling') metadataDrawer.closeDrawer();
-    },
   });
-
-  const queryParams = {
-    viewId: searchParams.get('viewId'),
-    openMetadata: searchParams.get('openMetadata'),
-  };
-
-  // doing actions if the route has specific query params
-  useEffect(() => {
-    if (!diagramData) return;
-    // open view metadata drawer
-    if (queryParams.viewId && queryParams.openMetadata) {
-      const searchedView = diagramData.views.find(
-        (view) => view.viewId === Number(queryParams.viewId),
-      );
-      !!searchedView && metadataDrawer.openDrawer(searchedView);
-      // clear query params after opening the drawer
-      router.replace(router.pathname);
-    }
-  }, [queryParams, diagramData]);
 
   useEffect(() => {
     if (!diagramData) {
@@ -414,7 +406,7 @@ export default function Modeling() {
 
   return (
     <DeployStatusContext.Provider value={{ ...deployStatusQueryResult }}>
-      <SiderLayout
+      <AdminSurfaceLayout
         loading={!diagramError && diagramData === null}
         sidebar={{
           data: diagramData,
@@ -426,6 +418,11 @@ export default function Modeling() {
           <ErrorCollapse message={diagramError.message} defaultActive />
         ) : (
           <DiagramWrapper>
+            {!hostPage && (
+              <DeployBar>
+                <Deploy />
+              </DeployBar>
+            )}
             <ForwardDiagram
               ref={diagramRef}
               data={diagramData}
@@ -561,7 +558,7 @@ export default function Modeling() {
             }
           }}
         />
-      </SiderLayout>
+      </AdminSurfaceLayout>
     </DeployStatusContext.Provider>
   );
 }

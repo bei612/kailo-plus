@@ -1,7 +1,5 @@
-import { useRouter } from 'next/router';
 import { useState, useCallback } from 'react';
 import {
-  Path,
   REDSHIFT_AUTH_METHOD,
   DATABRICKS_AUTH_METHOD,
 } from '@/utils/enum';
@@ -10,8 +8,9 @@ import { DataSourceName } from '@/apollo/client/graphql/__types__';
 
 const PASSWORD_PLACEHOLDER = '************';
 
-export default function useSetupConnectionDataSource() {
-  const router = useRouter();
+// DD-138(6): a step of the data source admin surface; the surface moves on
+// (onSaved), there is no route of its own.
+export default function useSetupConnectionDataSource(onSaved?: () => void) {
   const [selected, setSelected] = useState<DataSourceName>();
 
   const [saveDataSourceMutation, { loading, error }] =
@@ -25,7 +24,7 @@ export default function useSetupConnectionDataSource() {
       setSelected(payload.dataSource);
       payload?.dispatch?.();
     },
-    [router],
+    [],
   );
 
   const saveDataSource = useCallback(
@@ -43,8 +42,8 @@ export default function useSetupConnectionDataSource() {
   );
 
   const completedDataSourceSave = useCallback(async () => {
-    router.push(Path.OnboardingModels);
-  }, [selected, router]);
+    onSaved?.();
+  }, [selected, onSaved]);
 
   return {
     loading,
