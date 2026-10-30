@@ -22,6 +22,14 @@ models:
       n: 1
       seed: 0
       temperature: 0
+      # Wren plans in its own reasoning stage (sql_generation_reasoning) and reads only the
+      # answer content. The platform chat route is a hybrid-thinking model that thinks by
+      # default; hidden reasoning counts against max_tokens, and on 2026-10-29 SQL generation
+      # spent all 8192 tokens (313 s) there and returned no SQL. Ask the route not to think;
+      # a chat template without this switch ignores it (data-query/fork/verify/ask-empty-sql.md).
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
 ---
 type: embedder
 provider: litellm_embedder

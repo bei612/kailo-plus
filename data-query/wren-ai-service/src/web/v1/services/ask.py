@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from langfuse.decorators import observe
 from pydantic import AliasChoices, BaseModel, Field
 
+from src.core.engine import SQLGenerationEmpty
 from src.core.pipeline import BasicPipeline
 from src.utils import trace_metadata
 from src.web.v1.services import BaseRequest, SSEEvent
@@ -58,7 +59,8 @@ class AskResult(BaseModel):
 
 
 class AskError(BaseModel):
-    code: Literal["NO_RELEVANT_DATA", "NO_RELEVANT_SQL", "OTHERS"]
+    # NO_SQL_GENERATED (Kailo): the model returned no SQL text at all.
+    code: Literal["NO_RELEVANT_DATA", "NO_RELEVANT_SQL", "NO_SQL_GENERATED", "OTHERS"]
     message: str
 
 
@@ -677,6 +679,24 @@ class AskService:
                 )
             results["metadata"]["error_type"] = "OTHERS"
             results["metadata"]["error_message"] = "Native query outcome unavailable"
+            return results
+        except SQLGenerationEmpty as e:
+            # Nothing reached the engine and nothing is left to correct: fail
+            # now with the reason, not as an unknown internal error.
+            logger.warning(f"ask pipeline - NO_SQL_GENERATED: {e}")
+
+            if owns_result():
+                self._ask_results[query_id] = expected = AskResultResponse(
+                    status="failed",
+                    type="TEXT_TO_SQL",
+                    error=AskError(code="NO_SQL_GENERATED", message=str(e)),
+                    trace_id=trace_id,
+                    is_followup=True if histories else False,
+                )
+
+            results["metadata"]["error_type"] = "NO_SQL_GENERATED"
+            results["metadata"]["error_message"] = str(e)
+            results["metadata"]["type"] = "TEXT_TO_SQL"
             return results
         except Exception as e:
             logger.exception(f"ask pipeline - OTHERS: {e}")

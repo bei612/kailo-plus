@@ -97,7 +97,8 @@ class Render(unittest.TestCase):
         self.assertEqual(llm["timeout"], 600)
         self.assertEqual(llm["models"], [{"alias": "default", "model": "openai/" + CHAT, "context_window_size": 32768,
                                           "api_base": BASE, "api_key_name": "KAILO_MODEL_API_KEY",
-                                          "kwargs": {"max_tokens": 8192, "n": 1, "seed": 0, "temperature": 0}}])
+                                          "kwargs": {"max_tokens": 8192, "n": 1, "seed": 0, "temperature": 0,
+                                                     "extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}}])
         self.assertEqual(docs["embedder/litellm_embedder"]["models"],
                          [{"model": "openai/" + EMBED, "alias": "default", "api_base": BASE,
                            "api_key_name": "KAILO_MODEL_API_KEY", "timeout": 120}])
