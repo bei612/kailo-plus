@@ -12,10 +12,25 @@ describe('thread recommendation observation stops on a settled task', () => {
   // back on 2026-10-30: all of them were polled once a second without end.
   const settled = [
     // threads 2, 3, 7: no recommendation was ever dispatched
-    { threadId: 7, queryId: null, sourceResponseId: null, status: Status.NOT_STARTED },
+    {
+      threadId: 7,
+      queryId: null,
+      sourceResponseId: null,
+      status: Status.NOT_STARTED,
+    },
     // threads 1, 4, 5, 6: finished before the source answer was recorded
-    { threadId: 4, queryId: 'd89e6304-e295-424e-8ae3-c32eb4931dee', sourceResponseId: null, status: Status.FINISHED },
-    { threadId: 4, queryId: 'd89e6304-e295-424e-8ae3-c32eb4931dee', sourceResponseId: 3, status: Status.FAILED },
+    {
+      threadId: 4,
+      queryId: 'd89e6304-e295-424e-8ae3-c32eb4931dee',
+      sourceResponseId: null,
+      status: Status.FINISHED,
+    },
+    {
+      threadId: 4,
+      queryId: 'd89e6304-e295-424e-8ae3-c32eb4931dee',
+      sourceResponseId: 3,
+      status: Status.FAILED,
+    },
   ];
 
   it.each(settled)('ends after one read of %o', (task) => {
@@ -31,7 +46,10 @@ describe('thread recommendation observation stops on a settled task', () => {
     expect(isRecommendationObservationDone(null, 4)).toBe(false);
     expect(isRecommendationObservationDone(undefined, 4)).toBe(false);
     expect(
-      isRecommendationObservationDone({ threadId: 5, status: Status.FINISHED }, 4),
+      isRecommendationObservationDone(
+        { threadId: 5, status: Status.FINISHED },
+        4,
+      ),
     ).toBe(false);
   });
 
@@ -50,7 +68,12 @@ describe('thread recommendation observation stops on a settled task', () => {
 });
 
 describe('an answer without SQL is a named, explained failure', () => {
-  const failure = { code: 'NO_SQL_GENERATED', message: 'No SQL was generated: the model spent its whole output limit on hidden reasoning', shortMessage: 'No SQL was generated' };
+  const failure = {
+    code: 'NO_SQL_GENERATED',
+    message:
+      'No SQL was generated: the model spent its whole output limit on hidden reasoning',
+    shortMessage: 'No SQL was generated',
+  };
 
   it('has its own server code and messages, not Internal server error', () => {
     const error = Errors.create(Errors.GeneralErrorCodes.NO_SQL_GENERATED);
@@ -72,8 +95,16 @@ describe('an answer without SQL is a named, explained failure', () => {
 
   it('leaves every other failure as the server reported it', () => {
     const other = { code: 'NO_RELEVANT_SQL', message: 'm', shortMessage: 's' };
-    expect(askErrorText(other, (key) => key)).toEqual({ shortMessage: 's', message: 'm' });
-    expect(askErrorText({ code: 'constructor', message: 'm' }, (key) => key)).toEqual({ shortMessage: undefined, message: 'm' });
-    expect(askErrorText(null, (key) => key)).toEqual({ shortMessage: undefined, message: undefined });
+    expect(askErrorText(other, (key) => key)).toEqual({
+      shortMessage: 's',
+      message: 'm',
+    });
+    expect(
+      askErrorText({ code: 'constructor', message: 'm' }, (key) => key),
+    ).toEqual({ shortMessage: undefined, message: 'm' });
+    expect(askErrorText(null, (key) => key)).toEqual({
+      shortMessage: undefined,
+      message: undefined,
+    });
   });
 });
