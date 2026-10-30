@@ -7,14 +7,14 @@ exposure: end_user
 design:
   requirements: [V-REQ-17]
   # DD-133 与其扩展的 DD-127 均归 EXT-BASE；DD-39/81（S1）的头像媒体由既有记录承担。
-  decisions: [DD-127, DD-133]
+  decisions: [DD-127, DD-133, DD-164]
   facts: []
   seams: [SS-AGW-END-SESSION]
   blockers: []
   entities: [ComponentRelease, FrontendPresentationContract, ApplicationBinding, BuzzIdentityBinding, TenantMembership, WorkspaceMembership, ExternalIdentity]
 
 validation:
-  scenarios: [V-SCN-198, V-SCN-199, V-SCN-200, V-SCN-201, V-SCN-202, V-SCN-203, V-SCN-204, V-SCN-205, V-SCN-218, V-SCN-219, V-SCN-222]
+  scenarios: [V-SCN-198, V-SCN-199, V-SCN-200, V-SCN-201, V-SCN-202, V-SCN-203, V-SCN-204, V-SCN-205, V-SCN-218, V-SCN-219, V-SCN-222, V-SCN-280]
   evidence:
     - dimension: 上游接缝
       ref: model-gateway/fork/verify/end-session.md
@@ -24,6 +24,8 @@ validation:
       ref: contracts/api/component_member_directory.schema.json
     - dimension: 单元测试
       ref: core/crates/platform-core/src/component_directory.rs
+    - dimension: 单元测试
+      ref: core/crates/platform-core/src/web_profile/tests.rs
     - dimension: 退出联动
       ref: collaboration/fork/verify/desktop-embedded-idp-logout.md
     - dimension: 单元测试

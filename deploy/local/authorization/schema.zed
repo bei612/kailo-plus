@@ -33,10 +33,10 @@ definition resource {
   relation owner: principal
   relation discoverer: principal | tenant#member
   relation consumer: principal | tenant#member
-  relation reader: principal | tenant#member
+  relation reader: principal | tenant#member | workspace#member
   relation exporter: principal
   relation creator: principal
-  relation editor: principal
+  relation editor: principal | workspace#member
   relation deleter: principal
   relation sharer: principal | tenant#member
   relation manager: principal

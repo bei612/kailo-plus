@@ -409,6 +409,15 @@ capabilities:
   tools: []
   workflow_kinds:
   - COMPONENT_RELEASE
+- id: component.share_projection
+  exposure: end_user
+  routes:
+  - /api/v1/component-shares/intents/{id}
+  - /api/v1/application-bindings/{id}/directory-receipt
+  actions:
+  - component.share.set
+  tools: []
+  workflow_kinds: []
 - id: files.native_editing
   exposure: none
   routes: []

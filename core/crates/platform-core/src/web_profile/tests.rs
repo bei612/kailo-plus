@@ -327,6 +327,89 @@ fn identity_avatar_redirects_only_this_community_media() {
     assert_eq!(avatar_location(None, host), None);
 }
 
+// DD-164(9): Buzz's default avatar is an inline SVG data: URL (percent-encoded,
+// as stored for kailo-qa-1 in production); it is served with its own bytes.
+#[test]
+fn identity_avatar_serves_inline_data_images_under_a_script_free_policy() {
+    use base64::Engine as _;
+    let svg = "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22512%22%3E%3Crect%20fill%3D%22%23FB60C4%22%2F%3E%3Ctext%3E%F0%9F%98%80%3C%2Ftext%3E%3C%2Fsvg%3E";
+    let (kind, bytes) = inline_image(svg).unwrap();
+    assert_eq!(kind, "image/svg+xml");
+    let text = String::from_utf8(bytes).unwrap();
+    assert!(text.starts_with("<svg xmlns=\"http://www.w3.org/2000/svg\""));
+    assert!(text.contains('\u{1F600}'));
+
+    let png = [b"\x89PNG\r\n\x1a\n".as_slice(), &[0u8; 16]].concat();
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&png);
+    assert_eq!(
+        inline_image(&format!("data:image/png;base64,{encoded}")),
+        Some(("image/png", png.clone()))
+    );
+    let svg64 = base64::engine::general_purpose::STANDARD.encode("<svg/>");
+    assert_eq!(
+        inline_image(&format!("DATA:Image/SVG+XML;charset=utf-8;base64,{svg64}")).map(|(k, _)| k),
+        Some("image/svg+xml")
+    );
+
+    let keys = nostr::Keys::generate();
+    let profile = event(
+        &keys,
+        nostr::Kind::Metadata,
+        &json!({"picture": svg}).to_string(),
+    );
+    assert!(avatar_inline(Some(&profile)).is_some());
+    assert_eq!(
+        avatar_location(Some(&profile), "relay.kailo.test:8090"),
+        None
+    );
+    let response = avatar_image("image/svg+xml", b"<svg/>".to_vec());
+    assert_eq!(response.status(), StatusCode::OK);
+    let headers = response.headers();
+    assert_eq!(headers[axum::http::header::CONTENT_TYPE], "image/svg+xml");
+    assert_eq!(
+        headers[axum::http::header::X_CONTENT_TYPE_OPTIONS],
+        "nosniff"
+    );
+    assert_eq!(
+        headers[axum::http::header::CONTENT_SECURITY_POLICY],
+        "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    );
+    assert_eq!(
+        headers[axum::http::header::CACHE_CONTROL],
+        "private, max-age=300"
+    );
+
+    // Too large, unsupported, mislabelled or malformed pictures are never served.
+    let big = base64::engine::general_purpose::STANDARD.encode(
+        [
+            b"\x89PNG\r\n\x1a\n".as_slice(),
+            &vec![0u8; INLINE_AVATAR_MAX_BYTES],
+        ]
+        .concat(),
+    );
+    for picture in [
+        format!("data:image/png;base64,{big}"),
+        "data:text/html,%3Cscript%3E".to_owned(),
+        "data:image/bmp;base64,Qk0=".to_owned(),
+        format!("data:image/png;base64,{svg64}"),
+        "data:image/svg+xml,%3Chtml%3E".to_owned(),
+        "data:image/svg+xml,%3Csvg%ZZ".to_owned(),
+        "data:image/png;base64,***".to_owned(),
+        "data:image/svg+xml;foo,%3Csvg%3E".to_owned(),
+        "data:image/svg+xml".to_owned(),
+        "http://relay.kailo.test/media/x.png".to_owned(),
+        "data:image/svg+xml,".to_owned(),
+    ] {
+        assert_eq!(
+            inline_image(&picture),
+            None,
+            "{}",
+            &picture[..picture.len().min(60)]
+        );
+    }
+    assert_eq!(avatar_inline(None), None);
+}
+
 #[test]
 fn identity_avatar_answers_404_without_a_session_but_keeps_outages() {
     for status in [
