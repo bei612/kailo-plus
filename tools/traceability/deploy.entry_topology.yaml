@@ -1,0 +1,52 @@
+capability_id: deploy.entry_topology
+title: 入口拓扑：组件 origin 只经 Kailo 网关的专用 listener 对外，组件不公开端口，顶层访问回到 Kailo 内容区
+stage: EXT-BASE
+status: in_progress
+# 声明与检查已入库；生产迁移按 deploy/components/entry-topology.md 在合并后的维护窗口逐组件执行，尚未执行。
+exposure: none
+
+design:
+  requirements: [V-REQ-17]
+  decisions: [DD-164, DD-127, DD-133]
+  facts: []
+  seams: []
+  blockers: []
+  entities: [ApplicationBinding]
+
+validation:
+  scenarios: [V-SCN-281]
+  evidence:
+    - dimension: 端到端场景
+      ref: deploy/components/entry-topology.md
+    - dimension: 单元测试
+      ref: deploy/local/edge-overlay.py
+    - dimension: 安全边界
+      ref: tools/check.sh
+
+implementation:
+  owners: [team-platform]
+  paths:
+    - deploy/local/model-gateway-config.yaml
+    - deploy/local/compose.yaml
+    - deploy/local/edge-overlay.py
+    - deploy/local/.env.example
+    - deploy/components/component-deploy.sh
+    - deploy/components/platform-config-check.sh
+    - deploy/components/entry-topology.md
+    - file-storage/deploy/compose.kailo-edge.yaml
+    - knowledge/fork/deploy/compose.kailo-edge.yaml
+    - data-query/docker/kailo-edge.yaml
+    - document-editor/deploy/compose.kailo-edge.yaml
+    - tools/release/release.yaml
+  surfaces: [web, desktop]
+  schemas: []
+  migrations: []
+
+runtime:
+  routes: []
+  actions: []
+  workflow_kinds: []
+
+release:
+  artifacts: []
+  gate: blocked_until_seams_closed

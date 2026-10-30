@@ -418,6 +418,12 @@ capabilities:
   - component.share.set
   tools: []
   workflow_kinds: []
+- id: deploy.entry_topology
+  exposure: none
+  routes: []
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: files.native_editing
   exposure: none
   routes: []
@@ -518,6 +524,13 @@ capabilities:
   tools: []
   workflow_kinds:
   - MEMBERSHIP_PROJECTION
+- id: identity.account_preferences
+  exposure: end_user
+  routes:
+  - /api/v1/account/preferences
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: identity.client_keys
   exposure: end_user
   routes:
@@ -528,6 +541,12 @@ capabilities:
   tools: []
   workflow_kinds:
   - BUZZ_IDENTITY_PROJECTION
+- id: identity.login_presentation
+  exposure: none
+  routes: []
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: identity.secret_ref_rehome
   exposure: tenant_admin
   routes:
@@ -539,6 +558,12 @@ capabilities:
   tools: []
   workflow_kinds:
   - SECRET_REF_REHOME
+- id: identity.session_termination
+  exposure: none
+  routes: []
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: lifecycle.tenant_delete
   exposure: none
   routes: []
