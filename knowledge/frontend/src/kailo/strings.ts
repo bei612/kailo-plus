@@ -3,7 +3,7 @@
 
 import { productName } from './brand'
 
-type Key = 'entering' | 'reauth' | 'reauthHint' | 'error' | 'errorHint' | 'ssoUnavailable' | 'managedByKailo'
+type Key = 'entering' | 'reauth' | 'reauthHint' | 'error' | 'errorHint' | 'ssoUnavailable' | 'managedByKailo' | 'adminSetup'
 
 const TABLE: Record<'zh' | 'en', Record<Key, string>> = {
   zh: {
@@ -14,6 +14,7 @@ const TABLE: Record<'zh' | 'en', Record<Key, string>> = {
     errorHint: '请稍后重试；如果问题持续，请联系{platform}管理员。',
     ssoUnavailable: '{product}尚未完成单点登录配置，请联系{platform}管理员。',
     managedByKailo: '由{platform}统一管理',
+    adminSetup: '请管理员在{platform}管理区完成设置。',
   },
   en: {
     entering: 'Opening {product}…',
@@ -23,6 +24,7 @@ const TABLE: Record<'zh' | 'en', Record<Key, string>> = {
     errorHint: 'Try again later. If the problem continues, contact your {platform} administrator.',
     ssoUnavailable: '{product} single sign-on is not configured. Contact your {platform} administrator.',
     managedByKailo: 'Managed by {platform}',
+    adminSetup: 'Ask an administrator to finish this in the {platform} admin area.',
   },
 }
 

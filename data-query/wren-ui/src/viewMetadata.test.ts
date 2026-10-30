@@ -17,7 +17,8 @@ import SaveAsViewModal from './components/modals/SaveAsViewModal';
 import ModelDrawer from './components/pages/modeling/ModelDrawer';
 import QuestionSQLPairModal from './components/modals/QuestionSQLPairModal';
 import { FORM_MODE } from './utils/enum';
-import APIHistory from './pages/api-management/history';
+// DD-138(7): the history content; the default export gates it to admins.
+import { APIHistory } from './pages/api-management/history';
 import DetailsDrawer from './components/pages/apiManagement/DetailsDrawer';
 import { ApiType } from './apollo/client/graphql/__types__';
 import { getApiHistoryText } from './utils/language';
@@ -236,6 +237,10 @@ jest.mock('./hooks/useDrawerAction', () => () => ({
   updateState: mockHistoryUpdate,
 }));
 jest.mock('./components/layouts/SiderLayout', () => ({
+  __esModule: true,
+  default: ({ children }: any) => children,
+}));
+jest.mock('./components/layouts/SimpleLayout', () => ({
   __esModule: true,
   default: ({ children }: any) => children,
 }));

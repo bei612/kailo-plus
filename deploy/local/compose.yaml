@@ -563,7 +563,7 @@ services:
   # 它只接受 AgentGateway 投影的内网身份 header，缺任一条即拒绝（.design/09）。
   # 只在 app 网络：Browser 永远到不了它，必须经 edge 上的网关。
   core-bff:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/core@sha256:3baec0da7bdefe3beecfe2704e445e2a18557e40c21074ec10c377896c20231d
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/core@sha256:c79ff7f6fa0040a22a6478a20d2eb7555c67a9b7a195c93eb6da5c1f09ef4102
     build:
       context: ../..
       dockerfile: core/Dockerfile
@@ -823,7 +823,7 @@ services:
   # API（状态投影与 Buzz roster 投影）——Buzz 的签名留在 Core，CONTROL 私钥在
   # 那里（DD-72）。
   worker:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/worker@sha256:91f5dd453e051bbaa5ef0b4f9b3c3d343049c5ed9dbc9f85d15ff79fc9e356ce
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/worker@sha256:606d14af8936b79aadc78157d8ff849eb7a94e59f955e5e464b5575f7a075226
     build:
       context: ../..
       dockerfile: worker/Dockerfile

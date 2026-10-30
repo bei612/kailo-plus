@@ -531,8 +531,6 @@ export enum ProtocolSessionMode {
 }
 
 /**
- * Kailo UI language (REQ-08).
- *
  * 系统通知文案的语言；通知不含正文。
  */
 export enum ProtocolSessionLocale {
@@ -897,69 +895,96 @@ export enum ComponentSearchResultKind {
 }
 
 /**
- * GET /api/v1/account/preferences (DD-164(7)): the signed-in HumanIdentity's account
- * preferences, shared by every Tenant and device. Absent fields have never been set;
- * clients fall back to their defaults.
+ * DD-138(6)：当前 HUMAN 可管理的组件管理面（07 §4.8.5）。只含当前 Tenant 级与所给 Workspace 级 ACTIVE binding 的 pin
+ * APPROVED release 所声明、且逐项 fresh manage 通过的项；不含 URL、component_type_key、配置或凭据。
  */
-export interface AccountPreferences {
-    /**
-     * neutral, kailo-brand or #rrggbb.
-     */
-    accent?: string;
-    /**
-     * DD-138 contributed preference values, at most 64, ordered by key.
-     */
-    componentPreferences: AccountComponentPreference[];
-    followSystem?:        boolean;
-    /**
-     * Kailo UI language (REQ-08).
-     */
-    locale?: ProtocolSessionLocale;
-    /**
-     * Theme name, 1-64 of [a-z0-9-].
-     */
-    theme?:     string;
-    updatedAt?: string;
-    /**
-     * 0 before the first write.
-     */
-    version: number;
+export interface AdminSurfacePage {
+    items: AdminSurfaceEntry[];
 }
 
-export interface AccountComponentPreference {
+export interface AdminSurfaceEntry {
+    bindingId: string;
     /**
-     * 07 §4.8.2 preference key.
+     * DD-127(4) presentation category used as the source label (云盘、知识库、问数); grants nothing.
      */
-    key: string;
-    /**
-     * BOOLEAN as true/false, ENUM as the option value (1-32 [A-Za-z0-9._-]).
-     */
-    value: string;
+    nativePageCategory?: NativePageCategory;
+    surface:             ComponentAdminSurfaceDeclaration;
+    workspaceId?:        string;
 }
 
 /**
- * PUT /api/v1/account/preferences (DD-164(7)): compare-and-swap on version; absent fields
- * are unchanged, componentPreferences entries are merged by key and an entry without value
- * removes the key. 409 returns the current AccountPreferences.
+ * DD-127(4) presentation category used as the source label (云盘、知识库、问数); grants nothing.
+ *
+ * DD-127(4)：NATIVE_PAGE 入口的呈现类别，决定侧边栏标签与图标；不授予能力、不参与类别解析或授权。
+ *
+ * DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
+ * labels the entry by capabilityCategories ∪ this value; it grants nothing.
  */
-export interface AccountPreferencesUpdate {
-    accent?:               string;
-    componentPreferences?: AccountComponentPreferenceChange[];
-    expectedVersion:       number;
-    followSystem?:         boolean;
-    /**
-     * Kailo UI language (REQ-08).
-     */
-    locale?: ProtocolSessionLocale;
-    theme?:  string;
+export enum NativePageCategory {
+    DataQuery = "data_query",
+    FileStorage = "file_storage",
+    Knowledge = "knowledge",
 }
 
-export interface AccountComponentPreferenceChange {
+/**
+ * DD-138(6)：KAILO_EMBED 原生页面 release 向 Kailo 管理区贡献的一项管理面声明（03
+ * FrontendPresentationContract.admin_surface_declarations[]，07 §4.8.5）。值对象，随 APPROVED
+ * release 固定；不授予权限，Core 不保存管理状态。键、路径与文案规则由 Core 登记时校验。
+ *
+ * DD-138(6): present only when the descriptor was requested for a declared admin surface
+ * after a fresh manage check (07 §4.8.5); url is then origin + the declared path and the
+ * host adds kailo_admin_surface=<key>.
+ */
+export interface ComponentAdminSurfaceDeclaration {
+    access:        ComponentAdminAccess;
+    adminCategory: ComponentAdminCategory;
+    description?:  ComponentAdminSurfaceText;
+    /**
+     * 管理面标识，2–4 段以 . 连接，不含组件名；成员、角色、邀请、空间与组织类首段被拒绝。
+     */
     key: string;
     /**
-     * Absent removes the key.
+     * 组件 origin 内的固定路径，以单个 / 开头，不含查询与片段。
      */
-    value?: string;
+    path:               string;
+    requiredPermission: ComponentAdminPermission;
+    title:              ComponentAdminSurfaceText;
+}
+
+/**
+ * DD-138(6)：管理面的可写性（07 §4.8.5）。EDITABLE 为组件自有、页内可改的设置；READ_ONLY 为由 Kailo
+ * 派生或部署声明、组件内只读展示的设置，组件服务端在 Kailo 模式下拒绝对应写接口。
+ */
+export enum ComponentAdminAccess {
+    Editable = "EDITABLE",
+    ReadOnly = "READ_ONLY",
+}
+
+/**
+ * DD-138(6)：组件管理面所属的 Kailo 管理分类（07 §4.8.5）。MODELS 模型、DATA_SOURCES 数据源、STORAGE 存储、INDEXING
+ * 索引与解析、INTEGRATIONS 集成、SYSTEM 系统；不按组件分类。
+ */
+export enum ComponentAdminCategory {
+    DataSources = "DATA_SOURCES",
+    Indexing = "INDEXING",
+    Integrations = "INTEGRATIONS",
+    Models = "MODELS",
+    Storage = "STORAGE",
+    System = "SYSTEM",
+}
+
+export interface ComponentAdminSurfaceText {
+    EN:    string;
+    ZH_CN: string;
+}
+
+/**
+ * DD-138(6)：打开管理面所需的 Kailo 权限（07 §4.8.5）。BINDING_MANAGE 为 binding 所属 scope（Workspace 或
+ * Tenant）的 manage；TENANT_MANAGE 为 Tenant manage。只决定 Kailo 是否列出与签发 descriptor，组件服务端仍按目录角色判定。
+ */
+export enum ComponentAdminPermission {
+    BindingManage = "BINDING_MANAGE",
+    TenantManage = "TENANT_MANAGE",
 }
 
 /**
@@ -2387,18 +2412,6 @@ export interface ApplicationHumanActionPolicy {
 }
 
 /**
- * DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
- * labels the entry by capabilityCategories ∪ this value; it grants nothing.
- *
- * DD-127(4)：NATIVE_PAGE 入口的呈现类别，决定侧边栏标签与图标；不授予能力、不参与类别解析或授权。
- */
-export enum NativePageCategory {
-    DataQuery = "data_query",
-    FileStorage = "file_storage",
-    Knowledge = "knowledge",
-}
-
-/**
  * DD-138：KAILO_EMBED release 向 Kailo 设置页贡献的一项偏好声明（03
  * FrontendPresentationContract.preference_declarations[]，07 §4.8.2）。值对象，随 APPROVED release
  * 固定；Core 不保存偏好的值。键规则、选项数量与文案长度由 Core 登记时校验。
@@ -2465,6 +2478,12 @@ export enum ApplicationBindingState {
  * deployment approved; no native credential or page body is returned.
  */
 export interface ApplicationNativePage {
+    /**
+     * DD-138(6): present only when the descriptor was requested for a declared admin surface
+     * after a fresh manage check (07 §4.8.5); url is then origin + the declared path and the
+     * host adds kailo_admin_surface=<key>.
+     */
+    adminSurface?:  ComponentAdminSurfaceDeclaration;
     allowedOrigins: string[];
     bindingId:      string;
     origin:         string;
@@ -3846,91 +3865,6 @@ export enum ComponentConformanceStepExpectedMcpResultKind {
 }
 
 /**
- * PUT /service/v1/component-directory/bindings/{bindingId}/receipt (DD-164(4)⑥): the
- * component reports the last directory snapshot it fully applied or failed to apply. No
- * personal data; grants nothing; never changes the directory.
- */
-export interface ComponentDirectoryReceiptRequest {
-    appliedAt: string;
-    /**
-     * 64 lowercase hex characters.
-     */
-    directoryVersion: string;
-    failures:         ComponentReceiptFailure[];
-    outcome:          ComponentReceiptOutcome;
-    schema:           number;
-}
-
-export interface ComponentReceiptFailure {
-    kind: ComponentReceiptFailureKind;
-    /**
-     * Upper snake case, at most 64 characters, e.g. NATIVE_OBJECT_MISSING.
-     */
-    reasonCode: string;
-    /**
-     * Kailo id of the failed item (principalId, workspaceId, tenantId or resourceId), at most
-     * 64 characters.
-     */
-    ref: string;
-}
-
-/**
- * DD-164(4)⑥: the directory part a convergence failure item refers to.
- */
-export enum ComponentReceiptFailureKind {
-    Member = "MEMBER",
-    Share = "SHARE",
-    Tenant = "TENANT",
-    Workspace = "WORKSPACE",
-}
-
-/**
- * DD-164(4)⑥: whether the component fully applied the reported directory snapshot.
- */
-export enum ComponentReceiptOutcome {
-    Applied = "APPLIED",
-    Failed = "FAILED",
-}
-
-/**
- * GET /api/v1/application-bindings/{bindingId}/directory-receipt for binding managers
- * (DD-164(4)⑥): the latest receipt compared with the current directory version.
- */
-export interface ComponentDirectoryReceiptView {
-    appliedAt?: string;
-    bindingId:  string;
-    /**
-     * The directory version last served to the component for the reported schema.
-     */
-    currentVersion?: string;
-    failures?:       ComponentReceiptFailureView[];
-    receiptVersion?: string;
-    receivedAt?:     string;
-    schema?:         number;
-    state:           ComponentDirectoryReceiptState;
-}
-
-export interface ComponentReceiptFailureView {
-    kind:       ComponentReceiptFailureKind;
-    reasonCode: string;
-    ref:        string;
-}
-
-/**
- * DD-164(4)⑥: CONVERGED: the latest receipt is APPLIED for the version last served to the
- * component; PENDING: a newer version was served within two read intervals; NOT_CONVERGED:
- * the component has not applied what it was served for longer, or stopped reading for more
- * than two intervals; FAILED: the latest receipt is FAILED; NO_RECEIPT: never reported.
- */
-export enum ComponentDirectoryReceiptState {
-    Converged = "CONVERGED",
-    Failed = "FAILED",
-    NoReceipt = "NO_RECEIPT",
-    NotConverged = "NOT_CONVERGED",
-    Pending = "PENDING",
-}
-
-/**
  * Read-only member directory snapshot for an embedded component (.design/07 §4.7.4,
  * DD-133(4)): every ACTIVE HUMAN member in the native page entry binding's scope with Kailo
  * display name, avatar URL, Tenant role and ACTIVE Workspace memberships. A full snapshot,
@@ -4005,145 +3939,6 @@ export interface ComponentDirectoryWorkspace {
 }
 
 /**
- * Member directory snapshot schema 2 (.design/07 §4.7.4, DD-164(2)(4)): schema 1 plus Kailo
- * create permissions and the Resource-level share projection. Served only for ?schema=2;
- * directoryVersion is the SHA-256 (hex) of the canonical JSON of every other field of this
- * response.
- */
-export interface ComponentMemberDirectoryV2 {
-    bindingId: string;
-    /**
-     * Lowercase hex SHA-256 of the canonical JSON of this snapshot without directoryVersion;
-     * unchanged content keeps the same version.
-     */
-    directoryVersion: string;
-    members:          ComponentDirectoryV2Member[];
-    /**
-     * Always 2.
-     */
-    schema: number;
-    /**
-     * Every ACTIVE component.shared_object Resource of this binding, ordered by resourceId.
-     */
-    shares: ComponentDirectoryShare[];
-    tenant: ComponentDirectoryV2Tenant;
-    /**
-     * Every ACTIVE Workspace in the binding scope (only the binding's own Workspace when it has
-     * one).
-     */
-    workspaces: ComponentDirectoryV2Workspace[];
-}
-
-export interface ComponentDirectoryV2Member {
-    /**
-     * Kailo display name: the member's SERVER HUMAN kind:0 display_name (else name), else the
-     * HumanIdentity display name.
-     */
-    displayName: string;
-    /**
-     * One entry per ACTIVE external identity; the component keys its account on issuer +
-     * subject.
-     */
-    identities:  ComponentDirectoryV2Identity[];
-    principalId: string;
-    /**
-     * SpiceDB Tenant create for this principal (fully consistent).
-     */
-    tenantCreate: boolean;
-    tenantRole:   ComponentDirectoryRole;
-    workspaces:   ComponentDirectoryV2Membership[];
-}
-
-export interface ComponentDirectoryV2Identity {
-    issuer: string;
-    /**
-     * <PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>, the same value as the IdP picture
-     * claim.
-     */
-    picture: string;
-    subject: string;
-}
-
-export interface ComponentDirectoryV2Membership {
-    /**
-     * SpiceDB Workspace create for this principal (fully consistent).
-     */
-    create:      boolean;
-    role:        ComponentDirectoryRole;
-    workspaceId: string;
-}
-
-export interface ComponentDirectoryShare {
-    /**
-     * Owner first as WRITE, then the reader/editor relationships whose subject is still in this
-     * snapshot, ordered by subject kind, id and access.
-     */
-    grants:           ComponentShareGrant[];
-    nativeId:         string;
-    nativeType:       ComponentSharedNativeType;
-    ownerPrincipalId: string;
-    resourceId:       string;
-}
-
-/**
- * DD-164(4): one grant on a component shared object. TENANT subjects only accept READ.
- */
-export interface ComponentShareGrant {
-    access:  ComponentShareAccess;
-    subject: ComponentShareSubject;
-}
-
-/**
- * DD-164(4): access granted on a component shared object. READ writes the SpiceDB reader
- * relationship, WRITE writes editor.
- */
-export enum ComponentShareAccess {
-    Read = "READ",
-    Write = "WRITE",
-}
-
-/**
- * DD-164(4): grantee of a component shared object. PRINCIPAL carries principalId (a
- * same-Tenant ACTIVE HUMAN), WORKSPACE carries workspaceId (an ACTIVE Workspace of the
- * Tenant), TENANT carries neither.
- */
-export interface ComponentShareSubject {
-    kind:         ComponentShareSubjectKind;
-    principalId?: string;
-    workspaceId?: string;
-}
-
-/**
- * DD-164(4): who a component shared object is granted to: one Tenant HUMAN member, every
- * member of a Workspace (workspace#member), or every Tenant member (tenant#member, READ
- * only).
- */
-export enum ComponentShareSubjectKind {
-    Principal = "PRINCIPAL",
-    Tenant = "TENANT",
-    Workspace = "WORKSPACE",
-}
-
-/**
- * DD-164(4) shareable native object types, fixed per presentation category: file_storage ->
- * folder, knowledge -> knowledge_base (phase 1).
- */
-export enum ComponentSharedNativeType {
-    Folder = "folder",
-    KnowledgeBase = "knowledge_base",
-}
-
-export interface ComponentDirectoryV2Tenant {
-    name:     string;
-    tenantId: string;
-}
-
-export interface ComponentDirectoryV2Workspace {
-    name:        string;
-    workspaceId: string;
-}
-
-/**
  * DD-138(4)、07 §4.8.3：组件以其成员目录 client 的 client-credentials 令牌向 Core 服务监听面 POST
  * /service/v1/component-notifications/bindings/{bindingId}/notifications 投递的一条通知。不建立
  * ActionExecution、不授予权限；未知字段整体拒绝。
@@ -4182,6 +3977,8 @@ export interface ComponentNotificationDelivery {
  *
  * 组件以 OIDC issuer + subject 指称 Kailo 成员（与 07 §4.7.4 成员目录 identities[] 同值）；Core 只在该 binding
  * 当前目录范围内解析。
+ *
+ * count meter 必填、file_storage_bytes 不得出现；须在该 binding 当前目录范围内。
  */
 export interface ComponentPersonRef {
     issuer:  string;
@@ -4402,75 +4199,141 @@ export interface ComponentSearchQuery {
 }
 
 /**
- * Answer to a share intent: the opaque intent the component passes to the Kailo host in
- * wire v1 {type: share}.
+ * DD-165(3)：额度准入结论。OpenMeter 不可读时 Core 以 503 回应而不给出结论，组件不得放行。组件可把 ALLOWED 缓存至多 60 秒。
  */
-export interface ComponentShareIntentCreated {
-    expiresAt: string;
-    intentId:  string;
+export interface ComponentUsageAdmission {
+    decision: ComponentUsageDecision;
+    /**
+     * 该额度项当前周期的结束时刻（RFC3339）；没有 entitlement 时不给出。
+     */
+    periodResetAt?: string;
 }
 
 /**
- * POST /service/v1/component-directory/bindings/{bindingId}/share-intents (DD-164(4)②): the
- * component service names the native object its user wants to share. Only sent when the
- * initiator may share the object natively; grants nothing.
+ * DD-165(3)：组件额度准入结论（CHECK，不预留）。TENANT_QUOTA_EXHAUSTED：该 Tenant
+ * 的额度项无访问；MEMBER_QUOTA_EXHAUSTED：设置了成员上限且本人本期已用不小于它。两者组件都拒绝该动作且不产生原生副作用。QUOTA_NOT_CONFIGURED：该
+ * Tenant 的额度项还没有 entitlement（发布对齐未完成，DD-165(5)），组件同样拒绝并提示额度尚未在 Kailo 中完成登记。
  */
-export interface ComponentShareIntentRequest {
-    initiator: ComponentShareInitiator;
+export enum ComponentUsageDecision {
+    Allowed = "ALLOWED",
+    MemberQuotaExhausted = "MEMBER_QUOTA_EXHAUSTED",
+    QuotaNotConfigured = "QUOTA_NOT_CONFIGURED",
+    TenantQuotaExhausted = "TENANT_QUOTA_EXHAUSTED",
+}
+
+/**
+ * DD-165、07 §4.8.9：组件在动作开始前向 POST
+ * /service/v1/component-usage/bindings/{bindingId}/admission 询问额度。身份、前提与 meter
+ * 类别规则同上报；未知字段整体拒绝。
+ */
+export interface ComponentUsageAdmissionRequest {
     /**
-     * Display name, 1-200 characters.
+     * count meter 必填、file_storage_bytes 不得出现；须在该 binding 当前目录范围内。
      */
-    name: string;
+    member?:  ComponentPersonRef;
+    meterKey: ComponentUsageMeter;
+}
+
+/**
+ * DD-165、07 §4.8.9：组件可上报或询问准入的平台 meter，随 Core 固定。knowledge_answer_count 只属 knowledge
+ * 呈现类别、data_query_count 只属 data_query、file_storage_bytes 只属
+ * file_storage；component_model_tokens 只来自 Gateway durable usage，不可上报。
+ */
+export enum ComponentUsageMeter {
+    DataQueryCount = "data_query_count",
+    FileStorageBytes = "file_storage_bytes",
+    KnowledgeAnswerCount = "knowledge_answer_count",
+}
+
+/**
+ * DD-165(4)：GET /api/v1/usage/components?from=&to=，Tenant 在区间内按组件（binding）拆分的 committed
+ * usage。调用方须持有 Tenant audit permission，每次 fresh Check。数值直接读 OpenMeter（group_by
+ * component_binding_id），不复制成账本；缺失事实以确定状态表达。
+ */
+export interface ComponentUsagePage {
     /**
-     * 1-255 visible characters: Cells node UUID or WeKnora knowledge base ID.
+     * RFC3339，含
      */
-    nativeId:   string;
-    nativeType: ComponentSharedNativeType;
+    from:   string;
+    meters: ComponentMeterUsage[];
     /**
-     * The Kailo Workspace whose root contains the object, absent for Tenant-level objects.
+     * RFC3339，不含
+     */
+    to: string;
+}
+
+export interface ComponentMeterUsage {
+    /**
+     * 原生 meter 的聚合方式原文
+     */
+    aggregation?: string;
+    bindings:     ComponentBindingUsage[];
+    /**
+     * 随 Core 固定的组件 meter 键
+     */
+    meterKey: string;
+    state:    MeterUsageState;
+}
+
+export interface ComponentBindingUsage {
+    bindingId:           string;
+    nativePageCategory?: NativePageCategory;
+    /**
+     * OpenMeter 返回的十进制原文
+     */
+    quantity: string;
+    /**
+     * Workspace 级 binding 的 Workspace；Tenant 级 binding 不给出
      */
     workspaceId?: string;
 }
 
-export interface ComponentShareInitiator {
-    issuer:  string;
-    subject: string;
+/**
+ * 一个已登记 meter 在所选区间内的 OpenMeter committed usage 查询结论（.design/11 §7）。COMMITTED：原生查询返回该
+ * Customer 的聚合值；NO_COMMITTED_USAGE：原生查询成功且区间内没有已存储事件；WORKSPACE_DIMENSION_UNAVAILABLE：原生
+ * meter 未声明 workspace_id 维度，不能按 Workspace 归因；METER_NOT_REGISTERED：动作登记的 meter 在 OpenMeter
+ * 中不存在或不唯一；UNAVAILABLE：查询失败或结果不可查证。后三者都不显示数值。
+ */
+export enum MeterUsageState {
+    Committed = "COMMITTED",
+    MeterNotRegistered = "METER_NOT_REGISTERED",
+    NoCommittedUsage = "NO_COMMITTED_USAGE",
+    Unavailable = "UNAVAILABLE",
+    WorkspaceDimensionUnavailable = "WORKSPACE_DIMENSION_UNAVAILABLE",
 }
 
 /**
- * GET /api/v1/component-shares/intents/{intentId} (DD-164(4)③): what the Kailo share dialog
- * shows. Readable only by the intent's initiator in a current session; an expired, consumed
- * or foreign intent is 404.
+ * DD-165：上报回执。新建 201、同键同内容重复 200（duplicate=true）。usageEventId 是 Core UsageEvent 与 OpenMeter
+ * event 的同一 ID；回执不表示 OpenMeter 已存储。
  */
-export interface ComponentShareIntentView {
+export interface ComponentUsageReceipt {
+    duplicate:    boolean;
+    usageEventId: string;
+}
+
+/**
+ * DD-165、07 §4.8.9：组件以其成员目录 client 的 client-credentials 令牌向 Core 服务监听面 POST
+ * /service/v1/component-usage/bindings/{bindingId}/reports 上报的一条已发生用量。Core 写
+ * COMPONENT_REPORT UsageEvent；不建立 ActionExecution、不授予权限；未知字段整体拒绝。
+ */
+export interface ComponentUsageReport {
     /**
-     * folder: PRINCIPAL, WORKSPACE, TENANT; knowledge_base: WORKSPACE, TENANT (phase 1).
+     * 1–128 个字母、数字、. _ : -，在该 binding 内唯一；同键同内容返回首次结果，同键异内容 409。
      */
-    allowedSubjects: ComponentShareSubjectKind[];
-    bindingId:       string;
+    idempotencyKey: string;
     /**
-     * Fresh share on the existing Resource, or true for the initiator before the first share.
+     * count meter 必填、file_storage_bytes 不得出现；须在该 binding 当前目录范围内。
      */
-    canShare:  boolean;
-    expiresAt: string;
+    member?:  ComponentPersonRef;
+    meterKey: ComponentUsageMeter;
     /**
-     * Current grants without the owner.
+     * RFC3339，不晚于 Core 当前时刻 5 分钟，不早于 7 天前。
      */
-    grants:   ComponentShareGrant[];
-    intentId: string;
-    name:     string;
+    occurredAt: string;
     /**
-     * file_storage or knowledge.
+     * 非负整数；count meter 恰为 1，file_storage_bytes 为字节数且不超过 10^15。
      */
-    nativePageCategory: string;
-    nativeType:         ComponentSharedNativeType;
-    ownerPrincipalId?:  string;
-    /**
-     * Present once the object is a component.shared_object Resource.
-     */
-    resourceId?:      string;
-    resourceVersion?: number;
-    workspaceId?:     string;
+    quantity: number;
 }
 
 export interface ConversationPage {
@@ -5904,6 +5767,51 @@ export interface McpOauthStartRequest {
 }
 
 /**
+ * DD-165(4)：GET /api/v1/usage/me，当前会话成员本人的用量（「我的用量」）。只列带成员维度的额度项；数值直接读 OpenMeter（按 Customer
+ * 与本人 member_principal_id 过滤），不含组织上限与组织已用。
+ */
+export interface MemberUsagePage {
+    items: MemberUsageView[];
+}
+
+export interface MemberUsageView {
+    feature: TenantQuotaFeature;
+    /**
+     * 本人每期上限；未设置成员上限时不给出。
+     */
+    memberLimitPerPeriod?: number;
+    periodResetAt?:        string;
+    state:                 MemberUsageState;
+    /**
+     * 本人本期已用（OpenMeter committed）；state 为 UNAVAILABLE 时不给出。
+     */
+    used?: number;
+}
+
+export enum TenantQuotaFeature {
+    AgentMemoryWrites = "agent_memory_writes",
+    AgentTokens = "agent_tokens",
+    AutomationRuns = "automation_runs",
+    ComponentTokens = "component_tokens",
+    DataQueries = "data_queries",
+    FileStorage = "file_storage",
+    KnowledgeAnswers = "knowledge_answers",
+}
+
+/**
+ *
+ * DD-165(4)：成员本人在一个额度项上的当前状态。AVAILABLE：可用；MEMBER_LIMIT_REACHED：本人已达成员上限；TENANT_EXHAUSTED：组织额度已用完（不显示组织数字）；UNAVAILABLE：OpenMeter
+ * 不可读或映射不唯一，不显示数值。NOT_CONFIGURED：该额度项尚未在 Kailo 中完成登记（DD-165(5)），不显示数值。
+ */
+export enum MemberUsageState {
+    Available = "AVAILABLE",
+    MemberLimitReached = "MEMBER_LIMIT_REACHED",
+    NotConfigured = "NOT_CONFIGURED",
+    TenantExhausted = "TENANT_EXHAUSTED",
+    Unavailable = "UNAVAILABLE",
+}
+
+/**
  * GET /api/v1/moderation/access（DD-125(2)）：原版只对 Community owner/admin 显示的审核入口在 Kailo 对应
  * Tenant manage。canModerate 是与 moderation.ban 准入同一条 fresh 判定（目录开放、非 Platform Catalog、scope
  * guard 与 tenant manage）的提示，不是授权票据，提交时仍完整重新准入；它不读取任何限制或队列事实。
@@ -6211,11 +6119,7 @@ export interface ActionCommand {
      */
     componentReleaseId?:           string;
     componentReleaseRegistration?: ComponentReleaseRegistration;
-    /**
-     * 仅 component.share.set（DD-164(4)）且必带；其他动作携带即拒绝。
-     */
-    componentShareSet?: ComponentShareSet;
-    conversationOpen?:  ConversationOpenRequest;
+    conversationOpen?:             ConversationOpenRequest;
     /**
      * 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
      */
@@ -6612,21 +6516,6 @@ export interface ComponentReleaseRegistration {
 }
 
 /**
- * 仅 component.share.set（DD-164(4)）且必带；其他动作携带即拒绝。
- *
- * Only component.share.set (DD-164(4)③) and required for it: the share intent naming the
- * native object, the expected Resource version when the object is already a
- * component.shared_object Resource (absent on the first share), and the complete grant list
- * that replaces the current one (owner is implicit and never listed). At most 100 grants,
- * no duplicate subject.
- */
-export interface ComponentShareSet {
-    grants:           ComponentShareGrant[];
-    intentId:         string;
-    resourceVersion?: number;
-}
-
-/**
  * 原生私聊的完整 HUMAN Principal 参与者集合，必须包含当前 HUMAN；不接受设备公钥、CONTROL 身份或 Workspace 冒名。
  */
 export interface ConversationOpenRequest {
@@ -7000,18 +6889,19 @@ export interface TenantProfileInput {
 /**
  * 仅 tenant.quota.set（DD-123）
  *
- * DD-123: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
- * OpenMeter entitlement for the platform feature, resetting monthly.
+ * DD-123/DD-165: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
+ * OpenMeter entitlement for the platform feature, resetting monthly; memberLimitPerPeriod
+ * (only knowledge_answers and data_queries) is the per-member cap kept in the same
+ * entitlement's metadata. A setting without it removes the member cap.
  */
 export interface TenantQuotaSetting {
     feature:        TenantQuotaFeature;
     limitPerPeriod: number;
-}
-
-export enum TenantQuotaFeature {
-    AgentMemoryWrites = "agent_memory_writes",
-    AgentTokens = "agent_tokens",
-    AutomationRuns = "automation_runs",
+    /**
+     * DD-165(3): per-member cap per period; only for quota items with a member dimension
+     * (knowledge_answers, data_queries).
+     */
+    memberLimitPerPeriod?: number;
 }
 
 /**
@@ -8554,8 +8444,8 @@ export interface TenantProfileView {
 }
 
 /**
- * DD-123: platform quota items of the Tenant read from OpenMeter (the only authority).
- * Tenant admin and auditor only.
+ * DD-123/DD-165: platform quota items of the Tenant read from OpenMeter (the only
+ * authority). Tenant admin and auditor only.
  */
 export interface TenantQuotaPage {
     quotas: TenantQuotaView[];
@@ -8570,8 +8460,13 @@ export interface TenantQuotaView {
     hardLimit:       boolean;
     hasAccess:       boolean;
     limitPerPeriod?: number;
-    periodResetAt?:  string;
-    usage?:          number;
+    /**
+     * DD-165(3): per-member cap kept in the entitlement metadata; absent when no member cap is
+     * set.
+     */
+    memberLimitPerPeriod?: number;
+    periodResetAt?:        string;
+    usage?:                number;
 }
 
 export enum TenantQuotaPageSetActionKey {
@@ -8698,20 +8593,6 @@ export interface UsageMeterView {
      */
     quantity?: string;
     state:     MeterUsageState;
-}
-
-/**
- * 一个已登记 meter 在所选区间内的 OpenMeter committed usage 查询结论（.design/11 §7）。COMMITTED：原生查询返回该
- * Customer 的聚合值；NO_COMMITTED_USAGE：原生查询成功且区间内没有已存储事件；WORKSPACE_DIMENSION_UNAVAILABLE：原生
- * meter 未声明 workspace_id 维度，不能按 Workspace 归因；METER_NOT_REGISTERED：动作登记的 meter 在 OpenMeter
- * 中不存在或不唯一；UNAVAILABLE：查询失败或结果不可查证。后三者都不显示数值。
- */
-export enum MeterUsageState {
-    Committed = "COMMITTED",
-    MeterNotRegistered = "METER_NOT_REGISTERED",
-    NoCommittedUsage = "NO_COMMITTED_USAGE",
-    Unavailable = "UNAVAILABLE",
-    WorkspaceDimensionUnavailable = "WORKSPACE_DIMENSION_UNAVAILABLE",
 }
 
 /**

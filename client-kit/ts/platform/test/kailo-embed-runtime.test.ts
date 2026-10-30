@@ -41,7 +41,7 @@ function fromParent(data: unknown, origin = KAILO, from: Window | null = host?.c
 beforeEach(() => {
   delete window.KailoEmbed;
   window.sessionStorage.clear();
-  for (const name of ["data-kailo-theme", "data-kailo-embedded", "data-kailo-runtime", "data-kailo-theme-switching", "lang", "style"])
+  for (const name of ["data-kailo-theme", "data-kailo-embedded", "data-kailo-runtime", "data-kailo-theme-switching", "data-kailo-admin-surface", "lang", "style"])
     document.documentElement.removeAttribute(name);
   document.head.querySelectorAll('meta[name="kailo-web-origin"], meta[name="kailo-embed-features"]').forEach((meta) => meta.remove());
 });
@@ -61,6 +61,32 @@ describe("kailo-embed.js", () => {
     // An OIDC callback drops the query string; the tab keeps what Kailo sent.
     delete window.KailoEmbed;
     expect(load().getState()).toMatchObject({ theme: "dark", locale: "en" });
+  });
+
+  it("exposes the admin surface Kailo launched, bound to the launched path (DD-138(6))", () => {
+    const embed = load({ search: "?kailo_theme=light&kailo_locale=zh-CN&kailo_admin_surface=models.catalog" });
+    expect(embed.adminSurface()).toBe("models.catalog");
+    expect(document.documentElement.getAttribute("data-kailo-admin-surface")).toBe("models.catalog");
+    // An OIDC callback back to the same path keeps it.
+    delete window.KailoEmbed;
+    document.documentElement.removeAttribute("data-kailo-admin-surface");
+    expect(load().adminSurface()).toBe("models.catalog");
+    // Another document of the same origin in this tab (the business page) never inherits it.
+    delete window.KailoEmbed;
+    window.history.replaceState(null, "", "/files/");
+    new Function(source)();
+    expect(window.KailoEmbed!.adminSurface()).toBeNull();
+    // A fresh Kailo launch without the parameter clears it, and a malformed key is ignored.
+    delete window.KailoEmbed;
+    expect(load({ search: "?kailo_theme=light" }).adminSurface()).toBeNull();
+    delete window.KailoEmbed;
+    expect(load().adminSurface()).toBeNull();
+    delete window.KailoEmbed;
+    expect(load({ search: "?kailo_admin_surface=models.catalog&kailo_admin_surface=models.catalog" }).adminSurface()).toBeNull();
+    for (const bad of ["Models.catalog", "models", "models.catalog%3Fx", "a.b.c.d.e"]) {
+      delete window.KailoEmbed;
+      expect(load({ search: `?kailo_admin_surface=${bad}` }).adminSurface()).toBeNull();
+    }
   });
 
   it("rejects unknown launch values and falls back to the device defaults", () => {

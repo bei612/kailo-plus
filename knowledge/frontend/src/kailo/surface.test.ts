@@ -7,6 +7,7 @@ import {
   kailoHiddenSettingsSection,
   kailoSettingsMinRole,
   kailoVisibleCommands,
+  nativeSettingsLinks,
   resolveSettingsSection,
   userMenuModel,
   visibleSettingsSections,
@@ -92,8 +93,8 @@ test('Kailo mode keeps only the knowledge business commands in the palette (DD-1
     { id: 'open-product-tour' },
     { id: 'some-future-upstream-command' },
   ]
-  assert.deepEqual(kailoVisibleCommands(commands, true).map((c) => c.id), ['new-chat', 'open-kb-list', 'open-agents'])
-  assert.deepEqual([...KAILO_PALETTE_COMMANDS].sort(), ['new-chat', 'open-agents', 'open-kb-list'])
+  assert.deepEqual(kailoVisibleCommands(commands, true).map((c) => c.id), ['new-chat', 'open-kb-list'])
+  assert.deepEqual([...KAILO_PALETTE_COMMANDS].sort(), ['new-chat', 'open-kb-list'])
   assert.deepEqual(kailoVisibleCommands(commands, false).map((c) => c.id), commands.map((c) => c.id))
 })
 
@@ -109,13 +110,14 @@ const viewer: UserMenuInput = {
   hasVisibleSettings: false,
 }
 
-test('Kailo user menu has no personal entries or logout', () => {
+test('Kailo user menu has no personal, admin or settings entries (DD-138(6))', () => {
   const admin = userMenuModel({
     ...viewer,
     canManageSpace: true,
     canManageMembers: true,
     canManageModels: true,
     canManageSkills: true,
+    isSystemAdmin: true,
     hasVisibleSettings: true,
   })
   assert.equal(admin.personalHeader, false)
@@ -123,11 +125,20 @@ test('Kailo user menu has no personal entries or logout', () => {
   assert.equal(admin.guide, false)
   assert.equal(admin.logout, false)
   assert.equal(admin.members, false)
-  assert.equal(admin.spaceSettings, true)
-  assert.equal(admin.models, true)
-  assert.equal(admin.allSettings, true)
-  assert.equal(admin.dropdown, true)
+  assert.equal(admin.spaceSettings, false)
+  assert.equal(admin.models, false)
+  assert.equal(admin.skills, false)
+  assert.equal(admin.allSettings, false)
+  assert.equal(admin.systemAdmin, false)
+  // Only the space line remains; without a switcher it is static.
+  assert.equal(admin.dropdown, false)
   assert.equal(admin.render, true)
+  assert.equal(userMenuModel({ ...viewer, canManageSpace: true, isSystemAdmin: true, hasTenantSwitcher: true }).dropdown, true)
+})
+
+test('business pages carry no native settings links in Kailo mode', () => {
+  assert.equal(nativeSettingsLinks(true), false)
+  assert.equal(nativeSettingsLinks(false), true)
 })
 
 test('Kailo viewer without switcher sees a static space line', () => {

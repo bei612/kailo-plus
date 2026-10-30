@@ -6,12 +6,16 @@ import (
 )
 
 func deploymentCapabilitiesFromRouter(params RouterParams) handler.DeploymentCapabilitiesData {
+	// Kailo DD-163 (design 07 §4.8.8): custom agents, IM integrations and web
+	// embedding are closed in Kailo mode (middleware.KailoConvergeGuard), so
+	// the frontend hides their tabs, menus, routes and palette groups.
+	kailo := params.Config != nil && params.Config.KailoEnabled()
 	return handler.BuildDeploymentCapabilities(handler.Edition, handler.DeploymentFeatureAvailability{
 		Organizations: params.OrganizationHandler != nil,
-		Agents:        params.CustomAgentHandler != nil,
-		IM:            params.IMHandler != nil,
+		Agents:        params.CustomAgentHandler != nil && !kailo,
+		IM:            params.IMHandler != nil && !kailo,
 		// Match RegisterEmbedChannelRoutes: management routes depend on handler only.
-		Embed: params.EmbedChannelHandler != nil,
+		Embed: params.EmbedChannelHandler != nil && !kailo,
 		// Match RegisterMCPEndpointRoutes / RegisterMCPServerRoutes.
 		MCPServer: params.MCPEndpointHandler != nil && params.MCPServer != nil && params.MCPEndpointService != nil,
 		API:       params.TenantHandler != nil && params.TenantAPIKeyService != nil,

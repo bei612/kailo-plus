@@ -215,7 +215,8 @@ describe('native instance identity boundary', () => {
 
   it.each([
     '/',
-    '/setup/connection',
+    '/home',
+    '/kailo-admin/modeling?kailo_admin_surface=semantic.modeling',
     '/api/graphql',
     '/api/v1/knowledge/instructions',
     '/api/v1/knowledge/sql_pairs/42',
@@ -1478,6 +1479,125 @@ describe('native instance identity boundary', () => {
     expect(
       (await middleware(request('/', `Bearer ${await token()}`))).status,
     ).toBe(503);
+  });
+
+  // DD-138(6) (`07` §4.8.5): the native admin console is closed server-side;
+  // only a declared admin surface path with its own key is served.
+  const expectBusinessHome = (response: Response, home = '/home') => {
+    expect(response.status).toBe(307);
+    expect(response.headers.get('x-middleware-next')).toBeNull();
+    const location = new URL(response.headers.get('location'));
+    expect(location.origin).toBe(settings.publicOrigin);
+    expect(location.pathname).toBe(home);
+    expect(location.search).toBe('');
+  };
+
+  it.each([
+    '/modeling',
+    '/modeling?viewId=1&openMetadata=true',
+    '/modeling/',
+    '/setup',
+    '/setup/connection',
+    '/setup/models',
+    '/setup/relationships',
+    '/kailo-admin',
+    '/kailo-admin/modeling',
+    '/kailo-admin/modeling?kailo_admin_surface=system.project',
+    '/kailo-admin/modeling?kailo_admin_surface=semantic.modeling&kailo_admin_surface=semantic.modeling',
+    '/kailo-admin/modeling?kailo_admin_surface=Semantic.modeling',
+    '/kailo-admin/modeling?kailo_admin_surface=semantic.unknown',
+    '/kailo-admin/data-source?kailo_admin_surface=semantic.modeling',
+    '/kailo-admin/project?kailo_admin_surface=dataSources.connection',
+    '/kailo-admin/other?kailo_admin_surface=system.project',
+  ])(
+    'bound HUMAN %s is sent to the business home before any page or Core call',
+    async (path) => {
+      const response = await middleware(
+        request(path, `Bearer ${await token()}`),
+      );
+      expectBusinessHome(response);
+      expect(bindingServiceCall).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['/kailo-admin/data-source', 'dataSources.connection'],
+    ['/kailo-admin/modeling', 'semantic.modeling'],
+    ['/kailo-admin/project', 'system.project'],
+  ])(
+    'serves the declared admin surface %s only with its own key %s',
+    async (path, key) => {
+      const response = await middleware(
+        request(
+          `${path}?kailo_admin_surface=${key}&kailo_theme=dark&kailo_locale=en`,
+          `Bearer ${await token()}`,
+        ),
+      );
+      expect(response.headers.get('x-middleware-next')).toBe('1');
+      expect(bindingServiceCall).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('keeps the locale when it closes an English native admin route', async () => {
+    const localized = new NextRequest(`${settings.publicOrigin}/en/modeling`, {
+      nextConfig: {
+        i18n: { locales: ['zh-CN', 'en'], defaultLocale: 'zh-CN' },
+      },
+      headers: { authorization: `Bearer ${await token()}` },
+    });
+    expectBusinessHome(await middleware(localized), '/en/home');
+    expectBusinessHome(
+      await middleware(request('/en/setup', `Bearer ${await token()}`)),
+      '/en/home',
+    );
+  });
+
+  it.each([
+    '/modeling',
+    '/kailo-admin/modeling?kailo_admin_surface=semantic.modeling',
+  ])(
+    'never redirects an anonymous request to %s (it stays 401)',
+    async (path) => {
+      const response = await middleware(request(path));
+      expect(response.status).toBe(401);
+    },
+  );
+
+  it('closes the original admin routes for an independent instance too', async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+    const bearer = `Bearer ${await token()}`;
+    expectBusinessHome(await middleware(request('/modeling', bearer)));
+    expectBusinessHome(await middleware(request('/setup/connection', bearer)));
+    expect(
+      (await middleware(request('/home', bearer))).headers.get(
+        'x-middleware-next',
+      ),
+    ).toBe('1');
+  });
+
+  it('serves an independent instance admin surface to nobody but the directory Tenant admin', async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+    // No applied member directory: everyone is a member, nobody an admin.
+    expectBusinessHome(
+      await middleware(
+        request(
+          '/kailo-admin/project?kailo_admin_surface=system.project',
+          `Bearer ${await token()}`,
+        ),
+      ),
+    );
+  });
+
+  it.each([
+    '/api/graphql',
+    '/api/config',
+    '/_next/static/chunks/pages/kailo-admin/modeling.js',
+    '/kailo/kailo-embed.js',
+  ])('leaves %s to the original identity boundary', async (path) => {
+    const response = await middleware(request(path, `Bearer ${await token()}`));
+    expect(response.status).not.toBe(307);
   });
 
   it('fails closed when the configured key service is unavailable', async () => {

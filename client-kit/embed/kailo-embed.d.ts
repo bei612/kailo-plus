@@ -109,6 +109,11 @@ export interface KailoEmbedRuntime {
   onLocaleChange(listener: (locale: KailoLocale) => void): () => void;
   useIdentityLocale(locale: string): boolean;
   requestTopLevelSignIn(): boolean;
+  /**
+   * DD-138(6): the declared admin surface key Kailo launched this page for
+   * (`kailo_admin_surface`), or null. Render only that admin function; it is no authorization.
+   */
+  adminSurface(): string | null;
   /** DD-138: values Kailo supplied for the release's declared settings items. */
   getPreferences(): KailoPreferenceValues;
   onPreferencesChange(listener: (values: KailoPreferenceValues, changed: string[]) => void): () => void;

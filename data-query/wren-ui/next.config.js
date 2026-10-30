@@ -80,15 +80,8 @@ const nextConfig = withLess({
       },
     ];
   },
-  async redirects() {
-    return [
-      {
-        source: '/setup',
-        destination: '/setup/connection',
-        permanent: true,
-      },
-    ];
-  },
+  // DD-138(6): /setup and /modeling are closed by the middleware (to /home);
+  // the former `/setup` → `/setup/connection` redirect is gone with them.
 });
 
 module.exports = withBundleAnalyzer(nextConfig);

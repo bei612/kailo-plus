@@ -25,6 +25,36 @@ class MetadataBoard extends React.Component{
         this.load();
     }
 
+    componentDidMount(){
+        this.kailoSurfaceState();
+    }
+
+    componentDidUpdate(){
+        this.kailoSurfaceState();
+    }
+
+    // Kailo admin surface files.metadata (DD-138(6), 07 §4.8.5, EDITABLE):
+    // Kailo draws the page header, so "new field" is its header action; the
+    // page is shown once the fields are loaded.
+    kailoSurfaceState(){
+        const kailo = window.KailoCells;
+        const {kailoSurface, accessByName} = this.props;
+        if(!kailoSurface || !kailo || !kailo.setAdminSurfaceState){
+            return;
+        }
+        const ready = !this.state.loading;
+        const canCreate = !!accessByName('Create');
+        const key = ready + ':' + canCreate;
+        if(key === this._kailoState){
+            return;
+        }
+        this._kailoState = key;
+        kailo.setAdminSurfaceState({
+            ready,
+            actions: canCreate ? [{id: 'create', label: kailo.text('newField'), icon: 'plus', variant: 'primary', run: () => this.create()}] : [],
+        });
+    }
+
     load(){
         this.setState({loading: true});
         Metadata.loadNamespaces().then(result => {
@@ -145,9 +175,13 @@ class MetadataBoard extends React.Component{
 
         const title = currentNode.getLabel();
         const icon = currentNode.getMetadata().get('icon_class');
+        const kailo = window.KailoCells;
+        // On a Kailo admin surface the header (title, "new field") is Kailo's
+        // when it draws page headers; a top-level visit keeps this one.
+        const kailoHeader = !!(this.props.kailoSurface && kailo && kailo.pageHosted && kailo.pageHosted());
         let buttons = [];
         const actions = [];
-        if(customButtons) {
+        if(customButtons && !this.props.kailoSurface) {
             customButtons.forEach(b => {
                 if(b.access && !accessByName(b.access)){
                     return
@@ -206,13 +240,13 @@ class MetadataBoard extends React.Component{
                     policiesBuilder={policiesBuilder}
                 />}
                 <div className="vertical-layout" style={{width:'100%'}}>
-                    <AdminComponents.Header
+                    {!kailoHeader && <AdminComponents.Header
                         title={title}
                         icon={icon}
                         actions={buttons}
                         reloadAction={this.load.bind(this)}
                         loading={loading}
-                    />
+                    />}
                     {async && <AsyncComponent namespace={async.namespace} componentName={async.component} onDismiss={()=>this.setState({async: null}, () => {this.load()})}/>}
                     <div className="layout-fill">
                         <AdminComponents.SubHeader title={m('namespaces')} legend={m('namespaces.legend')}/>

@@ -215,6 +215,8 @@ import { shouldShowConversationTimestamp } from '@/utils/messageTimestamp';
 import ChatHeader from '@/components/ChatHeader.vue';
 import { isKailoShell } from '@/kailo/setup';
 import { usePageHeader } from '@/kailo/page';
+import { chatEndpoint } from '@/kailo/converge';
+import { isKailoMode } from '@/kailo/runtime';
 import { removeSession, setSessionPinned } from '@/components/sessionMutations';
 import {
     notifySessionMutation,
@@ -1426,7 +1428,8 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     const mcpServiceIds = [...new Set((mentionedItems || []).filter(item => item.type === 'mcp' && item.id).map(item => item.id))];
     const skillNames = [...new Set((mentionedItems || []).filter(item => item.type === 'skill' && item.id).map(item => item.skill_name || item.id))];
 
-    const endpoint = agentEnabled ? '/api/v1/agent-chat' : '/api/v1/knowledge-chat';
+    // Kailo DD-163: Kailo mode answers through knowledge-chat only.
+    const endpoint = chatEndpoint(Boolean(agentEnabled), isKailoMode());
 
     const requestMcpServiceIds = agentEnabled ? mcpServiceIds : [];
     const requestSkillNames = agentEnabled ? skillNames : [];

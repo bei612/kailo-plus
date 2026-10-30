@@ -111,6 +111,80 @@
         return !!(start && start.KAILO_EMBED && typeof start.KAILO_EMBED === 'object');
     }
 
+    // ---- DD-138(6) admin surfaces (07 §4.8.5) -------------------------------
+    // Kailo loads one declared admin function at its fixed path with
+    // kailo_admin_surface=<key>. The allowlist equals adminSurfaces of
+    // fork/release/manifest.native-page.json and the server allowlist
+    // (frontend/web/kailo-admin.go), which already refused any other admin
+    // path before this page was served. The key only selects what renders.
+    var ADMIN_SEGMENT = '/kailo-admin';
+    var ADMIN_PARAM = 'kailo_admin_surface';
+    var ADMIN_STORE = 'kailo-embed-admin-surface'; // kept by kailo-embed.js for the launched path
+    var ADMIN_KEY = /^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*){1,3}$/;
+    var KAILO_ADMIN_SURFACES = {
+        'storage.dataSources': {
+            path: '/kailo-admin/data-sources', node: '/data/datasources', component: 'AdminWorkspaces.DataSourcesBoard',
+            access: 'READ_ONLY', title: {'zh-CN': '文件存储位置', en: 'File storage locations'},
+        },
+        'files.metadata': {
+            path: '/kailo-admin/metadata', node: '/data/metadata', component: 'AdminWorkspaces.MetadataBoard',
+            access: 'EDITABLE', title: {'zh-CN': '文件元数据字段', en: 'File metadata fields'},
+        },
+    };
+
+    function currentPath() {
+        return String((window.location && window.location.pathname) || '');
+    }
+
+    // This document is an admin surface page (Kailo mode, /kailo-admin/...):
+    // it renders that one admin function or the unavailable state, nothing else.
+    function adminSurfacePage() {
+        var p = currentPath();
+        return kailoMode() && (p === ADMIN_SEGMENT || p.indexOf(ADMIN_SEGMENT + '/') === 0);
+    }
+
+    // The launched key: the runtime's value for this document; after the
+    // in-page OIDC return (LoginCallbackRouter puts back the saved path and
+    // query) the query of the current location, else the tab's record of the
+    // launch when it was for this very path.
+    function launchedSurfaceKey() {
+        var key = embed && typeof embed.adminSurface === 'function' ? embed.adminSurface() : null;
+        if (key) {
+            return key;
+        }
+        try {
+            var values = new URLSearchParams(window.location.search || '').getAll(ADMIN_PARAM);
+            if (values.length) {
+                return values.length === 1 ? values[0] : null;
+            }
+        } catch {
+            return null;
+        }
+        var stored = readJSON(ADMIN_STORE);
+        return stored && typeof stored.key === 'string' && stored.path === currentPath() ? stored.key : null;
+    }
+
+    // The declared surface this page renders, or null: unknown key, a key
+    // declared for another path, a missing or malformed key.
+    function adminSurface() {
+        if (!adminSurfacePage()) {
+            return null;
+        }
+        var key = launchedSurfaceKey();
+        if (typeof key !== 'string' || key.length > 64 || !ADMIN_KEY.test(key) ||
+            !Object.prototype.hasOwnProperty.call(KAILO_ADMIN_SURFACES, key)) {
+            return null;
+        }
+        var s = KAILO_ADMIN_SURFACES[key];
+        if (s.path !== currentPath()) {
+            return null;
+        }
+        return {
+            key: key, node: s.node, component: s.component, access: s.access, readOnly: s.access === 'READ_ONLY',
+            title: s.title[embedState().locale === 'en' ? 'en' : 'zh-CN'],
+        };
+    }
+
     function presentation() {
         var s = embedState();
         return {theme: s.theme, dark: s.theme === 'dark', locale: s.locale, language: nativeLanguage(s.locale), embedded: !!s.embedded};
@@ -270,6 +344,13 @@
             deleteShares: '删除全部分享？', deleteSharesBody: '公开链接和共享成员将立即失去访问权限。',
             dropTo: '松开即可上传到「{0}」', uploadFailed: '未能开始上传',
             shareFolderOnly: '只能分享文件夹', shareUnavailable: '暂时无法分享，请稍后重试',
+            adminUnavailable: '该管理项不可用', adminUnavailableBody: '请回到 Kailo 管理区重新打开。', newField: '新建字段',
+            dsName: '名称', dsType: '存储类型', dsState: '状态', dsEnabled: '已启用', dsDisabled: '已停用',
+            storageLocal: '本地文件系统', storageS3: 'S3 兼容对象存储', storageAzure: 'Azure Blob 存储', storageGcs: 'Google Cloud 存储',
+            dsFolder: '存放目录', dsBucket: '存储桶', dsEndpoint: '服务端点', dsRegion: '区域', dsFormat: '存储格式',
+            dsFlat: '扁平（只经云盘访问）', dsStructured: '结构化（与目录结构一致）', dsReadOnly: '只读存储', yes: '是',
+            dsVersioning: '版本保留', dsNoVersioning: '不保留版本', dsEncryption: '加密', dsEncrypted: '已启用', dsNotEncrypted: '未启用',
+            dsPeer: '服务节点', close: '关闭',
         },
         en: {
             home: 'Home', files: 'All files', bookmarks: 'Favorites', search: 'Search results',
@@ -283,6 +364,13 @@
             deleteShares: 'Delete all shares?', deleteSharesBody: 'Public links and shared members lose access immediately.',
             dropTo: 'Drop to upload to "{0}"', uploadFailed: 'Could not start the upload',
             shareFolderOnly: 'Only folders can be shared', shareUnavailable: 'Sharing is not available right now. Try again later.',
+            adminUnavailable: 'This admin item is unavailable', adminUnavailableBody: 'Open it again from the Kailo admin area.', newField: 'New field',
+            dsName: 'Name', dsType: 'Storage type', dsState: 'Status', dsEnabled: 'Enabled', dsDisabled: 'Disabled',
+            storageLocal: 'Local file system', storageS3: 'S3-compatible object storage', storageAzure: 'Azure Blob Storage', storageGcs: 'Google Cloud Storage',
+            dsFolder: 'Folder', dsBucket: 'Bucket', dsEndpoint: 'Endpoint', dsRegion: 'Region', dsFormat: 'Storage format',
+            dsFlat: 'Flat (accessed through Files only)', dsStructured: 'Structured (mirrors the folder tree)', dsReadOnly: 'Read-only storage', yes: 'Yes',
+            dsVersioning: 'Version retention', dsNoVersioning: 'No versions kept', dsEncryption: 'Encryption', dsEncrypted: 'On', dsNotEncrypted: 'Off',
+            dsPeer: 'Service node', close: 'Close',
         }
     };
 
@@ -520,6 +608,91 @@
     var lastPage = '';
     var pageTimer = null;
 
+    // Admin surface page (DD-138(6)): the header is Kailo's "管理 › 分类 › 标题";
+    // the page declares only the surface title (and its own actions) once the
+    // panel or the unavailable state is on screen, so the host then reveals it.
+    var surfaceReady = false;
+    var surfaceActions = [];
+    var SURFACE_ICONS = ['plus', 'refresh', 'pencil', 'trash'];
+
+    function setAdminSurfaceState(state) {
+        surfaceReady = !!(state && state.ready);
+        surfaceActions = state && Array.isArray(state.actions) ? state.actions.filter(function (a) {
+            return a && typeof a.id === 'string' && /^[a-z][a-z0-9-]{0,31}$/.test(a.id) && typeof a.run === 'function';
+        }).slice(0, 8) : [];
+        schedulePage();
+    }
+
+    function buildSurfacePage() {
+        handlers = {};
+        if (!surfaceReady) {
+            return null;
+        }
+        var surface = adminSurface();
+        var page = {title: clip(surface ? surface.title : text('adminUnavailable'), 120)};
+        if (!surface) {
+            return page;
+        }
+        var actions = [];
+        surfaceActions.forEach(function (a) {
+            var primary = a.variant === 'primary' && !actions.some(function (b) { return b.variant === 'primary'; });
+            var item = {id: 'surface:' + a.id, label: clip(a.label, 40), variant: primary ? 'primary' : 'secondary'};
+            if (SURFACE_ICONS.indexOf(a.icon) >= 0) {
+                item.icon = a.icon;
+            }
+            if (a.disabled) {
+                item.disabled = true;
+            }
+            actions.push(item);
+            handlers[item.id] = function () { a.run(); };
+        });
+        if (actions.length) {
+            page.actions = actions;
+        }
+        return page;
+    }
+
+    // Read-only facts of one data source for the storage.dataSources surface
+    // (definition list, 20 §13.2). Never a credential: ApiKey/ApiSecret and the
+    // vault references are not read.
+    var STORAGE_TYPES = {LOCAL: 'storageLocal', S3: 'storageS3', AZURE: 'storageAzure', GCS: 'storageGcs'};
+
+    function dataSourceFacts(ds, policies) {
+        if (!ds || typeof ds !== 'object') {
+            return [];
+        }
+        var conf = ds.StorageConfiguration && typeof ds.StorageConfiguration === 'object' ? ds.StorageConfiguration : {};
+        var type = ds.StorageType || 'LOCAL';
+        var facts = [];
+        var add = function (label, value) {
+            var v = clip(value, 400);
+            if (v) {
+                facts.push({label: text(label), value: v});
+            }
+        };
+        add('dsName', ds.Name);
+        add('dsType', STORAGE_TYPES[type] ? text(STORAGE_TYPES[type]) : type);
+        add('dsState', text(ds.Disabled ? 'dsDisabled' : 'dsEnabled'));
+        if (type === 'LOCAL') {
+            add('dsFolder', conf.folder);
+        } else {
+            add('dsBucket', ds.ObjectsBucket ? ds.ObjectsBucket + (ds.ObjectsBaseFolder ? '/' + ds.ObjectsBaseFolder : '') : conf.bucketsRegexp);
+            add('dsEndpoint', conf.customEndpoint);
+            add('dsRegion', conf.customRegion);
+        }
+        add('dsFormat', text(ds.FlatStorage ? 'dsFlat' : 'dsStructured'));
+        if (conf.readOnly === 'true' || conf.readOnly === true) {
+            add('dsReadOnly', text('yes'));
+        }
+        var policy = (Array.isArray(policies) ? policies : []).filter(function (p) {
+            return p && p.Uuid && p.Uuid === ds.VersioningPolicyName;
+        })[0];
+        add('dsVersioning', ds.VersioningPolicyName ? (policy && policy.Name) || ds.VersioningPolicyName : text('dsNoVersioning'));
+        add('dsEncryption', text(ds.EncryptionMode === 'MASTER' ? 'dsEncrypted' : 'dsNotEncrypted'));
+        add('dsPeer', ds.PeerAddress);
+        return facts;
+    }
+
     function nodePath(node) {
         return node && node.getPath ? String(node.getPath() || '/') : '/';
     }
@@ -554,6 +727,9 @@
     }
 
     function buildPage(pydio) {
+        if (adminSurfacePage()) {
+            return buildSurfacePage();
+        }
         var user = pydio && pydio.user;
         if (!user || !user.getRepositoriesList) {
             return null;
@@ -1053,6 +1229,14 @@
         // about, admin console switch, rail theme toggle, notification bell,
         // rail user menu) render only outside Kailo mode; Kailo provides them.
         showPersonalShell: function () { return !kailoMode(); },
+        // DD-138(6) (07 §4.8.5): an admin surface page renders only its one
+        // admin function (adminSurface(), else the unavailable state); in Kailo
+        // mode the native console renders nothing else.
+        adminSurfacePage: adminSurfacePage,
+        adminSurface: adminSurface,
+        // {ready, actions:[{id, label, icon?, variant?, disabled?, run}]} of the surface page.
+        setAdminSurfaceState: setAdminSurfaceState,
+        dataSourceFacts: dataSourceFacts,
         startLogin: startLogin,
         consumeReturnPath: consumeReturnPath,
         // DD-157 (07 §4.8.7): Kailo draws the page header; the GUI renders no

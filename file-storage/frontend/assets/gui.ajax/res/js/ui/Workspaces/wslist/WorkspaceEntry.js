@@ -30,6 +30,7 @@ import ResourcesManager from 'pydio/http/resources-manager'
 const {FoldersTree, DND, ChatIcon} = Pydio.requireLib('components');
 import MetaNodeProvider from 'pydio/model/meta-node-provider'
 import WorkspaceCard from "./WorkspaceCard";
+import {workspaceChatShown} from "../views/kailoChat";
 const {ThemedContainers:{Popover}} = Pydio.requireLib('hoc')
 const { Types, collectDrop, nodeDropTarget } = DND;
 
@@ -409,7 +410,8 @@ class WorkspaceEntry extends React.Component {
             );
         }
 
-        if (!searchView && workspace.getOwner() && !pydio.getPluginConfigs("action.advanced_settings").get("GLOBAL_DISABLE_CHATS")){
+        // DD-163: no shared-space chat (nor its unread icon) in Kailo mode.
+        if (!searchView && workspace.getOwner() && workspaceChatShown(pydio)){
             chatIcon = <ChatIcon pydio={pydio} roomType={'WORKSPACE'} objectId={workspace.getId()}/>
         }
 

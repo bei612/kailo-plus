@@ -1,11 +1,10 @@
-import { useRouter } from 'next/router';
 import Image from 'next/image';
 import { useEffect, useMemo } from 'react';
 import { Button, Form, Alert, Typography } from 'antd';
 import { confirm, notify } from '@/utils/kailoHost';
 import useKailoText from '@/utils/kailoI18n';
 import { makeIterable } from '@/utils/iteration';
-import { DATA_SOURCES, FORM_MODE, Path } from '@/utils/enum';
+import { DATA_SOURCES, FORM_MODE } from '@/utils/enum';
 import { getDataSource, getTemplates } from '@/components/pages/setup/utils';
 import { FlexLoading } from '@/components/PageLoading';
 import ButtonItem from '@/components/pages/setup/ButtonItem';
@@ -28,22 +27,18 @@ interface Props {
   properties: Record<string, any>;
   sampleDataset: SampleDatasetName;
   refetchSettings: () => void;
-  closeModal: () => void;
 }
 
 const SampleDatasetIterator = makeIterable(ButtonItem);
 
 const SampleDatasetPanel = (props: Props) => {
-  const router = useRouter();
-  const { sampleDataset, closeModal } = props;
+  const { sampleDataset, refetchSettings } = props;
   const t = useKailoText();
   const templates = getTemplates();
   const [startSampleDataset] = useStartSampleDatasetMutation({
     onError: (error) => console.error(error),
-    onCompleted: () => {
-      router.push(Path.Home);
-      closeModal();
-    },
+    // DD-138(6): the admin surface stays open and shows the new dataset.
+    onCompleted: () => refetchSettings(),
     refetchQueries: 'active',
   });
 

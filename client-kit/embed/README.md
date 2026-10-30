@@ -6,7 +6,7 @@ Two files every component page (Cells, WeKnora, Wren, and any later
 | File | What it is |
 |---|---|
 | `kailo-theme-tokens.css` | Generated. Kailo's light and dark tokens (`--kailo-*`): colors, font stack, type ramp, radius, elevation. Light on `:root`; dark under `:root[data-kailo-theme="dark"]`. |
-| `kailo-embed.js` | Hand-written, dependency-free runtime (wire protocol v1). Sets the initial theme/locale from `kailo_theme` / `kailo_locale`, follows Kailo's `postMessage` changes (Kailo Web origin only) and exposes callbacks for the component's own theme and i18n. |
+| `kailo-embed.js` | Hand-written, dependency-free runtime (wire protocol v1). Sets the initial theme/locale from `kailo_theme` / `kailo_locale`, exposes the admin surface Kailo launched the page for (`kailo_admin_surface` → `adminSurface()`, DD-138(6), bound to the launched path), follows Kailo's `postMessage` changes (Kailo Web origin only) and exposes callbacks for the component's own theme and i18n. |
 | `kailo-embed.d.ts` | Types of `window.KailoEmbed` for TypeScript components. |
 
 ## Single source

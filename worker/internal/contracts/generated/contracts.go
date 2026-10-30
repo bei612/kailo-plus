@@ -142,17 +142,14 @@
 //    adapterSourceResource, err := UnmarshalAdapterSourceResource(bytes)
 //    bytes, err = adapterSourceResource.Marshal()
 //
-//    accountPreferences, err := UnmarshalAccountPreferences(bytes)
-//    bytes, err = accountPreferences.Marshal()
-//
-//    accountPreferencesUpdate, err := UnmarshalAccountPreferencesUpdate(bytes)
-//    bytes, err = accountPreferencesUpdate.Marshal()
-//
 //    actionCommand, err := UnmarshalActionCommand(bytes)
 //    bytes, err = actionCommand.Marshal()
 //
 //    actionSubmission, err := UnmarshalActionSubmission(bytes)
 //    bytes, err = actionSubmission.Marshal()
+//
+//    adminSurfacePage, err := UnmarshalAdminSurfacePage(bytes)
+//    bytes, err = adminSurfacePage.Marshal()
 //
 //    agentActiveTurnPage, err := UnmarshalAgentActiveTurnPage(bytes)
 //    bytes, err = agentActiveTurnPage.Marshal()
@@ -364,17 +361,8 @@
 //    componentConformanceWireObservation, err := UnmarshalComponentConformanceWireObservation(bytes)
 //    bytes, err = componentConformanceWireObservation.Marshal()
 //
-//    componentDirectoryReceiptRequest, err := UnmarshalComponentDirectoryReceiptRequest(bytes)
-//    bytes, err = componentDirectoryReceiptRequest.Marshal()
-//
-//    componentDirectoryReceiptView, err := UnmarshalComponentDirectoryReceiptView(bytes)
-//    bytes, err = componentDirectoryReceiptView.Marshal()
-//
 //    componentMemberDirectory, err := UnmarshalComponentMemberDirectory(bytes)
 //    bytes, err = componentMemberDirectory.Marshal()
-//
-//    componentMemberDirectoryV2, err := UnmarshalComponentMemberDirectoryV2(bytes)
-//    bytes, err = componentMemberDirectoryV2.Marshal()
 //
 //    componentNotificationDelivery, err := UnmarshalComponentNotificationDelivery(bytes)
 //    bytes, err = componentNotificationDelivery.Marshal()
@@ -406,14 +394,20 @@
 //    componentSearchQuery, err := UnmarshalComponentSearchQuery(bytes)
 //    bytes, err = componentSearchQuery.Marshal()
 //
-//    componentShareIntentCreated, err := UnmarshalComponentShareIntentCreated(bytes)
-//    bytes, err = componentShareIntentCreated.Marshal()
+//    componentUsageAdmission, err := UnmarshalComponentUsageAdmission(bytes)
+//    bytes, err = componentUsageAdmission.Marshal()
 //
-//    componentShareIntentRequest, err := UnmarshalComponentShareIntentRequest(bytes)
-//    bytes, err = componentShareIntentRequest.Marshal()
+//    componentUsageAdmissionRequest, err := UnmarshalComponentUsageAdmissionRequest(bytes)
+//    bytes, err = componentUsageAdmissionRequest.Marshal()
 //
-//    componentShareIntentView, err := UnmarshalComponentShareIntentView(bytes)
-//    bytes, err = componentShareIntentView.Marshal()
+//    componentUsagePage, err := UnmarshalComponentUsagePage(bytes)
+//    bytes, err = componentUsagePage.Marshal()
+//
+//    componentUsageReceipt, err := UnmarshalComponentUsageReceipt(bytes)
+//    bytes, err = componentUsageReceipt.Marshal()
+//
+//    componentUsageReport, err := UnmarshalComponentUsageReport(bytes)
+//    bytes, err = componentUsageReport.Marshal()
 //
 //    conversationOpenRequest, err := UnmarshalConversationOpenRequest(bytes)
 //    bytes, err = conversationOpenRequest.Marshal()
@@ -576,6 +570,9 @@
 //
 //    mCPProbedTool, err := UnmarshalMCPProbedTool(bytes)
 //    bytes, err = mCPProbedTool.Marshal()
+//
+//    memberUsagePage, err := UnmarshalMemberUsagePage(bytes)
+//    bytes, err = memberUsagePage.Marshal()
 //
 //    moderationAccessView, err := UnmarshalModerationAccessView(bytes)
 //    bytes, err = moderationAccessView.Marshal()
@@ -949,6 +946,9 @@
 //    componentActionInput, err := UnmarshalComponentActionInput(bytes)
 //    bytes, err = componentActionInput.Marshal()
 //
+//    componentAdminSurfaceDeclaration, err := UnmarshalComponentAdminSurfaceDeclaration(bytes)
+//    bytes, err = componentAdminSurfaceDeclaration.Marshal()
+//
 //    componentConformanceCaptureValue, err := UnmarshalComponentConformanceCaptureValue(bytes)
 //    bytes, err = componentConformanceCaptureValue.Marshal()
 //
@@ -984,15 +984,6 @@
 //
 //    componentReleaseRegistration, err := UnmarshalComponentReleaseRegistration(bytes)
 //    bytes, err = componentReleaseRegistration.Marshal()
-//
-//    componentShareGrant, err := UnmarshalComponentShareGrant(bytes)
-//    bytes, err = componentShareGrant.Marshal()
-//
-//    componentShareSet, err := UnmarshalComponentShareSet(bytes)
-//    bytes, err = componentShareSet.Marshal()
-//
-//    componentShareSubject, err := UnmarshalComponentShareSubject(bytes)
-//    bytes, err = componentShareSubject.Marshal()
 //
 //    componentText, err := UnmarshalComponentText(bytes)
 //    bytes, err = componentText.Marshal()
@@ -1705,26 +1696,6 @@ func (r *AdapterSourceResource) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
-func UnmarshalAccountPreferences(data []byte) (AccountPreferences, error) {
-	var r AccountPreferences
-	err := json.Unmarshal(data, &r)
-	return r, err
-}
-
-func (r *AccountPreferences) Marshal() ([]byte, error) {
-	return json.Marshal(r)
-}
-
-func UnmarshalAccountPreferencesUpdate(data []byte) (AccountPreferencesUpdate, error) {
-	var r AccountPreferencesUpdate
-	err := json.Unmarshal(data, &r)
-	return r, err
-}
-
-func (r *AccountPreferencesUpdate) Marshal() ([]byte, error) {
-	return json.Marshal(r)
-}
-
 func UnmarshalActionCommand(data []byte) (ActionCommand, error) {
 	var r ActionCommand
 	err := json.Unmarshal(data, &r)
@@ -1742,6 +1713,16 @@ func UnmarshalActionSubmission(data []byte) (ActionSubmission, error) {
 }
 
 func (r *ActionSubmission) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAdminSurfacePage(data []byte) (AdminSurfacePage, error) {
+	var r AdminSurfacePage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdminSurfacePage) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2445,26 +2426,6 @@ func (r *ComponentConformanceWireObservation) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
-func UnmarshalComponentDirectoryReceiptRequest(data []byte) (ComponentDirectoryReceiptRequest, error) {
-	var r ComponentDirectoryReceiptRequest
-	err := json.Unmarshal(data, &r)
-	return r, err
-}
-
-func (r *ComponentDirectoryReceiptRequest) Marshal() ([]byte, error) {
-	return json.Marshal(r)
-}
-
-func UnmarshalComponentDirectoryReceiptView(data []byte) (ComponentDirectoryReceiptView, error) {
-	var r ComponentDirectoryReceiptView
-	err := json.Unmarshal(data, &r)
-	return r, err
-}
-
-func (r *ComponentDirectoryReceiptView) Marshal() ([]byte, error) {
-	return json.Marshal(r)
-}
-
 func UnmarshalComponentMemberDirectory(data []byte) (ComponentMemberDirectory, error) {
 	var r ComponentMemberDirectory
 	err := json.Unmarshal(data, &r)
@@ -2472,16 +2433,6 @@ func UnmarshalComponentMemberDirectory(data []byte) (ComponentMemberDirectory, e
 }
 
 func (r *ComponentMemberDirectory) Marshal() ([]byte, error) {
-	return json.Marshal(r)
-}
-
-func UnmarshalComponentMemberDirectoryV2(data []byte) (ComponentMemberDirectoryV2, error) {
-	var r ComponentMemberDirectoryV2
-	err := json.Unmarshal(data, &r)
-	return r, err
-}
-
-func (r *ComponentMemberDirectoryV2) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2585,33 +2536,53 @@ func (r *ComponentSearchQuery) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
-func UnmarshalComponentShareIntentCreated(data []byte) (ComponentShareIntentCreated, error) {
-	var r ComponentShareIntentCreated
+func UnmarshalComponentUsageAdmission(data []byte) (ComponentUsageAdmission, error) {
+	var r ComponentUsageAdmission
 	err := json.Unmarshal(data, &r)
 	return r, err
 }
 
-func (r *ComponentShareIntentCreated) Marshal() ([]byte, error) {
+func (r *ComponentUsageAdmission) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
-func UnmarshalComponentShareIntentRequest(data []byte) (ComponentShareIntentRequest, error) {
-	var r ComponentShareIntentRequest
+func UnmarshalComponentUsageAdmissionRequest(data []byte) (ComponentUsageAdmissionRequest, error) {
+	var r ComponentUsageAdmissionRequest
 	err := json.Unmarshal(data, &r)
 	return r, err
 }
 
-func (r *ComponentShareIntentRequest) Marshal() ([]byte, error) {
+func (r *ComponentUsageAdmissionRequest) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
-func UnmarshalComponentShareIntentView(data []byte) (ComponentShareIntentView, error) {
-	var r ComponentShareIntentView
+func UnmarshalComponentUsagePage(data []byte) (ComponentUsagePage, error) {
+	var r ComponentUsagePage
 	err := json.Unmarshal(data, &r)
 	return r, err
 }
 
-func (r *ComponentShareIntentView) Marshal() ([]byte, error) {
+func (r *ComponentUsagePage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentUsageReceipt(data []byte) (ComponentUsageReceipt, error) {
+	var r ComponentUsageReceipt
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentUsageReceipt) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentUsageReport(data []byte) (ComponentUsageReport, error) {
+	var r ComponentUsageReport
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentUsageReport) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -3152,6 +3123,16 @@ func UnmarshalMCPProbedTool(data []byte) (MCPProbedTool, error) {
 }
 
 func (r *MCPProbedTool) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalMemberUsagePage(data []byte) (MemberUsagePage, error) {
+	var r MemberUsagePage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *MemberUsagePage) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -4395,6 +4376,16 @@ func (r *ComponentActionInput) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalComponentAdminSurfaceDeclaration(data []byte) (ComponentAdminSurfaceDeclaration, error) {
+	var r ComponentAdminSurfaceDeclaration
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentAdminSurfaceDeclaration) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalComponentConformanceCaptureValue(data []byte) (ComponentConformanceCaptureValue, error) {
 	var r ComponentConformanceCaptureValue
 	err := json.Unmarshal(data, &r)
@@ -4512,36 +4503,6 @@ func UnmarshalComponentReleaseRegistration(data []byte) (ComponentReleaseRegistr
 }
 
 func (r *ComponentReleaseRegistration) Marshal() ([]byte, error) {
-	return json.Marshal(r)
-}
-
-func UnmarshalComponentShareGrant(data []byte) (ComponentShareGrant, error) {
-	var r ComponentShareGrant
-	err := json.Unmarshal(data, &r)
-	return r, err
-}
-
-func (r *ComponentShareGrant) Marshal() ([]byte, error) {
-	return json.Marshal(r)
-}
-
-func UnmarshalComponentShareSet(data []byte) (ComponentShareSet, error) {
-	var r ComponentShareSet
-	err := json.Unmarshal(data, &r)
-	return r, err
-}
-
-func (r *ComponentShareSet) Marshal() ([]byte, error) {
-	return json.Marshal(r)
-}
-
-func UnmarshalComponentShareSubject(data []byte) (ComponentShareSubject, error) {
-	var r ComponentShareSubject
-	err := json.Unmarshal(data, &r)
-	return r, err
-}
-
-func (r *ComponentShareSubject) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -5915,48 +5876,42 @@ type AdapterSearchResult struct {
 	UpdatedAt *string                   `json:"updatedAt,omitempty"`
 }
 
-// GET /api/v1/account/preferences (DD-164(7)): the signed-in HumanIdentity's account
-// preferences, shared by every Tenant and device. Absent fields have never been set;
-// clients fall back to their defaults.
-type AccountPreferences struct {
-	// neutral, kailo-brand or #rrggbb.
-	Accent *string `json:"accent,omitempty"`
-	// DD-138 contributed preference values, at most 64, ordered by key.
-	ComponentPreferences []AccountComponentPreference `json:"componentPreferences"`
-	FollowSystem         *bool                        `json:"followSystem,omitempty"`
-	// Kailo UI language (REQ-08).
-	Locale *ProtocolSessionLocale `json:"locale,omitempty"`
-	// Theme name, 1-64 of [a-z0-9-].
-	Theme     *string `json:"theme,omitempty"`
-	UpdatedAt *string `json:"updatedAt,omitempty"`
-	// 0 before the first write.
-	Version int64 `json:"version"`
+// DD-138(6)：当前 HUMAN 可管理的组件管理面（07 §4.8.5）。只含当前 Tenant 级与所给 Workspace 级 ACTIVE binding 的 pin
+// APPROVED release 所声明、且逐项 fresh manage 通过的项；不含 URL、component_type_key、配置或凭据。
+type AdminSurfacePage struct {
+	Items []AdminSurfaceEntry `json:"items"`
 }
 
-type AccountComponentPreference struct {
-	// 07 §4.8.2 preference key.
+type AdminSurfaceEntry struct {
+	BindingID string `json:"bindingId"`
+	// DD-127(4) presentation category used as the source label (云盘、知识库、问数); grants nothing.
+	NativePageCategory *NativePageCategory              `json:"nativePageCategory,omitempty"`
+	Surface            ComponentAdminSurfaceDeclaration `json:"surface"`
+	WorkspaceID        *string                          `json:"workspaceId,omitempty"`
+}
+
+// DD-138(6)：KAILO_EMBED 原生页面 release 向 Kailo 管理区贡献的一项管理面声明（03
+// FrontendPresentationContract.admin_surface_declarations[]，07 §4.8.5）。值对象，随 APPROVED
+// release 固定；不授予权限，Core 不保存管理状态。键、路径与文案规则由 Core 登记时校验。
+//
+// DD-138(6): present only when the descriptor was requested for a declared admin surface
+// after a fresh manage check (07 §4.8.5); url is then origin + the declared path and the
+// host adds kailo_admin_surface=<key>.
+type ComponentAdminSurfaceDeclaration struct {
+	Access        ComponentAdminAccess       `json:"access"`
+	AdminCategory ComponentAdminCategory     `json:"adminCategory"`
+	Description   *ComponentAdminSurfaceText `json:"description,omitempty"`
+	// 管理面标识，2–4 段以 . 连接，不含组件名；成员、角色、邀请、空间与组织类首段被拒绝。
 	Key string `json:"key"`
-	// BOOLEAN as true/false, ENUM as the option value (1-32 [A-Za-z0-9._-]).
-	Value string `json:"value"`
+	// 组件 origin 内的固定路径，以单个 / 开头，不含查询与片段。
+	Path               string                    `json:"path"`
+	RequiredPermission ComponentAdminPermission  `json:"requiredPermission"`
+	Title              ComponentAdminSurfaceText `json:"title"`
 }
 
-// PUT /api/v1/account/preferences (DD-164(7)): compare-and-swap on version; absent fields
-// are unchanged, componentPreferences entries are merged by key and an entry without value
-// removes the key. 409 returns the current AccountPreferences.
-type AccountPreferencesUpdate struct {
-	Accent               *string                            `json:"accent,omitempty"`
-	ComponentPreferences []AccountComponentPreferenceChange `json:"componentPreferences,omitempty"`
-	ExpectedVersion      int64                              `json:"expectedVersion"`
-	FollowSystem         *bool                              `json:"followSystem,omitempty"`
-	// Kailo UI language (REQ-08).
-	Locale *ProtocolSessionLocale `json:"locale,omitempty"`
-	Theme  *string                `json:"theme,omitempty"`
-}
-
-type AccountComponentPreferenceChange struct {
-	Key string `json:"key"`
-	// Absent removes the key.
-	Value *string `json:"value,omitempty"`
+type ComponentAdminSurfaceText struct {
+	En   string `json:"EN"`
+	ZhCN string `json:"ZH_CN"`
 }
 
 // GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
@@ -6808,9 +6763,13 @@ type ComponentPreferenceOption struct {
 // Authorized ACTIVE binding's independent native page. Exact origin is release and
 // deployment approved; no native credential or page body is returned.
 type ApplicationNativePage struct {
-	AllowedOrigins []string `json:"allowedOrigins"`
-	BindingID      string   `json:"bindingId"`
-	Origin         string   `json:"origin"`
+	// DD-138(6): present only when the descriptor was requested for a declared admin surface
+	// after a fresh manage check (07 §4.8.5); url is then origin + the declared path and the
+	// host adds kailo_admin_surface=<key>.
+	AdminSurface   *ComponentAdminSurfaceDeclaration `json:"adminSurface,omitempty"`
+	AllowedOrigins []string                          `json:"allowedOrigins"`
+	BindingID      string                            `json:"bindingId"`
+	Origin         string                            `json:"origin"`
 	// DD-138: preference items the pinned APPROVED KAILO_EMBED release declares for Kailo
 	// settings (07 §4.8.2); the host sends their values to this page only. Absent when none.
 	Preferences          []ComponentPreferenceDeclaration `json:"preferences,omitempty"`
@@ -7546,47 +7505,6 @@ type CapabilityVectorCapture struct {
 	Slot    CapabilityVectorCaptureSlot `json:"slot"`
 }
 
-// PUT /service/v1/component-directory/bindings/{bindingId}/receipt (DD-164(4)⑥): the
-// component reports the last directory snapshot it fully applied or failed to apply. No
-// personal data; grants nothing; never changes the directory.
-type ComponentDirectoryReceiptRequest struct {
-	AppliedAt string `json:"appliedAt"`
-	// 64 lowercase hex characters.
-	DirectoryVersion string                    `json:"directoryVersion"`
-	Failures         []ComponentReceiptFailure `json:"failures"`
-	Outcome          ComponentReceiptOutcome   `json:"outcome"`
-	Schema           int64                     `json:"schema"`
-}
-
-type ComponentReceiptFailure struct {
-	Kind ComponentReceiptFailureKind `json:"kind"`
-	// Upper snake case, at most 64 characters, e.g. NATIVE_OBJECT_MISSING.
-	ReasonCode string `json:"reasonCode"`
-	// Kailo id of the failed item (principalId, workspaceId, tenantId or resourceId), at most
-	// 64 characters.
-	Ref string `json:"ref"`
-}
-
-// GET /api/v1/application-bindings/{bindingId}/directory-receipt for binding managers
-// (DD-164(4)⑥): the latest receipt compared with the current directory version.
-type ComponentDirectoryReceiptView struct {
-	AppliedAt *string `json:"appliedAt,omitempty"`
-	BindingID string  `json:"bindingId"`
-	// The directory version last served to the component for the reported schema.
-	CurrentVersion *string                        `json:"currentVersion,omitempty"`
-	Failures       []ComponentReceiptFailureView  `json:"failures,omitempty"`
-	ReceiptVersion *string                        `json:"receiptVersion,omitempty"`
-	ReceivedAt     *string                        `json:"receivedAt,omitempty"`
-	Schema         *int64                         `json:"schema,omitempty"`
-	State          ComponentDirectoryReceiptState `json:"state"`
-}
-
-type ComponentReceiptFailureView struct {
-	Kind       ComponentReceiptFailureKind `json:"kind"`
-	ReasonCode string                      `json:"reasonCode"`
-	Ref        string                      `json:"ref"`
-}
-
 // Read-only member directory snapshot for an embedded component (.design/07 §4.7.4,
 // DD-133(4)): every ACTIVE HUMAN member in the native page entry binding's scope with Kailo
 // display name, avatar URL, Tenant role and ACTIVE Workspace memberships. A full snapshot,
@@ -7640,90 +7558,6 @@ type ComponentDirectoryWorkspace struct {
 	WorkspaceID string `json:"workspaceId"`
 }
 
-// Member directory snapshot schema 2 (.design/07 §4.7.4, DD-164(2)(4)): schema 1 plus Kailo
-// create permissions and the Resource-level share projection. Served only for ?schema=2;
-// directoryVersion is the SHA-256 (hex) of the canonical JSON of every other field of this
-// response.
-type ComponentMemberDirectoryV2 struct {
-	BindingID string `json:"bindingId"`
-	// Lowercase hex SHA-256 of the canonical JSON of this snapshot without directoryVersion;
-	// unchanged content keeps the same version.
-	DirectoryVersion string                       `json:"directoryVersion"`
-	Members          []ComponentDirectoryV2Member `json:"members"`
-	// Always 2.
-	Schema int64 `json:"schema"`
-	// Every ACTIVE component.shared_object Resource of this binding, ordered by resourceId.
-	Shares []ComponentDirectoryShare  `json:"shares"`
-	Tenant ComponentDirectoryV2Tenant `json:"tenant"`
-	// Every ACTIVE Workspace in the binding scope (only the binding's own Workspace when it has
-	// one).
-	Workspaces []ComponentDirectoryV2Workspace `json:"workspaces"`
-}
-
-type ComponentDirectoryV2Member struct {
-	// Kailo display name: the member's SERVER HUMAN kind:0 display_name (else name), else the
-	// HumanIdentity display name.
-	DisplayName string `json:"displayName"`
-	// One entry per ACTIVE external identity; the component keys its account on issuer +
-	// subject.
-	Identities  []ComponentDirectoryV2Identity `json:"identities"`
-	PrincipalID string                         `json:"principalId"`
-	// SpiceDB Tenant create for this principal (fully consistent).
-	TenantCreate bool                             `json:"tenantCreate"`
-	TenantRole   ComponentDirectoryRole           `json:"tenantRole"`
-	Workspaces   []ComponentDirectoryV2Membership `json:"workspaces"`
-}
-
-type ComponentDirectoryV2Identity struct {
-	Issuer string `json:"issuer"`
-	// <PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>, the same value as the IdP picture
-	// claim.
-	Picture string `json:"picture"`
-	Subject string `json:"subject"`
-}
-
-type ComponentDirectoryV2Membership struct {
-	// SpiceDB Workspace create for this principal (fully consistent).
-	Create      bool                   `json:"create"`
-	Role        ComponentDirectoryRole `json:"role"`
-	WorkspaceID string                 `json:"workspaceId"`
-}
-
-type ComponentDirectoryShare struct {
-	// Owner first as WRITE, then the reader/editor relationships whose subject is still in this
-	// snapshot, ordered by subject kind, id and access.
-	Grants           []ComponentShareGrant     `json:"grants"`
-	NativeID         string                    `json:"nativeId"`
-	NativeType       ComponentSharedNativeType `json:"nativeType"`
-	OwnerPrincipalID string                    `json:"ownerPrincipalId"`
-	ResourceID       string                    `json:"resourceId"`
-}
-
-// DD-164(4): one grant on a component shared object. TENANT subjects only accept READ.
-type ComponentShareGrant struct {
-	Access  ComponentShareAccess  `json:"access"`
-	Subject ComponentShareSubject `json:"subject"`
-}
-
-// DD-164(4): grantee of a component shared object. PRINCIPAL carries principalId (a
-// same-Tenant ACTIVE HUMAN), WORKSPACE carries workspaceId (an ACTIVE Workspace of the
-// Tenant), TENANT carries neither.
-type ComponentShareSubject struct {
-	Kind        ComponentShareSubjectKind `json:"kind"`
-	PrincipalID *string                   `json:"principalId,omitempty"`
-	WorkspaceID *string                   `json:"workspaceId,omitempty"`
-}
-
-type ComponentDirectoryV2Tenant struct {
-	Name     string `json:"name"`
-	TenantID string `json:"tenantId"`
-}
-
-type ComponentDirectoryV2Workspace struct {
-	Name        string `json:"name"`
-	WorkspaceID string `json:"workspaceId"`
-}
-
 // DD-138(4)、07 §4.8.3：组件以其成员目录 client 的 client-credentials 令牌向 Core 服务监听面 POST
 // /service/v1/component-notifications/bindings/{bindingId}/notifications 投递的一条通知。不建立
 // ActionExecution、不授予权限；未知字段整体拒绝。
@@ -7748,6 +7582,8 @@ type ComponentNotificationDelivery struct {
 //
 // 组件以 OIDC issuer + subject 指称 Kailo 成员（与 07 §4.7.4 成员目录 identities[] 同值）；Core 只在该 binding
 // 当前目录范围内解析。
+//
+// count meter 必填、file_storage_bytes 不得出现；须在该 binding 当前目录范围内。
 type ComponentPersonRef struct {
 	Issuer  string `json:"issuer"`
 	Subject string `json:"subject"`
@@ -7892,54 +7728,71 @@ type ComponentSearchQuery struct {
 	Q      string  `json:"q"`
 }
 
-// Answer to a share intent: the opaque intent the component passes to the Kailo host in
-// wire v1 {type: share}.
-type ComponentShareIntentCreated struct {
-	ExpiresAt string `json:"expiresAt"`
-	IntentID  string `json:"intentId"`
+// DD-165(3)：额度准入结论。OpenMeter 不可读时 Core 以 503 回应而不给出结论，组件不得放行。组件可把 ALLOWED 缓存至多 60 秒。
+type ComponentUsageAdmission struct {
+	Decision ComponentUsageDecision `json:"decision"`
+	// 该额度项当前周期的结束时刻（RFC3339）；没有 entitlement 时不给出。
+	PeriodResetAt *string `json:"periodResetAt,omitempty"`
 }
 
-// POST /service/v1/component-directory/bindings/{bindingId}/share-intents (DD-164(4)②): the
-// component service names the native object its user wants to share. Only sent when the
-// initiator may share the object natively; grants nothing.
-type ComponentShareIntentRequest struct {
-	Initiator ComponentShareInitiator `json:"initiator"`
-	// Display name, 1-200 characters.
-	Name string `json:"name"`
-	// 1-255 visible characters: Cells node UUID or WeKnora knowledge base ID.
-	NativeID   string                    `json:"nativeId"`
-	NativeType ComponentSharedNativeType `json:"nativeType"`
-	// The Kailo Workspace whose root contains the object, absent for Tenant-level objects.
+// DD-165、07 §4.8.9：组件在动作开始前向 POST
+// /service/v1/component-usage/bindings/{bindingId}/admission 询问额度。身份、前提与 meter
+// 类别规则同上报；未知字段整体拒绝。
+type ComponentUsageAdmissionRequest struct {
+	// count meter 必填、file_storage_bytes 不得出现；须在该 binding 当前目录范围内。
+	Member   *ComponentPersonRef `json:"member,omitempty"`
+	MeterKey ComponentUsageMeter `json:"meterKey"`
+}
+
+// DD-165(4)：GET /api/v1/usage/components?from=&to=，Tenant 在区间内按组件（binding）拆分的 committed
+// usage。调用方须持有 Tenant audit permission，每次 fresh Check。数值直接读 OpenMeter（group_by
+// component_binding_id），不复制成账本；缺失事实以确定状态表达。
+type ComponentUsagePage struct {
+	// RFC3339，含
+	From   string                `json:"from"`
+	Meters []ComponentMeterUsage `json:"meters"`
+	// RFC3339，不含
+	To string `json:"to"`
+}
+
+type ComponentMeterUsage struct {
+	// 原生 meter 的聚合方式原文
+	Aggregation *string                 `json:"aggregation,omitempty"`
+	Bindings    []ComponentBindingUsage `json:"bindings"`
+	// 随 Core 固定的组件 meter 键
+	MeterKey string          `json:"meterKey"`
+	State    MeterUsageState `json:"state"`
+}
+
+type ComponentBindingUsage struct {
+	BindingID          string              `json:"bindingId"`
+	NativePageCategory *NativePageCategory `json:"nativePageCategory,omitempty"`
+	// OpenMeter 返回的十进制原文
+	Quantity string `json:"quantity"`
+	// Workspace 级 binding 的 Workspace；Tenant 级 binding 不给出
 	WorkspaceID *string `json:"workspaceId,omitempty"`
 }
 
-type ComponentShareInitiator struct {
-	Issuer  string `json:"issuer"`
-	Subject string `json:"subject"`
+// DD-165：上报回执。新建 201、同键同内容重复 200（duplicate=true）。usageEventId 是 Core UsageEvent 与 OpenMeter
+// event 的同一 ID；回执不表示 OpenMeter 已存储。
+type ComponentUsageReceipt struct {
+	Duplicate    bool   `json:"duplicate"`
+	UsageEventID string `json:"usageEventId"`
 }
 
-// GET /api/v1/component-shares/intents/{intentId} (DD-164(4)③): what the Kailo share dialog
-// shows. Readable only by the intent's initiator in a current session; an expired, consumed
-// or foreign intent is 404.
-type ComponentShareIntentView struct {
-	// folder: PRINCIPAL, WORKSPACE, TENANT; knowledge_base: WORKSPACE, TENANT (phase 1).
-	AllowedSubjects []ComponentShareSubjectKind `json:"allowedSubjects"`
-	BindingID       string                      `json:"bindingId"`
-	// Fresh share on the existing Resource, or true for the initiator before the first share.
-	CanShare  bool   `json:"canShare"`
-	ExpiresAt string `json:"expiresAt"`
-	// Current grants without the owner.
-	Grants   []ComponentShareGrant `json:"grants"`
-	IntentID string                `json:"intentId"`
-	Name     string                `json:"name"`
-	// file_storage or knowledge.
-	NativePageCategory string                    `json:"nativePageCategory"`
-	NativeType         ComponentSharedNativeType `json:"nativeType"`
-	OwnerPrincipalID   *string                   `json:"ownerPrincipalId,omitempty"`
-	// Present once the object is a component.shared_object Resource.
-	ResourceID      *string `json:"resourceId,omitempty"`
-	ResourceVersion *int64  `json:"resourceVersion,omitempty"`
-	WorkspaceID     *string `json:"workspaceId,omitempty"`
+// DD-165、07 §4.8.9：组件以其成员目录 client 的 client-credentials 令牌向 Core 服务监听面 POST
+// /service/v1/component-usage/bindings/{bindingId}/reports 上报的一条已发生用量。Core 写
+// COMPONENT_REPORT UsageEvent；不建立 ActionExecution、不授予权限；未知字段整体拒绝。
+type ComponentUsageReport struct {
+	// 1–128 个字母、数字、. _ : -，在该 binding 内唯一；同键同内容返回首次结果，同键异内容 409。
+	IdempotencyKey string `json:"idempotencyKey"`
+	// count meter 必填、file_storage_bytes 不得出现；须在该 binding 当前目录范围内。
+	Member   *ComponentPersonRef `json:"member,omitempty"`
+	MeterKey ComponentUsageMeter `json:"meterKey"`
+	// RFC3339，不晚于 Core 当前时刻 5 分钟，不早于 7 天前。
+	OccurredAt string `json:"occurredAt"`
+	// 非负整数；count meter 恰为 1，file_storage_bytes 为字节数且不超过 10^15。
+	Quantity int64 `json:"quantity"`
 }
 
 type ConversationPage struct {
@@ -8862,6 +8715,22 @@ type MCPOauthStartRequest struct {
 	Transport       MCPConnectionTransport `json:"transport"`
 }
 
+// DD-165(4)：GET /api/v1/usage/me，当前会话成员本人的用量（「我的用量」）。只列带成员维度的额度项；数值直接读 OpenMeter（按 Customer
+// 与本人 member_principal_id 过滤），不含组织上限与组织已用。
+type MemberUsagePage struct {
+	Items []MemberUsageView `json:"items"`
+}
+
+type MemberUsageView struct {
+	Feature TenantQuotaFeature `json:"feature"`
+	// 本人每期上限；未设置成员上限时不给出。
+	MemberLimitPerPeriod *int64           `json:"memberLimitPerPeriod,omitempty"`
+	PeriodResetAt        *string          `json:"periodResetAt,omitempty"`
+	State                MemberUsageState `json:"state"`
+	// 本人本期已用（OpenMeter committed）；state 为 UNAVAILABLE 时不给出。
+	Used *float64 `json:"used,omitempty"`
+}
+
 // GET /api/v1/moderation/access（DD-125(2)）：原版只对 Community owner/admin 显示的审核入口在 Kailo 对应
 // Tenant manage。canModerate 是与 moderation.ban 准入同一条 fresh 判定（目录开放、非 Platform Catalog、scope
 // guard 与 tenant manage）的提示，不是授权票据，提交时仍完整重新准入；它不读取任何限制或队列事实。
@@ -9037,9 +8906,7 @@ type ActionCommand struct {
 	// 仅组件批准：已登记的不可变ComponentRelease标识。
 	ComponentReleaseID           *string                       `json:"componentReleaseId,omitempty"`
 	ComponentReleaseRegistration *ComponentReleaseRegistration `json:"componentReleaseRegistration,omitempty"`
-	// 仅 component.share.set（DD-164(4)）且必带；其他动作携带即拒绝。
-	ComponentShareSet *ComponentShareSet       `json:"componentShareSet,omitempty"`
-	ConversationOpen  *ConversationOpenRequest `json:"conversationOpen,omitempty"`
+	ConversationOpen             *ConversationOpenRequest      `json:"conversationOpen,omitempty"`
 	// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
 	DelegationGrant *DelegationGrantParameters `json:"delegationGrant,omitempty"`
 	// 显式 Delegation 管理的稳定 Grant ID；授予者提供新 ID，撤销引用实际已有 ID。
@@ -9307,19 +9174,6 @@ type ComponentReleaseRegistration struct {
 	PackageJSON             string `json:"packageJson"`
 }
 
-// 仅 component.share.set（DD-164(4)）且必带；其他动作携带即拒绝。
-//
-// Only component.share.set (DD-164(4)③) and required for it: the share intent naming the
-// native object, the expected Resource version when the object is already a
-// component.shared_object Resource (absent on the first share), and the complete grant list
-// that replaces the current one (owner is implicit and never listed). At most 100 grants,
-// no duplicate subject.
-type ComponentShareSet struct {
-	Grants          []ComponentShareGrant `json:"grants"`
-	IntentID        string                `json:"intentId"`
-	ResourceVersion *int64                `json:"resourceVersion,omitempty"`
-}
-
 // 原生私聊的完整 HUMAN Principal 参与者集合，必须包含当前 HUMAN；不接受设备公钥、CONTROL 身份或 Workspace 冒名。
 type ConversationOpenRequest struct {
 	ParticipantPrincipalIDS []string `json:"participantPrincipalIds"`
@@ -9543,11 +9397,16 @@ type TenantProfileInput struct {
 
 // 仅 tenant.quota.set（DD-123）
 //
-// DD-123: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
-// OpenMeter entitlement for the platform feature, resetting monthly.
+// DD-123/DD-165: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
+// OpenMeter entitlement for the platform feature, resetting monthly; memberLimitPerPeriod
+// (only knowledge_answers and data_queries) is the per-member cap kept in the same
+// entitlement's metadata. A setting without it removes the member cap.
 type TenantQuotaSetting struct {
 	Feature        TenantQuotaFeature `json:"feature"`
 	LimitPerPeriod int64              `json:"limitPerPeriod"`
+	// DD-165(3): per-member cap per period; only for quota items with a member dimension
+	// (knowledge_answers, data_queries).
+	MemberLimitPerPeriod *int64 `json:"memberLimitPerPeriod,omitempty"`
 }
 
 // 仅 workspace.canvas.set 且必带（DD-125(4)）：目标 Workspace 由 workspaceId 给出，须带
@@ -10483,8 +10342,8 @@ type TenantProfileView struct {
 	Version            int64   `json:"version"`
 }
 
-// DD-123: platform quota items of the Tenant read from OpenMeter (the only authority).
-// Tenant admin and auditor only.
+// DD-123/DD-165: platform quota items of the Tenant read from OpenMeter (the only
+// authority). Tenant admin and auditor only.
 type TenantQuotaPage struct {
 	Quotas []TenantQuotaView `json:"quotas"`
 	// Present only when the caller may set quotas now (Tenant manage); auditors read without it.
@@ -10496,8 +10355,11 @@ type TenantQuotaView struct {
 	HardLimit      bool               `json:"hardLimit"`
 	HasAccess      bool               `json:"hasAccess"`
 	LimitPerPeriod *int64             `json:"limitPerPeriod,omitempty"`
-	PeriodResetAt  *string            `json:"periodResetAt,omitempty"`
-	Usage          *float64           `json:"usage,omitempty"`
+	// DD-165(3): per-member cap kept in the entitlement metadata; absent when no member cap is
+	// set.
+	MemberLimitPerPeriod *int64   `json:"memberLimitPerPeriod,omitempty"`
+	PeriodResetAt        *string  `json:"periodResetAt,omitempty"`
+	Usage                *float64 `json:"usage,omitempty"`
 }
 
 // PUT /api/v1/user-state/threads 的请求体（DD-40、DD-125(1)、03
@@ -11889,8 +11751,6 @@ const (
 	View ProtocolSessionMode = "VIEW"
 )
 
-// Kailo UI language (REQ-08).
-//
 // 系统通知文案的语言；通知不含正文。
 type ProtocolSessionLocale string
 
@@ -11985,6 +11845,51 @@ const (
 	Folder                        ComponentSearchResultKind = "FOLDER"
 	KnowledgeBase                 ComponentSearchResultKind = "KNOWLEDGE_BASE"
 	Question                      ComponentSearchResultKind = "QUESTION"
+)
+
+// DD-127(4) presentation category used as the source label (云盘、知识库、问数); grants nothing.
+//
+// DD-127(4)：NATIVE_PAGE 入口的呈现类别，决定侧边栏标签与图标；不授予能力、不参与类别解析或授权。
+//
+// DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
+// labels the entry by capabilityCategories ∪ this value; it grants nothing.
+type NativePageCategory string
+
+const (
+	DataQuery                     NativePageCategory = "data_query"
+	Knowledge                     NativePageCategory = "knowledge"
+	NativePageCategoryFileStorage NativePageCategory = "file_storage"
+)
+
+// DD-138(6)：管理面的可写性（07 §4.8.5）。EDITABLE 为组件自有、页内可改的设置；READ_ONLY 为由 Kailo
+// 派生或部署声明、组件内只读展示的设置，组件服务端在 Kailo 模式下拒绝对应写接口。
+type ComponentAdminAccess string
+
+const (
+	ComponentAdminAccessREADONLY ComponentAdminAccess = "READ_ONLY"
+	Editable                     ComponentAdminAccess = "EDITABLE"
+)
+
+// DD-138(6)：组件管理面所属的 Kailo 管理分类（07 §4.8.5）。MODELS 模型、DATA_SOURCES 数据源、STORAGE 存储、INDEXING
+// 索引与解析、INTEGRATIONS 集成、SYSTEM 系统；不按组件分类。
+type ComponentAdminCategory string
+
+const (
+	DataSources  ComponentAdminCategory = "DATA_SOURCES"
+	Indexing     ComponentAdminCategory = "INDEXING"
+	Integrations ComponentAdminCategory = "INTEGRATIONS"
+	Models       ComponentAdminCategory = "MODELS"
+	Storage      ComponentAdminCategory = "STORAGE"
+	System       ComponentAdminCategory = "SYSTEM"
+)
+
+// DD-138(6)：打开管理面所需的 Kailo 权限（07 §4.8.5）。BINDING_MANAGE 为 binding 所属 scope（Workspace 或
+// Tenant）的 manage；TENANT_MANAGE 为 Tenant manage。只决定 Kailo 是否列出与签发 descriptor，组件服务端仍按目录角色判定。
+type ComponentAdminPermission string
+
+const (
+	BindingManage ComponentAdminPermission = "BINDING_MANAGE"
+	TenantManage  ComponentAdminPermission = "TENANT_MANAGE"
 )
 
 // 03 §7 Resource 的正式状态，投影未闭合不得呈现 ACTIVE。
@@ -12365,18 +12270,6 @@ const (
 	Published                AgentVersionState = "PUBLISHED"
 )
 
-// DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
-// labels the entry by capabilityCategories ∪ this value; it grants nothing.
-//
-// DD-127(4)：NATIVE_PAGE 入口的呈现类别，决定侧边栏标签与图标；不授予能力、不参与类别解析或授权。
-type NativePageCategory string
-
-const (
-	DataQuery   NativePageCategory = "data_query"
-	FileStorage NativePageCategory = "file_storage"
-	Knowledge   NativePageCategory = "knowledge"
-)
-
 // DD-138：组件偏好项所属的 Kailo 设置功能分类（07 §4.8.2）。APPEARANCE 外观、NOTIFICATIONS 通知、DOCUMENTS
 // 文档与文件、ANSWERS 问答；不按组件分类。
 type ComponentPreferenceCategory string
@@ -12632,12 +12525,12 @@ const (
 type ActionGateState string
 
 const (
+	ActionGateStateALLOWED    ActionGateState = "ALLOWED"
 	ActionGateStateDENIED     ActionGateState = "DENIED"
 	ActionGateStateEVALUATING ActionGateState = "EVALUATING"
 	ActionGateStateEXPIRED    ActionGateState = "EXPIRED"
 	ActionGateStateREVOKED    ActionGateState = "REVOKED"
 	ActionGateStateWAITING    ActionGateState = "WAITING"
-	Allowed                   ActionGateState = "ALLOWED"
 )
 
 // TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close
@@ -12683,9 +12576,9 @@ const (
 type BusinessOperationPhase string
 
 const (
+	Applied                                 BusinessOperationPhase = "APPLIED"
 	AwaitingApproval                        BusinessOperationPhase = "AWAITING_APPROVAL"
 	BusinessOperationPhaseABORTED           BusinessOperationPhase = "ABORTED"
-	BusinessOperationPhaseAPPLIED           BusinessOperationPhase = "APPLIED"
 	BusinessOperationPhaseCANCELED          BusinessOperationPhase = "CANCELED"
 	BusinessOperationPhaseCOMPLETED         BusinessOperationPhase = "COMPLETED"
 	BusinessOperationPhaseDENIED            BusinessOperationPhase = "DENIED"
@@ -12826,74 +12719,13 @@ const (
 	Result                                             ComponentConformanceStepExpectedMCPResultKind = "RESULT"
 )
 
-// DD-164(4)⑥: the directory part a convergence failure item refers to.
-type ComponentReceiptFailureKind string
-
-const (
-	ComponentReceiptFailureKindMEMBER    ComponentReceiptFailureKind = "MEMBER"
-	ComponentReceiptFailureKindSHARE     ComponentReceiptFailureKind = "SHARE"
-	ComponentReceiptFailureKindTENANT    ComponentReceiptFailureKind = "TENANT"
-	ComponentReceiptFailureKindWORKSPACE ComponentReceiptFailureKind = "WORKSPACE"
-)
-
-// DD-164(4)⑥: whether the component fully applied the reported directory snapshot.
-type ComponentReceiptOutcome string
-
-const (
-	ComponentReceiptOutcomeAPPLIED ComponentReceiptOutcome = "APPLIED"
-	ComponentReceiptOutcomeFAILED  ComponentReceiptOutcome = "FAILED"
-)
-
-// DD-164(4)⑥: CONVERGED: the latest receipt is APPLIED for the version last served to the
-// component; PENDING: a newer version was served within two read intervals; NOT_CONVERGED:
-// the component has not applied what it was served for longer, or stopped reading for more
-// than two intervals; FAILED: the latest receipt is FAILED; NO_RECEIPT: never reported.
-type ComponentDirectoryReceiptState string
-
-const (
-	ComponentDirectoryReceiptStateFAILED  ComponentDirectoryReceiptState = "FAILED"
-	ComponentDirectoryReceiptStatePENDING ComponentDirectoryReceiptState = "PENDING"
-	Converged                             ComponentDirectoryReceiptState = "CONVERGED"
-	NoReceipt                             ComponentDirectoryReceiptState = "NO_RECEIPT"
-	NotConverged                          ComponentDirectoryReceiptState = "NOT_CONVERGED"
-)
-
 // 成员目录中的 Kailo 角色（.design/07 §4.7.4、DD-133(4)）：SpiceDB 对 Tenant 或 Workspace 有 `manage` 为
 // ADMIN，否则 MEMBER。只供组件派生自身角色，不授予 Kailo 侧任何权限。
 type ComponentDirectoryRole string
 
 const (
-	Admin                        ComponentDirectoryRole = "ADMIN"
-	ComponentDirectoryRoleMEMBER ComponentDirectoryRole = "MEMBER"
-)
-
-// DD-164(4): access granted on a component shared object. READ writes the SpiceDB reader
-// relationship, WRITE writes editor.
-type ComponentShareAccess string
-
-const (
-	ComponentShareAccessREAD  ComponentShareAccess = "READ"
-	ComponentShareAccessWRITE ComponentShareAccess = "WRITE"
-)
-
-// DD-164(4): who a component shared object is granted to: one Tenant HUMAN member, every
-// member of a Workspace (workspace#member), or every Tenant member (tenant#member, READ
-// only).
-type ComponentShareSubjectKind string
-
-const (
-	ComponentShareSubjectKindTENANT    ComponentShareSubjectKind = "TENANT"
-	ComponentShareSubjectKindWORKSPACE ComponentShareSubjectKind = "WORKSPACE"
-	Principal                          ComponentShareSubjectKind = "PRINCIPAL"
-)
-
-// DD-164(4) shareable native object types, fixed per presentation category: file_storage ->
-// folder, knowledge -> knowledge_base (phase 1).
-type ComponentSharedNativeType string
-
-const (
-	ComponentSharedNativeTypeFolder        ComponentSharedNativeType = "folder"
-	ComponentSharedNativeTypeKnowledgeBase ComponentSharedNativeType = "knowledge_base"
+	Admin  ComponentDirectoryRole = "ADMIN"
+	Member ComponentDirectoryRole = "MEMBER"
 )
 
 // DD-138(4)、07 §4.8.3：组件投递到 Kailo 收件箱的通知类别（封闭枚举）。SHARED 分享给你；MENTIONED 提及你；COMMENTED
@@ -12946,6 +12778,43 @@ type ComponentSearchSourceState string
 const (
 	Answered                              ComponentSearchSourceState = "ANSWERED"
 	ComponentSearchSourceStateUNAVAILABLE ComponentSearchSourceState = "UNAVAILABLE"
+)
+
+// DD-165(3)：组件额度准入结论（CHECK，不预留）。TENANT_QUOTA_EXHAUSTED：该 Tenant
+// 的额度项无访问；MEMBER_QUOTA_EXHAUSTED：设置了成员上限且本人本期已用不小于它。两者组件都拒绝该动作且不产生原生副作用。QUOTA_NOT_CONFIGURED：该
+// Tenant 的额度项还没有 entitlement（发布对齐未完成，DD-165(5)），组件同样拒绝并提示额度尚未在 Kailo 中完成登记。
+type ComponentUsageDecision string
+
+const (
+	ComponentUsageDecisionALLOWED ComponentUsageDecision = "ALLOWED"
+	MemberQuotaExhausted          ComponentUsageDecision = "MEMBER_QUOTA_EXHAUSTED"
+	QuotaNotConfigured            ComponentUsageDecision = "QUOTA_NOT_CONFIGURED"
+	TenantQuotaExhausted          ComponentUsageDecision = "TENANT_QUOTA_EXHAUSTED"
+)
+
+// DD-165、07 §4.8.9：组件可上报或询问准入的平台 meter，随 Core 固定。knowledge_answer_count 只属 knowledge
+// 呈现类别、data_query_count 只属 data_query、file_storage_bytes 只属
+// file_storage；component_model_tokens 只来自 Gateway durable usage，不可上报。
+type ComponentUsageMeter string
+
+const (
+	DataQueryCount       ComponentUsageMeter = "data_query_count"
+	FileStorageBytes     ComponentUsageMeter = "file_storage_bytes"
+	KnowledgeAnswerCount ComponentUsageMeter = "knowledge_answer_count"
+)
+
+// 一个已登记 meter 在所选区间内的 OpenMeter committed usage 查询结论（.design/11 §7）。COMMITTED：原生查询返回该
+// Customer 的聚合值；NO_COMMITTED_USAGE：原生查询成功且区间内没有已存储事件；WORKSPACE_DIMENSION_UNAVAILABLE：原生
+// meter 未声明 workspace_id 维度，不能按 Workspace 归因；METER_NOT_REGISTERED：动作登记的 meter 在 OpenMeter
+// 中不存在或不唯一；UNAVAILABLE：查询失败或结果不可查证。后三者都不显示数值。
+type MeterUsageState string
+
+const (
+	MeterNotRegistered            MeterUsageState = "METER_NOT_REGISTERED"
+	MeterUsageStateCOMMITTED      MeterUsageState = "COMMITTED"
+	MeterUsageStateUNAVAILABLE    MeterUsageState = "UNAVAILABLE"
+	NoCommittedUsage              MeterUsageState = "NO_COMMITTED_USAGE"
+	WorkspaceDimensionUnavailable MeterUsageState = "WORKSPACE_DIMENSION_UNAVAILABLE"
 )
 
 type ConversationViewState string
@@ -13212,9 +13081,9 @@ const (
 type MCPConnectionVisibility string
 
 const (
-	MCPConnectionVisibilityTENANT    MCPConnectionVisibility = "TENANT"
-	MCPConnectionVisibilityWORKSPACE MCPConnectionVisibility = "WORKSPACE"
-	Personal                         MCPConnectionVisibility = "PERSONAL"
+	MCPConnectionVisibilityTENANT MCPConnectionVisibility = "TENANT"
+	Personal                      MCPConnectionVisibility = "PERSONAL"
+	Workspace                     MCPConnectionVisibility = "WORKSPACE"
 )
 
 // DD-149(4)：Tenant 连接器策略中普通成员的登记权限。
@@ -13234,6 +13103,30 @@ const (
 	MCPOauthAttemptStateEXPIRED   MCPOauthAttemptState = "EXPIRED"
 	MCPOauthAttemptStateFAILED    MCPOauthAttemptState = "FAILED"
 	MCPOauthAttemptStatePENDING   MCPOauthAttemptState = "PENDING"
+)
+
+type TenantQuotaFeature string
+
+const (
+	AgentMemoryWrites             TenantQuotaFeature = "agent_memory_writes"
+	AgentTokens                   TenantQuotaFeature = "agent_tokens"
+	AutomationRuns                TenantQuotaFeature = "automation_runs"
+	ComponentTokens               TenantQuotaFeature = "component_tokens"
+	DataQueries                   TenantQuotaFeature = "data_queries"
+	KnowledgeAnswers              TenantQuotaFeature = "knowledge_answers"
+	TenantQuotaFeatureFileStorage TenantQuotaFeature = "file_storage"
+)
+
+// DD-165(4)：成员本人在一个额度项上的当前状态。AVAILABLE：可用；MEMBER_LIMIT_REACHED：本人已达成员上限；TENANT_EXHAUSTED：组织额度已用完（不显示组织数字）；UNAVAILABLE：OpenMeter
+// 不可读或映射不唯一，不显示数值。NOT_CONFIGURED：该额度项尚未在 Kailo 中完成登记（DD-165(5)），不显示数值。
+type MemberUsageState string
+
+const (
+	MemberLimitReached            MemberUsageState = "MEMBER_LIMIT_REACHED"
+	MemberUsageStateAVAILABLE     MemberUsageState = "AVAILABLE"
+	MemberUsageStateNOTCONFIGURED MemberUsageState = "NOT_CONFIGURED"
+	MemberUsageStateUNAVAILABLE   MemberUsageState = "UNAVAILABLE"
+	TenantExhausted               MemberUsageState = "TENANT_EXHAUSTED"
 )
 
 // 原 Buzz NIP-56 举报类型（buzz-relay handlers/report.rs::REPORT_TYPES，SF-BUZ-52）。线格式即 kind 1984
@@ -13361,14 +13254,6 @@ type ModerationResolutionStatus string
 const (
 	ModerationResolutionStatusDismissed ModerationResolutionStatus = "dismissed"
 	ModerationResolutionStatusResolved  ModerationResolutionStatus = "resolved"
-)
-
-type TenantQuotaFeature string
-
-const (
-	AgentMemoryWrites TenantQuotaFeature = "agent_memory_writes"
-	AgentTokens       TenantQuotaFeature = "agent_tokens"
-	AutomationRuns    TenantQuotaFeature = "automation_runs"
 )
 
 // DD-158(2)：运营方分拣状态 NEW→TRIAGED→CLOSED；超过 180 天的 CLOSED 记录由 Core 清除。
@@ -13566,8 +13451,8 @@ const (
 type PushAvailability string
 
 const (
-	Configured    PushAvailability = "CONFIGURED"
-	NotConfigured PushAvailability = "NOT_CONFIGURED"
+	Configured                    PushAvailability = "CONFIGURED"
+	PushAvailabilityNOTCONFIGURED PushAvailability = "NOT_CONFIGURED"
 )
 
 // DD-151(1)：设备推送登记的提供方。APNS 为 iOS，FCM 为 Android。
@@ -13745,20 +13630,6 @@ const (
 	UsageCustomerStateNOTPROVISIONED UsageCustomerState = "NOT_PROVISIONED"
 	UsageCustomerStateREVOKED        UsageCustomerState = "REVOKED"
 	UsageCustomerStateUNAVAILABLE    UsageCustomerState = "UNAVAILABLE"
-)
-
-// 一个已登记 meter 在所选区间内的 OpenMeter committed usage 查询结论（.design/11 §7）。COMMITTED：原生查询返回该
-// Customer 的聚合值；NO_COMMITTED_USAGE：原生查询成功且区间内没有已存储事件；WORKSPACE_DIMENSION_UNAVAILABLE：原生
-// meter 未声明 workspace_id 维度，不能按 Workspace 归因；METER_NOT_REGISTERED：动作登记的 meter 在 OpenMeter
-// 中不存在或不唯一；UNAVAILABLE：查询失败或结果不可查证。后三者都不显示数值。
-type MeterUsageState string
-
-const (
-	MeterNotRegistered            MeterUsageState = "METER_NOT_REGISTERED"
-	MeterUsageStateCOMMITTED      MeterUsageState = "COMMITTED"
-	MeterUsageStateUNAVAILABLE    MeterUsageState = "UNAVAILABLE"
-	NoCommittedUsage              MeterUsageState = "NO_COMMITTED_USAGE"
-	WorkspaceDimensionUnavailable MeterUsageState = "WORKSPACE_DIMENSION_UNAVAILABLE"
 )
 
 // 原 Buzz 频道消息语义。缺省 STREAM 保持旧请求；不允许调用者提交任意事件 kind。

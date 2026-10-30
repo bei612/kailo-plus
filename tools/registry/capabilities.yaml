@@ -345,12 +345,19 @@ capabilities:
   actions: []
   tools: []
   workflow_kinds: []
+- id: component.admin_surfaces
+  exposure: none
+  routes: []
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: component.application_binding
   exposure: end_user
   routes:
   - /api/v1/application-bindings
   - /api/v1/application-bindings/{id}/native-page
   - /api/v1/application-bindings/{id}/read-resources
+  - /api/v1/admin-surfaces
   actions:
   - application_binding.create
   - application_binding.disable
@@ -369,6 +376,12 @@ capabilities:
   - capability_contract.register
   - capability_contract.approve
   - capability_contract.deprecate
+  tools: []
+  workflow_kinds: []
+- id: component.converged_collab_ai
+  exposure: none
+  routes: []
+  actions: []
   tools: []
   workflow_kinds: []
 - id: component.fused_inbox_search
@@ -416,6 +429,14 @@ capabilities:
   - /api/v1/application-bindings/{id}/directory-receipt
   actions:
   - component.share.set
+  tools: []
+  workflow_kinds: []
+- id: component.unified_metering
+  exposure: end_user
+  routes:
+  - /api/v1/usage/me
+  - /api/v1/usage/components
+  actions: []
   tools: []
   workflow_kinds: []
 - id: deploy.entry_topology

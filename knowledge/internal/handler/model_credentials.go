@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"github.com/Tencent/WeKnora/internal/application/service"
+	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/handler/dto"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -27,11 +28,17 @@ import (
 // Recognized fields: "api_key" (every provider), "app_secret" (WeKnora Cloud).
 type ModelCredentialsHandler struct {
 	svc interfaces.ModelService
+	// kailoMode: models come from Kailo model routing (DD-128, DD-138(6));
+	// only the delivery of a Kailo-routed model's credential may write.
+	kailoMode bool
 }
 
-func NewModelCredentialsHandler(svc interfaces.ModelService) *ModelCredentialsHandler {
-	return &ModelCredentialsHandler{svc: svc}
+func NewModelCredentialsHandler(svc interfaces.ModelService, cfg *config.Config) *ModelCredentialsHandler {
+	return &ModelCredentialsHandler{svc: svc, kailoMode: cfg.KailoEnabled()}
 }
+
+// kailoRoutedModel is the managed_by value of models Kailo model routing projects.
+const kailoRoutedModel = "kailo-model-route"
 
 type modelCredentialsPutRequest struct {
 	APIKey    *string `json:"api_key,omitempty"`
@@ -122,6 +129,23 @@ func (h *ModelCredentialsHandler) Put(c *gin.Context) {
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "data": modelCredentialResponse(m, req.VerificationNonce)})
 		return
+	}
+
+	// DD-138(6): in Kailo mode the model registry is read-only (the `models.catalog`
+	// admin surface). The one remaining credential write is the DD-128 delivery of a
+	// Kailo-routed model's gateway key (fork/deploy/provision.py); every other
+	// model's credentials are refused before the service is called.
+	if h.kailoMode {
+		m, err := h.svc.GetModelByID(ctx, id)
+		if err != nil || m == nil || m.ID != id || m.TenantID != tenantID {
+			c.Error(errors.NewNotFoundError("Model not found"))
+			return
+		}
+		if m.ManagedBy != kailoRoutedModel {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Managed by Kailo", "code": "KAILO_MANAGED"})
+			c.Abort()
+			return
+		}
 	}
 
 	updated, err := h.svc.UpdateModelCredentials(ctx, id, req.APIKey, req.AppSecret)

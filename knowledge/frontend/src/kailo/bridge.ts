@@ -95,6 +95,12 @@ export interface KailoEmbedRuntime {
   onLocaleChange(listener: (locale: KailoLocale) => void): () => void
   useIdentityLocale(locale: string): boolean
   requestTopLevelSignIn(): boolean
+  /**
+   * DD-138(6): the declared admin surface key Kailo launched this page for
+   * (`kailo_admin_surface`), or null. It selects what to render; it is no
+   * authorization. Absent on runtimes before DD-138(6).
+   */
+  adminSurface?(): string | null
   /** DD-157: declared features of this build (absent on runtimes before DD-157). */
   readonly features?: readonly KailoEmbedFeature[]
   /** DD-157: true = Kailo renders the page header; throws TypeError on an invalid shape. */

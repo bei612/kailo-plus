@@ -1352,7 +1352,11 @@ mod tenant_quota_command_tests {
         assert_eq!(frozen.as_ref(), Some(&parsed));
         assert_eq!(
             crate::tenant_quota::setting(&parsed).ok(),
-            Some(("agent_tokens", 5))
+            Some(crate::tenant_quota::Setting {
+                feature: "agent_tokens",
+                limit: 5,
+                member_limit: None,
+            })
         );
         // 未显式确认、负数上限、别的语义携带额度参数都拒绝
         let unconfirmed = command(setting.clone(), false);

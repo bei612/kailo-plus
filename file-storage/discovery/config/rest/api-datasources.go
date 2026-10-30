@@ -33,6 +33,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/auth/claim"
 	"github.com/pydio/cells/v5/common/broker"
 	"github.com/pydio/cells/v5/common/client/commons/idmc"
@@ -74,6 +75,10 @@ func (s *Handler) GetDataSource(req *restful.Request, resp *restful.Response) er
 
 func (s *Handler) PutDataSource(req *restful.Request, resp *restful.Response) error {
 
+	// DD-138(6), 07 §4.8.5: deployment-declared storage, read-only for people Kailo manages.
+	if e := auth.NativeKailoRefuseManagedWrite(req.Request.Context()); e != nil {
+		return e
+	}
 	var ds object.DataSource
 	if err := req.ReadEntity(&ds); err != nil {
 		return err
@@ -209,6 +214,10 @@ func (s *Handler) PutDataSource(req *restful.Request, resp *restful.Response) er
 
 func (s *Handler) DeleteDataSource(req *restful.Request, resp *restful.Response) error {
 
+	// DD-138(6), 07 §4.8.5: deployment-declared storage, read-only for people Kailo manages.
+	if e := auth.NativeKailoRefuseManagedWrite(req.Request.Context()); e != nil {
+		return e
+	}
 	ctx := req.Request.Context()
 	dsName := req.PathParameter("Name")
 	if dsName == "" {
@@ -346,6 +355,10 @@ func (s *Handler) ListStorageBuckets(req *restful.Request, resp *restful.Respons
 
 // CreateStorageBucket instantiates a Storage client to create a bucket
 func (s *Handler) CreateStorageBucket(req *restful.Request, resp *restful.Response) error {
+	// DD-138(6), 07 §4.8.5: deployment-declared storage, read-only for people Kailo manages.
+	if e := auth.NativeKailoRefuseManagedWrite(req.Request.Context()); e != nil {
+		return e
+	}
 	var r rest.CreateStorageBucketRequest
 	if e := req.ReadEntity(&r); e != nil {
 		return e

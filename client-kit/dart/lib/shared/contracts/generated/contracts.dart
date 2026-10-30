@@ -47,10 +47,9 @@
 //     final adapterSearchRequest = adapterSearchRequestFromJson(jsonString);
 //     final adapterSearchResponse = adapterSearchResponseFromJson(jsonString);
 //     final adapterSourceResource = adapterSourceResourceFromJson(jsonString);
-//     final accountPreferences = accountPreferencesFromJson(jsonString);
-//     final accountPreferencesUpdate = accountPreferencesUpdateFromJson(jsonString);
 //     final actionCommand = actionCommandFromJson(jsonString);
 //     final actionSubmission = actionSubmissionFromJson(jsonString);
+//     final adminSurfacePage = adminSurfacePageFromJson(jsonString);
 //     final agentActiveTurnPage = agentActiveTurnPageFromJson(jsonString);
 //     final agentActiveTurnView = agentActiveTurnViewFromJson(jsonString);
 //     final agentAuthorDirectory = agentAuthorDirectoryFromJson(jsonString);
@@ -121,10 +120,7 @@
 //     final componentConformanceAuthorization = componentConformanceAuthorizationFromJson(jsonString);
 //     final componentConformanceWireDigests = componentConformanceWireDigestsFromJson(jsonString);
 //     final componentConformanceWireObservation = componentConformanceWireObservationFromJson(jsonString);
-//     final componentDirectoryReceiptRequest = componentDirectoryReceiptRequestFromJson(jsonString);
-//     final componentDirectoryReceiptView = componentDirectoryReceiptViewFromJson(jsonString);
 //     final componentMemberDirectory = componentMemberDirectoryFromJson(jsonString);
-//     final componentMemberDirectoryV2 = componentMemberDirectoryV2FromJson(jsonString);
 //     final componentNotificationDelivery = componentNotificationDeliveryFromJson(jsonString);
 //     final componentNotificationPage = componentNotificationPageFromJson(jsonString);
 //     final componentNotificationReadRequest = componentNotificationReadRequestFromJson(jsonString);
@@ -135,9 +131,11 @@
 //     final componentReleaseReceipt = componentReleaseReceiptFromJson(jsonString);
 //     final componentSearchPage = componentSearchPageFromJson(jsonString);
 //     final componentSearchQuery = componentSearchQueryFromJson(jsonString);
-//     final componentShareIntentCreated = componentShareIntentCreatedFromJson(jsonString);
-//     final componentShareIntentRequest = componentShareIntentRequestFromJson(jsonString);
-//     final componentShareIntentView = componentShareIntentViewFromJson(jsonString);
+//     final componentUsageAdmission = componentUsageAdmissionFromJson(jsonString);
+//     final componentUsageAdmissionRequest = componentUsageAdmissionRequestFromJson(jsonString);
+//     final componentUsagePage = componentUsagePageFromJson(jsonString);
+//     final componentUsageReceipt = componentUsageReceiptFromJson(jsonString);
+//     final componentUsageReport = componentUsageReportFromJson(jsonString);
 //     final conversationOpenRequest = conversationOpenRequestFromJson(jsonString);
 //     final conversationPage = conversationPageFromJson(jsonString);
 //     final conversationParticipant = conversationParticipantFromJson(jsonString);
@@ -192,6 +190,7 @@
 //     final mcpOauthAttemptView = mcpOauthAttemptViewFromJson(jsonString);
 //     final mcpOauthStartRequest = mcpOauthStartRequestFromJson(jsonString);
 //     final mcpProbedTool = mcpProbedToolFromJson(jsonString);
+//     final memberUsagePage = memberUsagePageFromJson(jsonString);
 //     final moderationAccessView = moderationAccessViewFromJson(jsonString);
 //     final moderationAuditPage = moderationAuditPageFromJson(jsonString);
 //     final moderationReportPage = moderationReportPageFromJson(jsonString);
@@ -316,6 +315,7 @@
 //     final capabilityVectorBinding = capabilityVectorBindingFromJson(jsonString);
 //     final capabilityVectorCapture = capabilityVectorCaptureFromJson(jsonString);
 //     final componentActionInput = componentActionInputFromJson(jsonString);
+//     final componentAdminSurfaceDeclaration = componentAdminSurfaceDeclarationFromJson(jsonString);
 //     final componentConformanceCaptureValue = componentConformanceCaptureValueFromJson(jsonString);
 //     final componentConformanceEnvironment = componentConformanceEnvironmentFromJson(jsonString);
 //     final componentConformanceFixture = componentConformanceFixtureFromJson(jsonString);
@@ -328,9 +328,6 @@
 //     final componentProtocolPeerEnvironment = componentProtocolPeerEnvironmentFromJson(jsonString);
 //     final componentReleaseApprovalTarget = componentReleaseApprovalTargetFromJson(jsonString);
 //     final componentReleaseRegistration = componentReleaseRegistrationFromJson(jsonString);
-//     final componentShareGrant = componentShareGrantFromJson(jsonString);
-//     final componentShareSet = componentShareSetFromJson(jsonString);
-//     final componentShareSubject = componentShareSubjectFromJson(jsonString);
 //     final componentText = componentTextFromJson(jsonString);
 //     final contentReference = contentReferenceFromJson(jsonString);
 //     final delegationGrantParameters = delegationGrantParametersFromJson(jsonString);
@@ -715,18 +712,6 @@ AdapterSourceResource adapterSourceResourceFromJson(String str) =>
 String adapterSourceResourceToJson(AdapterSourceResource data) =>
     json.encode(data.toJson());
 
-AccountPreferences accountPreferencesFromJson(String str) =>
-    AccountPreferences.fromJson(json.decode(str));
-
-String accountPreferencesToJson(AccountPreferences data) =>
-    json.encode(data.toJson());
-
-AccountPreferencesUpdate accountPreferencesUpdateFromJson(String str) =>
-    AccountPreferencesUpdate.fromJson(json.decode(str));
-
-String accountPreferencesUpdateToJson(AccountPreferencesUpdate data) =>
-    json.encode(data.toJson());
-
 ActionCommand actionCommandFromJson(String str) =>
     ActionCommand.fromJson(json.decode(str));
 
@@ -736,6 +721,12 @@ ActionSubmission actionSubmissionFromJson(String str) =>
     ActionSubmission.fromJson(json.decode(str));
 
 String actionSubmissionToJson(ActionSubmission data) =>
+    json.encode(data.toJson());
+
+AdminSurfacePage adminSurfacePageFromJson(String str) =>
+    AdminSurfacePage.fromJson(json.decode(str));
+
+String adminSurfacePageToJson(AdminSurfacePage data) =>
     json.encode(data.toJson());
 
 AgentActiveTurnPage agentActiveTurnPageFromJson(String str) =>
@@ -1169,32 +1160,10 @@ String componentConformanceWireObservationToJson(
   ComponentConformanceWireObservation data,
 ) => json.encode(data.toJson());
 
-ComponentDirectoryReceiptRequest componentDirectoryReceiptRequestFromJson(
-  String str,
-) => ComponentDirectoryReceiptRequest.fromJson(json.decode(str));
-
-String componentDirectoryReceiptRequestToJson(
-  ComponentDirectoryReceiptRequest data,
-) => json.encode(data.toJson());
-
-ComponentDirectoryReceiptView componentDirectoryReceiptViewFromJson(
-  String str,
-) => ComponentDirectoryReceiptView.fromJson(json.decode(str));
-
-String componentDirectoryReceiptViewToJson(
-  ComponentDirectoryReceiptView data,
-) => json.encode(data.toJson());
-
 ComponentMemberDirectory componentMemberDirectoryFromJson(String str) =>
     ComponentMemberDirectory.fromJson(json.decode(str));
 
 String componentMemberDirectoryToJson(ComponentMemberDirectory data) =>
-    json.encode(data.toJson());
-
-ComponentMemberDirectoryV2 componentMemberDirectoryV2FromJson(String str) =>
-    ComponentMemberDirectoryV2.fromJson(json.decode(str));
-
-String componentMemberDirectoryV2ToJson(ComponentMemberDirectoryV2 data) =>
     json.encode(data.toJson());
 
 ComponentNotificationDelivery componentNotificationDeliveryFromJson(
@@ -1263,22 +1232,36 @@ ComponentSearchQuery componentSearchQueryFromJson(String str) =>
 String componentSearchQueryToJson(ComponentSearchQuery data) =>
     json.encode(data.toJson());
 
-ComponentShareIntentCreated componentShareIntentCreatedFromJson(String str) =>
-    ComponentShareIntentCreated.fromJson(json.decode(str));
+ComponentUsageAdmission componentUsageAdmissionFromJson(String str) =>
+    ComponentUsageAdmission.fromJson(json.decode(str));
 
-String componentShareIntentCreatedToJson(ComponentShareIntentCreated data) =>
+String componentUsageAdmissionToJson(ComponentUsageAdmission data) =>
     json.encode(data.toJson());
 
-ComponentShareIntentRequest componentShareIntentRequestFromJson(String str) =>
-    ComponentShareIntentRequest.fromJson(json.decode(str));
+ComponentUsageAdmissionRequest componentUsageAdmissionRequestFromJson(
+  String str,
+) => ComponentUsageAdmissionRequest.fromJson(json.decode(str));
 
-String componentShareIntentRequestToJson(ComponentShareIntentRequest data) =>
+String componentUsageAdmissionRequestToJson(
+  ComponentUsageAdmissionRequest data,
+) => json.encode(data.toJson());
+
+ComponentUsagePage componentUsagePageFromJson(String str) =>
+    ComponentUsagePage.fromJson(json.decode(str));
+
+String componentUsagePageToJson(ComponentUsagePage data) =>
     json.encode(data.toJson());
 
-ComponentShareIntentView componentShareIntentViewFromJson(String str) =>
-    ComponentShareIntentView.fromJson(json.decode(str));
+ComponentUsageReceipt componentUsageReceiptFromJson(String str) =>
+    ComponentUsageReceipt.fromJson(json.decode(str));
 
-String componentShareIntentViewToJson(ComponentShareIntentView data) =>
+String componentUsageReceiptToJson(ComponentUsageReceipt data) =>
+    json.encode(data.toJson());
+
+ComponentUsageReport componentUsageReportFromJson(String str) =>
+    ComponentUsageReport.fromJson(json.decode(str));
+
+String componentUsageReportToJson(ComponentUsageReport data) =>
     json.encode(data.toJson());
 
 ConversationOpenRequest conversationOpenRequestFromJson(String str) =>
@@ -1602,6 +1585,12 @@ McpProbedTool mcpProbedToolFromJson(String str) =>
     McpProbedTool.fromJson(json.decode(str));
 
 String mcpProbedToolToJson(McpProbedTool data) => json.encode(data.toJson());
+
+MemberUsagePage memberUsagePageFromJson(String str) =>
+    MemberUsagePage.fromJson(json.decode(str));
+
+String memberUsagePageToJson(MemberUsagePage data) =>
+    json.encode(data.toJson());
 
 ModerationAccessView moderationAccessViewFromJson(String str) =>
     ModerationAccessView.fromJson(json.decode(str));
@@ -2340,6 +2329,14 @@ ComponentActionInput componentActionInputFromJson(String str) =>
 String componentActionInputToJson(ComponentActionInput data) =>
     json.encode(data.toJson());
 
+ComponentAdminSurfaceDeclaration componentAdminSurfaceDeclarationFromJson(
+  String str,
+) => ComponentAdminSurfaceDeclaration.fromJson(json.decode(str));
+
+String componentAdminSurfaceDeclarationToJson(
+  ComponentAdminSurfaceDeclaration data,
+) => json.encode(data.toJson());
+
 ComponentConformanceCaptureValue componentConformanceCaptureValueFromJson(
   String str,
 ) => ComponentConformanceCaptureValue.fromJson(json.decode(str));
@@ -2426,24 +2423,6 @@ ComponentReleaseRegistration componentReleaseRegistrationFromJson(String str) =>
     ComponentReleaseRegistration.fromJson(json.decode(str));
 
 String componentReleaseRegistrationToJson(ComponentReleaseRegistration data) =>
-    json.encode(data.toJson());
-
-ComponentShareGrant componentShareGrantFromJson(String str) =>
-    ComponentShareGrant.fromJson(json.decode(str));
-
-String componentShareGrantToJson(ComponentShareGrant data) =>
-    json.encode(data.toJson());
-
-ComponentShareSet componentShareSetFromJson(String str) =>
-    ComponentShareSet.fromJson(json.decode(str));
-
-String componentShareSetToJson(ComponentShareSet data) =>
-    json.encode(data.toJson());
-
-ComponentShareSubject componentShareSubjectFromJson(String str) =>
-    ComponentShareSubject.fromJson(json.decode(str));
-
-String componentShareSubjectToJson(ComponentShareSubject data) =>
     json.encode(data.toJson());
 
 ComponentText componentTextFromJson(String str) =>
@@ -4320,8 +4299,6 @@ final protocolSessionModeValues = EnumValues({
   "VIEW": ProtocolSessionMode.VIEW,
 });
 
-///Kailo UI language (REQ-08).
-///
 ///系统通知文案的语言；通知不含正文。
 enum ProtocolSessionLocale { EN, ZH_CN }
 
@@ -5215,148 +5192,177 @@ final componentSearchResultKindValues = EnumValues({
   "QUESTION": ComponentSearchResultKind.QUESTION,
 });
 
-///GET /api/v1/account/preferences (DD-164(7)): the signed-in HumanIdentity's account
-///preferences, shared by every Tenant and device. Absent fields have never been set;
-///clients fall back to their defaults.
-class AccountPreferences {
-  ///neutral, kailo-brand or #rrggbb.
-  final String? accent;
+///DD-138(6)：当前 HUMAN 可管理的组件管理面（07 §4.8.5）。只含当前 Tenant 级与所给 Workspace 级 ACTIVE binding 的 pin
+///APPROVED release 所声明、且逐项 fresh manage 通过的项；不含 URL、component_type_key、配置或凭据。
+class AdminSurfacePage {
+  final List<AdminSurfaceEntry> items;
 
-  ///DD-138 contributed preference values, at most 64, ordered by key.
-  final List<AccountComponentPreference> componentPreferences;
-  final bool? followSystem;
+  AdminSurfacePage({required this.items});
 
-  ///Kailo UI language (REQ-08).
-  final ProtocolSessionLocale? locale;
-
-  ///Theme name, 1-64 of [a-z0-9-].
-  final String? theme;
-  final String? updatedAt;
-
-  ///0 before the first write.
-  final int version;
-
-  AccountPreferences({
-    this.accent,
-    required this.componentPreferences,
-    this.followSystem,
-    this.locale,
-    this.theme,
-    this.updatedAt,
-    required this.version,
-  });
-
-  factory AccountPreferences.fromJson(Map<String, dynamic> json) =>
-      AccountPreferences(
-        accent: json["accent"],
-        componentPreferences: List<AccountComponentPreference>.from(
-          json["componentPreferences"].map(
-            (x) => AccountComponentPreference.fromJson(x),
-          ),
+  factory AdminSurfacePage.fromJson(Map<String, dynamic> json) =>
+      AdminSurfacePage(
+        items: List<AdminSurfaceEntry>.from(
+          json["items"].map((x) => AdminSurfaceEntry.fromJson(x)),
         ),
-        followSystem: json["followSystem"],
-        locale: json["locale"] == null
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"items": List<dynamic>.from(items.map((x) => x.toJson()))});
+}
+
+class AdminSurfaceEntry {
+  final String bindingId;
+
+  ///DD-127(4) presentation category used as the source label (云盘、知识库、问数); grants nothing.
+  final NativePageCategory? nativePageCategory;
+  final ComponentAdminSurfaceDeclaration surface;
+  final String? workspaceId;
+
+  AdminSurfaceEntry({
+    required this.bindingId,
+    this.nativePageCategory,
+    required this.surface,
+    this.workspaceId,
+  });
+
+  factory AdminSurfaceEntry.fromJson(Map<String, dynamic> json) =>
+      AdminSurfaceEntry(
+        bindingId: json["bindingId"],
+        nativePageCategory: json["nativePageCategory"] == null
             ? null
-            : protocolSessionLocaleValues.map[json["locale"]]!,
-        theme: json["theme"],
-        updatedAt: json["updatedAt"],
-        version: json["version"],
+            : nativePageCategoryValues.map[json["nativePageCategory"]]!,
+        surface: ComponentAdminSurfaceDeclaration.fromJson(json["surface"]),
+        workspaceId: json["workspaceId"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
-    "accent": accent,
-    "componentPreferences": List<dynamic>.from(
-      componentPreferences.map((x) => x.toJson()),
-    ),
-    "followSystem": followSystem,
-    "locale": protocolSessionLocaleValues.reverse[locale],
-    "theme": theme,
-    "updatedAt": updatedAt,
-    "version": version,
+    "bindingId": bindingId,
+    "nativePageCategory": nativePageCategoryValues.reverse[nativePageCategory],
+    "surface": surface.toJson(),
+    "workspaceId": workspaceId,
   });
 }
 
-class AccountComponentPreference {
-  ///07 §4.8.2 preference key.
+///DD-127(4) presentation category used as the source label (云盘、知识库、问数); grants nothing.
+///
+///DD-127(4)：NATIVE_PAGE 入口的呈现类别，决定侧边栏标签与图标；不授予能力、不参与类别解析或授权。
+///
+///DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
+///labels the entry by capabilityCategories ∪ this value; it grants nothing.
+enum NativePageCategory { DATA_QUERY, FILE_STORAGE, KNOWLEDGE }
+
+final nativePageCategoryValues = EnumValues({
+  "data_query": NativePageCategory.DATA_QUERY,
+  "file_storage": NativePageCategory.FILE_STORAGE,
+  "knowledge": NativePageCategory.KNOWLEDGE,
+});
+
+///DD-138(6)：KAILO_EMBED 原生页面 release 向 Kailo 管理区贡献的一项管理面声明（03
+///FrontendPresentationContract.admin_surface_declarations[]，07 §4.8.5）。值对象，随 APPROVED
+///release 固定；不授予权限，Core 不保存管理状态。键、路径与文案规则由 Core 登记时校验。
+///
+///DD-138(6): present only when the descriptor was requested for a declared admin surface
+///after a fresh manage check (07 §4.8.5); url is then origin + the declared path and the
+///host adds kailo_admin_surface=<key>.
+class ComponentAdminSurfaceDeclaration {
+  final ComponentAdminAccess access;
+  final ComponentAdminCategory adminCategory;
+  final ComponentAdminSurfaceText? description;
+
+  ///管理面标识，2–4 段以 . 连接，不含组件名；成员、角色、邀请、空间与组织类首段被拒绝。
   final String key;
 
-  ///BOOLEAN as true/false, ENUM as the option value (1-32 [A-Za-z0-9._-]).
-  final String value;
+  ///组件 origin 内的固定路径，以单个 / 开头，不含查询与片段。
+  final String path;
+  final ComponentAdminPermission requiredPermission;
+  final ComponentAdminSurfaceText title;
 
-  AccountComponentPreference({required this.key, required this.value});
-
-  factory AccountComponentPreference.fromJson(Map<String, dynamic> json) =>
-      AccountComponentPreference(key: json["key"], value: json["value"]);
-
-  Map<String, dynamic> toJson() => _stripNulls({"key": key, "value": value});
-}
-
-///PUT /api/v1/account/preferences (DD-164(7)): compare-and-swap on version; absent fields
-///are unchanged, componentPreferences entries are merged by key and an entry without value
-///removes the key. 409 returns the current AccountPreferences.
-class AccountPreferencesUpdate {
-  final String? accent;
-  final List<AccountComponentPreferenceChange>? componentPreferences;
-  final int expectedVersion;
-  final bool? followSystem;
-
-  ///Kailo UI language (REQ-08).
-  final ProtocolSessionLocale? locale;
-  final String? theme;
-
-  AccountPreferencesUpdate({
-    this.accent,
-    this.componentPreferences,
-    required this.expectedVersion,
-    this.followSystem,
-    this.locale,
-    this.theme,
+  ComponentAdminSurfaceDeclaration({
+    required this.access,
+    required this.adminCategory,
+    this.description,
+    required this.key,
+    required this.path,
+    required this.requiredPermission,
+    required this.title,
   });
 
-  factory AccountPreferencesUpdate.fromJson(Map<String, dynamic> json) =>
-      AccountPreferencesUpdate(
-        accent: json["accent"],
-        componentPreferences: json["componentPreferences"] == null
-            ? null
-            : List<AccountComponentPreferenceChange>.from(
-                json["componentPreferences"]!.map(
-                  (x) => AccountComponentPreferenceChange.fromJson(x),
-                ),
-              ),
-        expectedVersion: json["expectedVersion"],
-        followSystem: json["followSystem"],
-        locale: json["locale"] == null
-            ? null
-            : protocolSessionLocaleValues.map[json["locale"]]!,
-        theme: json["theme"],
-      );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "accent": accent,
-    "componentPreferences": componentPreferences == null
-        ? null
-        : List<dynamic>.from(componentPreferences!.map((x) => x.toJson())),
-    "expectedVersion": expectedVersion,
-    "followSystem": followSystem,
-    "locale": protocolSessionLocaleValues.reverse[locale],
-    "theme": theme,
-  });
-}
-
-class AccountComponentPreferenceChange {
-  final String key;
-
-  ///Absent removes the key.
-  final String? value;
-
-  AccountComponentPreferenceChange({required this.key, this.value});
-
-  factory AccountComponentPreferenceChange.fromJson(
+  factory ComponentAdminSurfaceDeclaration.fromJson(
     Map<String, dynamic> json,
-  ) => AccountComponentPreferenceChange(key: json["key"], value: json["value"]);
+  ) => ComponentAdminSurfaceDeclaration(
+    access: componentAdminAccessValues.map[json["access"]]!,
+    adminCategory: componentAdminCategoryValues.map[json["adminCategory"]]!,
+    description: json["description"] == null
+        ? null
+        : ComponentAdminSurfaceText.fromJson(json["description"]),
+    key: json["key"],
+    path: json["path"],
+    requiredPermission:
+        componentAdminPermissionValues.map[json["requiredPermission"]]!,
+    title: ComponentAdminSurfaceText.fromJson(json["title"]),
+  );
 
-  Map<String, dynamic> toJson() => _stripNulls({"key": key, "value": value});
+  Map<String, dynamic> toJson() => _stripNulls({
+    "access": componentAdminAccessValues.reverse[access],
+    "adminCategory": componentAdminCategoryValues.reverse[adminCategory],
+    "description": description?.toJson(),
+    "key": key,
+    "path": path,
+    "requiredPermission":
+        componentAdminPermissionValues.reverse[requiredPermission],
+    "title": title.toJson(),
+  });
 }
+
+///DD-138(6)：管理面的可写性（07 §4.8.5）。EDITABLE 为组件自有、页内可改的设置；READ_ONLY 为由 Kailo
+///派生或部署声明、组件内只读展示的设置，组件服务端在 Kailo 模式下拒绝对应写接口。
+enum ComponentAdminAccess { EDITABLE, READ_ONLY }
+
+final componentAdminAccessValues = EnumValues({
+  "EDITABLE": ComponentAdminAccess.EDITABLE,
+  "READ_ONLY": ComponentAdminAccess.READ_ONLY,
+});
+
+///DD-138(6)：组件管理面所属的 Kailo 管理分类（07 §4.8.5）。MODELS 模型、DATA_SOURCES 数据源、STORAGE 存储、INDEXING
+///索引与解析、INTEGRATIONS 集成、SYSTEM 系统；不按组件分类。
+enum ComponentAdminCategory {
+  DATA_SOURCES,
+  INDEXING,
+  INTEGRATIONS,
+  MODELS,
+  STORAGE,
+  SYSTEM,
+}
+
+final componentAdminCategoryValues = EnumValues({
+  "DATA_SOURCES": ComponentAdminCategory.DATA_SOURCES,
+  "INDEXING": ComponentAdminCategory.INDEXING,
+  "INTEGRATIONS": ComponentAdminCategory.INTEGRATIONS,
+  "MODELS": ComponentAdminCategory.MODELS,
+  "STORAGE": ComponentAdminCategory.STORAGE,
+  "SYSTEM": ComponentAdminCategory.SYSTEM,
+});
+
+class ComponentAdminSurfaceText {
+  final String en;
+  final String zhCn;
+
+  ComponentAdminSurfaceText({required this.en, required this.zhCn});
+
+  factory ComponentAdminSurfaceText.fromJson(Map<String, dynamic> json) =>
+      ComponentAdminSurfaceText(en: json["EN"], zhCn: json["ZH_CN"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"EN": en, "ZH_CN": zhCn});
+}
+
+///DD-138(6)：打开管理面所需的 Kailo 权限（07 §4.8.5）。BINDING_MANAGE 为 binding 所属 scope（Workspace 或
+///Tenant）的 manage；TENANT_MANAGE 为 Tenant manage。只决定 Kailo 是否列出与签发 descriptor，组件服务端仍按目录角色判定。
+enum ComponentAdminPermission { BINDING_MANAGE, TENANT_MANAGE }
+
+final componentAdminPermissionValues = EnumValues({
+  "BINDING_MANAGE": ComponentAdminPermission.BINDING_MANAGE,
+  "TENANT_MANAGE": ComponentAdminPermission.TENANT_MANAGE,
+});
 
 ///GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
 ///Installation audit 的运行中回合；没有 audit 的 Installation 不出现（成员只见 20002）。每次读取写 ACCESS 审计。
@@ -8825,18 +8831,6 @@ class ApplicationHumanActionPolicy {
   });
 }
 
-///DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
-///labels the entry by capabilityCategories ∪ this value; it grants nothing.
-///
-///DD-127(4)：NATIVE_PAGE 入口的呈现类别，决定侧边栏标签与图标；不授予能力、不参与类别解析或授权。
-enum NativePageCategory { DATA_QUERY, FILE_STORAGE, KNOWLEDGE }
-
-final nativePageCategoryValues = EnumValues({
-  "data_query": NativePageCategory.DATA_QUERY,
-  "file_storage": NativePageCategory.FILE_STORAGE,
-  "knowledge": NativePageCategory.KNOWLEDGE,
-});
-
 ///DD-138：KAILO_EMBED release 向 Kailo 设置页贡献的一项偏好声明（03
 ///FrontendPresentationContract.preference_declarations[]，07 §4.8.2）。值对象，随 APPROVED release
 ///固定；Core 不保存偏好的值。键规则、选项数量与文案长度由 Core 登记时校验。
@@ -8965,6 +8959,10 @@ final applicationBindingStateValues = EnumValues({
 ///Authorized ACTIVE binding's independent native page. Exact origin is release and
 ///deployment approved; no native credential or page body is returned.
 class ApplicationNativePage {
+  ///DD-138(6): present only when the descriptor was requested for a declared admin surface
+  ///after a fresh manage check (07 §4.8.5); url is then origin + the declared path and the
+  ///host adds kailo_admin_surface=<key>.
+  final ComponentAdminSurfaceDeclaration? adminSurface;
   final List<String> allowedOrigins;
   final String bindingId;
   final String origin;
@@ -8976,6 +8974,7 @@ class ApplicationNativePage {
   final String url;
 
   ApplicationNativePage({
+    this.adminSurface,
     required this.allowedOrigins,
     required this.bindingId,
     required this.origin,
@@ -8986,6 +8985,9 @@ class ApplicationNativePage {
 
   factory ApplicationNativePage.fromJson(Map<String, dynamic> json) =>
       ApplicationNativePage(
+        adminSurface: json["adminSurface"] == null
+            ? null
+            : ComponentAdminSurfaceDeclaration.fromJson(json["adminSurface"]),
         allowedOrigins: List<String>.from(json["allowedOrigins"].map((x) => x)),
         bindingId: json["bindingId"],
         origin: json["origin"],
@@ -9001,6 +9003,7 @@ class ApplicationNativePage {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "adminSurface": adminSurface?.toJson(),
     "allowedOrigins": List<dynamic>.from(allowedOrigins.map((x) => x)),
     "bindingId": bindingId,
     "origin": origin,
@@ -12143,197 +12146,6 @@ final componentConformanceStepExpectedMcpResultKindValues = EnumValues({
   "RESULT": ComponentConformanceStepExpectedMcpResultKind.RESULT,
 });
 
-///PUT /service/v1/component-directory/bindings/{bindingId}/receipt (DD-164(4)⑥): the
-///component reports the last directory snapshot it fully applied or failed to apply. No
-///personal data; grants nothing; never changes the directory.
-class ComponentDirectoryReceiptRequest {
-  final String appliedAt;
-
-  ///64 lowercase hex characters.
-  final String directoryVersion;
-  final List<ComponentReceiptFailure> failures;
-  final ComponentReceiptOutcome outcome;
-  final int schema;
-
-  ComponentDirectoryReceiptRequest({
-    required this.appliedAt,
-    required this.directoryVersion,
-    required this.failures,
-    required this.outcome,
-    required this.schema,
-  });
-
-  factory ComponentDirectoryReceiptRequest.fromJson(
-    Map<String, dynamic> json,
-  ) => ComponentDirectoryReceiptRequest(
-    appliedAt: json["appliedAt"],
-    directoryVersion: json["directoryVersion"],
-    failures: List<ComponentReceiptFailure>.from(
-      json["failures"].map((x) => ComponentReceiptFailure.fromJson(x)),
-    ),
-    outcome: componentReceiptOutcomeValues.map[json["outcome"]]!,
-    schema: json["schema"],
-  );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "appliedAt": appliedAt,
-    "directoryVersion": directoryVersion,
-    "failures": List<dynamic>.from(failures.map((x) => x.toJson())),
-    "outcome": componentReceiptOutcomeValues.reverse[outcome],
-    "schema": schema,
-  });
-}
-
-class ComponentReceiptFailure {
-  final ComponentReceiptFailureKind kind;
-
-  ///Upper snake case, at most 64 characters, e.g. NATIVE_OBJECT_MISSING.
-  final String reasonCode;
-
-  ///Kailo id of the failed item (principalId, workspaceId, tenantId or resourceId), at most
-  ///64 characters.
-  final String ref;
-
-  ComponentReceiptFailure({
-    required this.kind,
-    required this.reasonCode,
-    required this.ref,
-  });
-
-  factory ComponentReceiptFailure.fromJson(Map<String, dynamic> json) =>
-      ComponentReceiptFailure(
-        kind: componentReceiptFailureKindValues.map[json["kind"]]!,
-        reasonCode: json["reasonCode"],
-        ref: json["ref"],
-      );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "kind": componentReceiptFailureKindValues.reverse[kind],
-    "reasonCode": reasonCode,
-    "ref": ref,
-  });
-}
-
-///DD-164(4)⑥: the directory part a convergence failure item refers to.
-enum ComponentReceiptFailureKind { MEMBER, SHARE, TENANT, WORKSPACE }
-
-final componentReceiptFailureKindValues = EnumValues({
-  "MEMBER": ComponentReceiptFailureKind.MEMBER,
-  "SHARE": ComponentReceiptFailureKind.SHARE,
-  "TENANT": ComponentReceiptFailureKind.TENANT,
-  "WORKSPACE": ComponentReceiptFailureKind.WORKSPACE,
-});
-
-///DD-164(4)⑥: whether the component fully applied the reported directory snapshot.
-enum ComponentReceiptOutcome { APPLIED, FAILED }
-
-final componentReceiptOutcomeValues = EnumValues({
-  "APPLIED": ComponentReceiptOutcome.APPLIED,
-  "FAILED": ComponentReceiptOutcome.FAILED,
-});
-
-///GET /api/v1/application-bindings/{bindingId}/directory-receipt for binding managers
-///(DD-164(4)⑥): the latest receipt compared with the current directory version.
-class ComponentDirectoryReceiptView {
-  final String? appliedAt;
-  final String bindingId;
-
-  ///The directory version last served to the component for the reported schema.
-  final String? currentVersion;
-  final List<ComponentReceiptFailureView>? failures;
-  final String? receiptVersion;
-  final String? receivedAt;
-  final int? schema;
-  final ComponentDirectoryReceiptState state;
-
-  ComponentDirectoryReceiptView({
-    this.appliedAt,
-    required this.bindingId,
-    this.currentVersion,
-    this.failures,
-    this.receiptVersion,
-    this.receivedAt,
-    this.schema,
-    required this.state,
-  });
-
-  factory ComponentDirectoryReceiptView.fromJson(Map<String, dynamic> json) =>
-      ComponentDirectoryReceiptView(
-        appliedAt: json["appliedAt"],
-        bindingId: json["bindingId"],
-        currentVersion: json["currentVersion"],
-        failures: json["failures"] == null
-            ? null
-            : List<ComponentReceiptFailureView>.from(
-                json["failures"]!.map(
-                  (x) => ComponentReceiptFailureView.fromJson(x),
-                ),
-              ),
-        receiptVersion: json["receiptVersion"],
-        receivedAt: json["receivedAt"],
-        schema: json["schema"],
-        state: componentDirectoryReceiptStateValues.map[json["state"]]!,
-      );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "appliedAt": appliedAt,
-    "bindingId": bindingId,
-    "currentVersion": currentVersion,
-    "failures": failures == null
-        ? null
-        : List<dynamic>.from(failures!.map((x) => x.toJson())),
-    "receiptVersion": receiptVersion,
-    "receivedAt": receivedAt,
-    "schema": schema,
-    "state": componentDirectoryReceiptStateValues.reverse[state],
-  });
-}
-
-class ComponentReceiptFailureView {
-  final ComponentReceiptFailureKind kind;
-  final String reasonCode;
-  final String ref;
-
-  ComponentReceiptFailureView({
-    required this.kind,
-    required this.reasonCode,
-    required this.ref,
-  });
-
-  factory ComponentReceiptFailureView.fromJson(Map<String, dynamic> json) =>
-      ComponentReceiptFailureView(
-        kind: componentReceiptFailureKindValues.map[json["kind"]]!,
-        reasonCode: json["reasonCode"],
-        ref: json["ref"],
-      );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "kind": componentReceiptFailureKindValues.reverse[kind],
-    "reasonCode": reasonCode,
-    "ref": ref,
-  });
-}
-
-///DD-164(4)⑥: CONVERGED: the latest receipt is APPLIED for the version last served to the
-///component; PENDING: a newer version was served within two read intervals; NOT_CONVERGED:
-///the component has not applied what it was served for longer, or stopped reading for more
-///than two intervals; FAILED: the latest receipt is FAILED; NO_RECEIPT: never reported.
-enum ComponentDirectoryReceiptState {
-  CONVERGED,
-  FAILED,
-  NOT_CONVERGED,
-  NO_RECEIPT,
-  PENDING,
-}
-
-final componentDirectoryReceiptStateValues = EnumValues({
-  "CONVERGED": ComponentDirectoryReceiptState.CONVERGED,
-  "FAILED": ComponentDirectoryReceiptState.FAILED,
-  "NOT_CONVERGED": ComponentDirectoryReceiptState.NOT_CONVERGED,
-  "NO_RECEIPT": ComponentDirectoryReceiptState.NO_RECEIPT,
-  "PENDING": ComponentDirectoryReceiptState.PENDING,
-});
-
 ///Read-only member directory snapshot for an embedded component (.design/07 §4.7.4,
 ///DD-133(4)): every ACTIVE HUMAN member in the native page entry binding's scope with Kailo
 ///display name, avatar URL, Tenant role and ACTIVE Workspace memberships. A full snapshot,
@@ -12510,317 +12322,6 @@ class ComponentDirectoryWorkspace {
       _stripNulls({"name": name, "workspaceId": workspaceId});
 }
 
-///Member directory snapshot schema 2 (.design/07 §4.7.4, DD-164(2)(4)): schema 1 plus Kailo
-///create permissions and the Resource-level share projection. Served only for ?schema=2;
-///directoryVersion is the SHA-256 (hex) of the canonical JSON of every other field of this
-///response.
-class ComponentMemberDirectoryV2 {
-  final String bindingId;
-
-  ///Lowercase hex SHA-256 of the canonical JSON of this snapshot without directoryVersion;
-  ///unchanged content keeps the same version.
-  final String directoryVersion;
-  final List<ComponentDirectoryV2Member> members;
-
-  ///Always 2.
-  final int schema;
-
-  ///Every ACTIVE component.shared_object Resource of this binding, ordered by resourceId.
-  final List<ComponentDirectoryShare> shares;
-  final ComponentDirectoryV2Tenant tenant;
-
-  ///Every ACTIVE Workspace in the binding scope (only the binding's own Workspace when it has
-  ///one).
-  final List<ComponentDirectoryV2Workspace> workspaces;
-
-  ComponentMemberDirectoryV2({
-    required this.bindingId,
-    required this.directoryVersion,
-    required this.members,
-    required this.schema,
-    required this.shares,
-    required this.tenant,
-    required this.workspaces,
-  });
-
-  factory ComponentMemberDirectoryV2.fromJson(Map<String, dynamic> json) =>
-      ComponentMemberDirectoryV2(
-        bindingId: json["bindingId"],
-        directoryVersion: json["directoryVersion"],
-        members: List<ComponentDirectoryV2Member>.from(
-          json["members"].map((x) => ComponentDirectoryV2Member.fromJson(x)),
-        ),
-        schema: json["schema"],
-        shares: List<ComponentDirectoryShare>.from(
-          json["shares"].map((x) => ComponentDirectoryShare.fromJson(x)),
-        ),
-        tenant: ComponentDirectoryV2Tenant.fromJson(json["tenant"]),
-        workspaces: List<ComponentDirectoryV2Workspace>.from(
-          json["workspaces"].map(
-            (x) => ComponentDirectoryV2Workspace.fromJson(x),
-          ),
-        ),
-      );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "bindingId": bindingId,
-    "directoryVersion": directoryVersion,
-    "members": List<dynamic>.from(members.map((x) => x.toJson())),
-    "schema": schema,
-    "shares": List<dynamic>.from(shares.map((x) => x.toJson())),
-    "tenant": tenant.toJson(),
-    "workspaces": List<dynamic>.from(workspaces.map((x) => x.toJson())),
-  });
-}
-
-class ComponentDirectoryV2Member {
-  ///Kailo display name: the member's SERVER HUMAN kind:0 display_name (else name), else the
-  ///HumanIdentity display name.
-  final String displayName;
-
-  ///One entry per ACTIVE external identity; the component keys its account on issuer +
-  ///subject.
-  final List<ComponentDirectoryV2Identity> identities;
-  final String principalId;
-
-  ///SpiceDB Tenant create for this principal (fully consistent).
-  final bool tenantCreate;
-  final ComponentDirectoryRole tenantRole;
-  final List<ComponentDirectoryV2Membership> workspaces;
-
-  ComponentDirectoryV2Member({
-    required this.displayName,
-    required this.identities,
-    required this.principalId,
-    required this.tenantCreate,
-    required this.tenantRole,
-    required this.workspaces,
-  });
-
-  factory ComponentDirectoryV2Member.fromJson(
-    Map<String, dynamic> json,
-  ) => ComponentDirectoryV2Member(
-    displayName: json["displayName"],
-    identities: List<ComponentDirectoryV2Identity>.from(
-      json["identities"].map((x) => ComponentDirectoryV2Identity.fromJson(x)),
-    ),
-    principalId: json["principalId"],
-    tenantCreate: json["tenantCreate"],
-    tenantRole: componentDirectoryRoleValues.map[json["tenantRole"]]!,
-    workspaces: List<ComponentDirectoryV2Membership>.from(
-      json["workspaces"].map((x) => ComponentDirectoryV2Membership.fromJson(x)),
-    ),
-  );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "displayName": displayName,
-    "identities": List<dynamic>.from(identities.map((x) => x.toJson())),
-    "principalId": principalId,
-    "tenantCreate": tenantCreate,
-    "tenantRole": componentDirectoryRoleValues.reverse[tenantRole],
-    "workspaces": List<dynamic>.from(workspaces.map((x) => x.toJson())),
-  });
-}
-
-class ComponentDirectoryV2Identity {
-  final String issuer;
-
-  ///<PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>, the same value as the IdP picture
-  ///claim.
-  final String picture;
-  final String subject;
-
-  ComponentDirectoryV2Identity({
-    required this.issuer,
-    required this.picture,
-    required this.subject,
-  });
-
-  factory ComponentDirectoryV2Identity.fromJson(Map<String, dynamic> json) =>
-      ComponentDirectoryV2Identity(
-        issuer: json["issuer"],
-        picture: json["picture"],
-        subject: json["subject"],
-      );
-
-  Map<String, dynamic> toJson() =>
-      _stripNulls({"issuer": issuer, "picture": picture, "subject": subject});
-}
-
-class ComponentDirectoryV2Membership {
-  ///SpiceDB Workspace create for this principal (fully consistent).
-  final bool create;
-  final ComponentDirectoryRole role;
-  final String workspaceId;
-
-  ComponentDirectoryV2Membership({
-    required this.create,
-    required this.role,
-    required this.workspaceId,
-  });
-
-  factory ComponentDirectoryV2Membership.fromJson(Map<String, dynamic> json) =>
-      ComponentDirectoryV2Membership(
-        create: json["create"],
-        role: componentDirectoryRoleValues.map[json["role"]]!,
-        workspaceId: json["workspaceId"],
-      );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "create": create,
-    "role": componentDirectoryRoleValues.reverse[role],
-    "workspaceId": workspaceId,
-  });
-}
-
-class ComponentDirectoryShare {
-  ///Owner first as WRITE, then the reader/editor relationships whose subject is still in this
-  ///snapshot, ordered by subject kind, id and access.
-  final List<ComponentShareGrant> grants;
-  final String nativeId;
-  final ComponentSharedNativeType nativeType;
-  final String ownerPrincipalId;
-  final String resourceId;
-
-  ComponentDirectoryShare({
-    required this.grants,
-    required this.nativeId,
-    required this.nativeType,
-    required this.ownerPrincipalId,
-    required this.resourceId,
-  });
-
-  factory ComponentDirectoryShare.fromJson(Map<String, dynamic> json) =>
-      ComponentDirectoryShare(
-        grants: List<ComponentShareGrant>.from(
-          json["grants"].map((x) => ComponentShareGrant.fromJson(x)),
-        ),
-        nativeId: json["nativeId"],
-        nativeType: componentSharedNativeTypeValues.map[json["nativeType"]]!,
-        ownerPrincipalId: json["ownerPrincipalId"],
-        resourceId: json["resourceId"],
-      );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "grants": List<dynamic>.from(grants.map((x) => x.toJson())),
-    "nativeId": nativeId,
-    "nativeType": componentSharedNativeTypeValues.reverse[nativeType],
-    "ownerPrincipalId": ownerPrincipalId,
-    "resourceId": resourceId,
-  });
-}
-
-///DD-164(4): one grant on a component shared object. TENANT subjects only accept READ.
-class ComponentShareGrant {
-  final ComponentShareAccess access;
-  final ComponentShareSubject subject;
-
-  ComponentShareGrant({required this.access, required this.subject});
-
-  factory ComponentShareGrant.fromJson(Map<String, dynamic> json) =>
-      ComponentShareGrant(
-        access: componentShareAccessValues.map[json["access"]]!,
-        subject: ComponentShareSubject.fromJson(json["subject"]),
-      );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "access": componentShareAccessValues.reverse[access],
-    "subject": subject.toJson(),
-  });
-}
-
-///DD-164(4): access granted on a component shared object. READ writes the SpiceDB reader
-///relationship, WRITE writes editor.
-enum ComponentShareAccess { READ, WRITE }
-
-final componentShareAccessValues = EnumValues({
-  "READ": ComponentShareAccess.READ,
-  "WRITE": ComponentShareAccess.WRITE,
-});
-
-///DD-164(4): grantee of a component shared object. PRINCIPAL carries principalId (a
-///same-Tenant ACTIVE HUMAN), WORKSPACE carries workspaceId (an ACTIVE Workspace of the
-///Tenant), TENANT carries neither.
-class ComponentShareSubject {
-  final ComponentShareSubjectKind kind;
-  final String? principalId;
-  final String? workspaceId;
-
-  ComponentShareSubject({
-    required this.kind,
-    this.principalId,
-    this.workspaceId,
-  });
-
-  factory ComponentShareSubject.fromJson(Map<String, dynamic> json) =>
-      ComponentShareSubject(
-        kind: componentShareSubjectKindValues.map[json["kind"]]!,
-        principalId: json["principalId"],
-        workspaceId: json["workspaceId"],
-      );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "kind": componentShareSubjectKindValues.reverse[kind],
-    "principalId": principalId,
-    "workspaceId": workspaceId,
-  });
-}
-
-///DD-164(4): who a component shared object is granted to: one Tenant HUMAN member, every
-///member of a Workspace (workspace#member), or every Tenant member (tenant#member, READ
-///only).
-enum ComponentShareSubjectKind { PRINCIPAL, TENANT, WORKSPACE }
-
-final componentShareSubjectKindValues = EnumValues({
-  "PRINCIPAL": ComponentShareSubjectKind.PRINCIPAL,
-  "TENANT": ComponentShareSubjectKind.TENANT,
-  "WORKSPACE": ComponentShareSubjectKind.WORKSPACE,
-});
-
-///DD-164(4) shareable native object types, fixed per presentation category: file_storage ->
-///folder, knowledge -> knowledge_base (phase 1).
-enum ComponentSharedNativeType { FOLDER, KNOWLEDGE_BASE }
-
-final componentSharedNativeTypeValues = EnumValues({
-  "folder": ComponentSharedNativeType.FOLDER,
-  "knowledge_base": ComponentSharedNativeType.KNOWLEDGE_BASE,
-});
-
-class ComponentDirectoryV2Tenant {
-  final String name;
-  final String tenantId;
-
-  ComponentDirectoryV2Tenant({required this.name, required this.tenantId});
-
-  factory ComponentDirectoryV2Tenant.fromJson(Map<String, dynamic> json) =>
-      ComponentDirectoryV2Tenant(
-        name: json["name"],
-        tenantId: json["tenantId"],
-      );
-
-  Map<String, dynamic> toJson() =>
-      _stripNulls({"name": name, "tenantId": tenantId});
-}
-
-class ComponentDirectoryV2Workspace {
-  final String name;
-  final String workspaceId;
-
-  ComponentDirectoryV2Workspace({
-    required this.name,
-    required this.workspaceId,
-  });
-
-  factory ComponentDirectoryV2Workspace.fromJson(Map<String, dynamic> json) =>
-      ComponentDirectoryV2Workspace(
-        name: json["name"],
-        workspaceId: json["workspaceId"],
-      );
-
-  Map<String, dynamic> toJson() =>
-      _stripNulls({"name": name, "workspaceId": workspaceId});
-}
-
 ///DD-138(4)、07 §4.8.3：组件以其成员目录 client 的 client-credentials 令牌向 Core 服务监听面 POST
 ////service/v1/component-notifications/bindings/{bindingId}/notifications 投递的一条通知。不建立
 ///ActionExecution、不授予权限；未知字段整体拒绝。
@@ -12888,6 +12389,8 @@ class ComponentNotificationDelivery {
 ///
 ///组件以 OIDC issuer + subject 指称 Kailo 成员（与 07 §4.7.4 成员目录 identities[] 同值）；Core 只在该 binding
 ///当前目录范围内解析。
+///
+///count meter 必填、file_storage_bytes 不得出现；须在该 binding 当前目录范围内。
 class ComponentPersonRef {
   final String issuer;
   final String subject;
@@ -13485,164 +12988,266 @@ class ComponentSearchQuery {
       _stripNulls({"limit": limit, "locale": locale, "q": q});
 }
 
-///Answer to a share intent: the opaque intent the component passes to the Kailo host in
-///wire v1 {type: share}.
-class ComponentShareIntentCreated {
-  final String expiresAt;
-  final String intentId;
+///DD-165(3)：额度准入结论。OpenMeter 不可读时 Core 以 503 回应而不给出结论，组件不得放行。组件可把 ALLOWED 缓存至多 60 秒。
+class ComponentUsageAdmission {
+  final ComponentUsageDecision decision;
 
-  ComponentShareIntentCreated({
-    required this.expiresAt,
-    required this.intentId,
-  });
+  ///该额度项当前周期的结束时刻（RFC3339）；没有 entitlement 时不给出。
+  final String? periodResetAt;
 
-  factory ComponentShareIntentCreated.fromJson(Map<String, dynamic> json) =>
-      ComponentShareIntentCreated(
-        expiresAt: json["expiresAt"],
-        intentId: json["intentId"],
-      );
+  ComponentUsageAdmission({required this.decision, this.periodResetAt});
 
-  Map<String, dynamic> toJson() =>
-      _stripNulls({"expiresAt": expiresAt, "intentId": intentId});
-}
-
-///POST /service/v1/component-directory/bindings/{bindingId}/share-intents (DD-164(4)②): the
-///component service names the native object its user wants to share. Only sent when the
-///initiator may share the object natively; grants nothing.
-class ComponentShareIntentRequest {
-  final ComponentShareInitiator initiator;
-
-  ///Display name, 1-200 characters.
-  final String name;
-
-  ///1-255 visible characters: Cells node UUID or WeKnora knowledge base ID.
-  final String nativeId;
-  final ComponentSharedNativeType nativeType;
-
-  ///The Kailo Workspace whose root contains the object, absent for Tenant-level objects.
-  final String? workspaceId;
-
-  ComponentShareIntentRequest({
-    required this.initiator,
-    required this.name,
-    required this.nativeId,
-    required this.nativeType,
-    this.workspaceId,
-  });
-
-  factory ComponentShareIntentRequest.fromJson(Map<String, dynamic> json) =>
-      ComponentShareIntentRequest(
-        initiator: ComponentShareInitiator.fromJson(json["initiator"]),
-        name: json["name"],
-        nativeId: json["nativeId"],
-        nativeType: componentSharedNativeTypeValues.map[json["nativeType"]]!,
-        workspaceId: json["workspaceId"],
+  factory ComponentUsageAdmission.fromJson(Map<String, dynamic> json) =>
+      ComponentUsageAdmission(
+        decision: componentUsageDecisionValues.map[json["decision"]]!,
+        periodResetAt: json["periodResetAt"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
-    "initiator": initiator.toJson(),
-    "name": name,
-    "nativeId": nativeId,
-    "nativeType": componentSharedNativeTypeValues.reverse[nativeType],
-    "workspaceId": workspaceId,
+    "decision": componentUsageDecisionValues.reverse[decision],
+    "periodResetAt": periodResetAt,
   });
 }
 
-class ComponentShareInitiator {
-  final String issuer;
-  final String subject;
-
-  ComponentShareInitiator({required this.issuer, required this.subject});
-
-  factory ComponentShareInitiator.fromJson(Map<String, dynamic> json) =>
-      ComponentShareInitiator(issuer: json["issuer"], subject: json["subject"]);
-
-  Map<String, dynamic> toJson() =>
-      _stripNulls({"issuer": issuer, "subject": subject});
+///DD-165(3)：组件额度准入结论（CHECK，不预留）。TENANT_QUOTA_EXHAUSTED：该 Tenant
+///的额度项无访问；MEMBER_QUOTA_EXHAUSTED：设置了成员上限且本人本期已用不小于它。两者组件都拒绝该动作且不产生原生副作用。QUOTA_NOT_CONFIGURED：该
+///Tenant 的额度项还没有 entitlement（发布对齐未完成，DD-165(5)），组件同样拒绝并提示额度尚未在 Kailo 中完成登记。
+enum ComponentUsageDecision {
+  ALLOWED,
+  MEMBER_QUOTA_EXHAUSTED,
+  QUOTA_NOT_CONFIGURED,
+  TENANT_QUOTA_EXHAUSTED,
 }
 
-///GET /api/v1/component-shares/intents/{intentId} (DD-164(4)③): what the Kailo share dialog
-///shows. Readable only by the intent's initiator in a current session; an expired, consumed
-///or foreign intent is 404.
-class ComponentShareIntentView {
-  ///folder: PRINCIPAL, WORKSPACE, TENANT; knowledge_base: WORKSPACE, TENANT (phase 1).
-  final List<ComponentShareSubjectKind> allowedSubjects;
+final componentUsageDecisionValues = EnumValues({
+  "ALLOWED": ComponentUsageDecision.ALLOWED,
+  "MEMBER_QUOTA_EXHAUSTED": ComponentUsageDecision.MEMBER_QUOTA_EXHAUSTED,
+  "QUOTA_NOT_CONFIGURED": ComponentUsageDecision.QUOTA_NOT_CONFIGURED,
+  "TENANT_QUOTA_EXHAUSTED": ComponentUsageDecision.TENANT_QUOTA_EXHAUSTED,
+});
+
+///DD-165、07 §4.8.9：组件在动作开始前向 POST
+////service/v1/component-usage/bindings/{bindingId}/admission 询问额度。身份、前提与 meter
+///类别规则同上报；未知字段整体拒绝。
+class ComponentUsageAdmissionRequest {
+  ///count meter 必填、file_storage_bytes 不得出现；须在该 binding 当前目录范围内。
+  final ComponentPersonRef? member;
+  final ComponentUsageMeter meterKey;
+
+  ComponentUsageAdmissionRequest({this.member, required this.meterKey});
+
+  factory ComponentUsageAdmissionRequest.fromJson(Map<String, dynamic> json) =>
+      ComponentUsageAdmissionRequest(
+        member: json["member"] == null
+            ? null
+            : ComponentPersonRef.fromJson(json["member"]),
+        meterKey: componentUsageMeterValues.map[json["meterKey"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "member": member?.toJson(),
+    "meterKey": componentUsageMeterValues.reverse[meterKey],
+  });
+}
+
+///DD-165、07 §4.8.9：组件可上报或询问准入的平台 meter，随 Core 固定。knowledge_answer_count 只属 knowledge
+///呈现类别、data_query_count 只属 data_query、file_storage_bytes 只属
+///file_storage；component_model_tokens 只来自 Gateway durable usage，不可上报。
+enum ComponentUsageMeter {
+  DATA_QUERY_COUNT,
+  FILE_STORAGE_BYTES,
+  KNOWLEDGE_ANSWER_COUNT,
+}
+
+final componentUsageMeterValues = EnumValues({
+  "data_query_count": ComponentUsageMeter.DATA_QUERY_COUNT,
+  "file_storage_bytes": ComponentUsageMeter.FILE_STORAGE_BYTES,
+  "knowledge_answer_count": ComponentUsageMeter.KNOWLEDGE_ANSWER_COUNT,
+});
+
+///DD-165(4)：GET /api/v1/usage/components?from=&to=，Tenant 在区间内按组件（binding）拆分的 committed
+///usage。调用方须持有 Tenant audit permission，每次 fresh Check。数值直接读 OpenMeter（group_by
+///component_binding_id），不复制成账本；缺失事实以确定状态表达。
+class ComponentUsagePage {
+  ///RFC3339，含
+  final String from;
+  final List<ComponentMeterUsage> meters;
+
+  ///RFC3339，不含
+  final String to;
+
+  ComponentUsagePage({
+    required this.from,
+    required this.meters,
+    required this.to,
+  });
+
+  factory ComponentUsagePage.fromJson(Map<String, dynamic> json) =>
+      ComponentUsagePage(
+        from: json["from"],
+        meters: List<ComponentMeterUsage>.from(
+          json["meters"].map((x) => ComponentMeterUsage.fromJson(x)),
+        ),
+        to: json["to"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "from": from,
+    "meters": List<dynamic>.from(meters.map((x) => x.toJson())),
+    "to": to,
+  });
+}
+
+class ComponentMeterUsage {
+  ///原生 meter 的聚合方式原文
+  final String? aggregation;
+  final List<ComponentBindingUsage> bindings;
+
+  ///随 Core 固定的组件 meter 键
+  final String meterKey;
+  final MeterUsageState state;
+
+  ComponentMeterUsage({
+    this.aggregation,
+    required this.bindings,
+    required this.meterKey,
+    required this.state,
+  });
+
+  factory ComponentMeterUsage.fromJson(Map<String, dynamic> json) =>
+      ComponentMeterUsage(
+        aggregation: json["aggregation"],
+        bindings: List<ComponentBindingUsage>.from(
+          json["bindings"].map((x) => ComponentBindingUsage.fromJson(x)),
+        ),
+        meterKey: json["meterKey"],
+        state: meterUsageStateValues.map[json["state"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "aggregation": aggregation,
+    "bindings": List<dynamic>.from(bindings.map((x) => x.toJson())),
+    "meterKey": meterKey,
+    "state": meterUsageStateValues.reverse[state],
+  });
+}
+
+class ComponentBindingUsage {
   final String bindingId;
+  final NativePageCategory? nativePageCategory;
 
-  ///Fresh share on the existing Resource, or true for the initiator before the first share.
-  final bool canShare;
-  final String expiresAt;
+  ///OpenMeter 返回的十进制原文
+  final String quantity;
 
-  ///Current grants without the owner.
-  final List<ComponentShareGrant> grants;
-  final String intentId;
-  final String name;
-
-  ///file_storage or knowledge.
-  final String nativePageCategory;
-  final ComponentSharedNativeType nativeType;
-  final String? ownerPrincipalId;
-
-  ///Present once the object is a component.shared_object Resource.
-  final String? resourceId;
-  final int? resourceVersion;
+  ///Workspace 级 binding 的 Workspace；Tenant 级 binding 不给出
   final String? workspaceId;
 
-  ComponentShareIntentView({
-    required this.allowedSubjects,
+  ComponentBindingUsage({
     required this.bindingId,
-    required this.canShare,
-    required this.expiresAt,
-    required this.grants,
-    required this.intentId,
-    required this.name,
-    required this.nativePageCategory,
-    required this.nativeType,
-    this.ownerPrincipalId,
-    this.resourceId,
-    this.resourceVersion,
+    this.nativePageCategory,
+    required this.quantity,
     this.workspaceId,
   });
 
-  factory ComponentShareIntentView.fromJson(Map<String, dynamic> json) =>
-      ComponentShareIntentView(
-        allowedSubjects: List<ComponentShareSubjectKind>.from(
-          json["allowedSubjects"].map(
-            (x) => componentShareSubjectKindValues.map[x]!,
-          ),
-        ),
+  factory ComponentBindingUsage.fromJson(Map<String, dynamic> json) =>
+      ComponentBindingUsage(
         bindingId: json["bindingId"],
-        canShare: json["canShare"],
-        expiresAt: json["expiresAt"],
-        grants: List<ComponentShareGrant>.from(
-          json["grants"].map((x) => ComponentShareGrant.fromJson(x)),
-        ),
-        intentId: json["intentId"],
-        name: json["name"],
-        nativePageCategory: json["nativePageCategory"],
-        nativeType: componentSharedNativeTypeValues.map[json["nativeType"]]!,
-        ownerPrincipalId: json["ownerPrincipalId"],
-        resourceId: json["resourceId"],
-        resourceVersion: json["resourceVersion"],
+        nativePageCategory: json["nativePageCategory"] == null
+            ? null
+            : nativePageCategoryValues.map[json["nativePageCategory"]]!,
+        quantity: json["quantity"],
         workspaceId: json["workspaceId"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
-    "allowedSubjects": List<dynamic>.from(
-      allowedSubjects.map((x) => componentShareSubjectKindValues.reverse[x]),
-    ),
     "bindingId": bindingId,
-    "canShare": canShare,
-    "expiresAt": expiresAt,
-    "grants": List<dynamic>.from(grants.map((x) => x.toJson())),
-    "intentId": intentId,
-    "name": name,
-    "nativePageCategory": nativePageCategory,
-    "nativeType": componentSharedNativeTypeValues.reverse[nativeType],
-    "ownerPrincipalId": ownerPrincipalId,
-    "resourceId": resourceId,
-    "resourceVersion": resourceVersion,
+    "nativePageCategory": nativePageCategoryValues.reverse[nativePageCategory],
+    "quantity": quantity,
     "workspaceId": workspaceId,
+  });
+}
+
+///一个已登记 meter 在所选区间内的 OpenMeter committed usage 查询结论（.design/11 §7）。COMMITTED：原生查询返回该
+///Customer 的聚合值；NO_COMMITTED_USAGE：原生查询成功且区间内没有已存储事件；WORKSPACE_DIMENSION_UNAVAILABLE：原生
+///meter 未声明 workspace_id 维度，不能按 Workspace 归因；METER_NOT_REGISTERED：动作登记的 meter 在 OpenMeter
+///中不存在或不唯一；UNAVAILABLE：查询失败或结果不可查证。后三者都不显示数值。
+enum MeterUsageState {
+  COMMITTED,
+  METER_NOT_REGISTERED,
+  NO_COMMITTED_USAGE,
+  UNAVAILABLE,
+  WORKSPACE_DIMENSION_UNAVAILABLE,
+}
+
+final meterUsageStateValues = EnumValues({
+  "COMMITTED": MeterUsageState.COMMITTED,
+  "METER_NOT_REGISTERED": MeterUsageState.METER_NOT_REGISTERED,
+  "NO_COMMITTED_USAGE": MeterUsageState.NO_COMMITTED_USAGE,
+  "UNAVAILABLE": MeterUsageState.UNAVAILABLE,
+  "WORKSPACE_DIMENSION_UNAVAILABLE":
+      MeterUsageState.WORKSPACE_DIMENSION_UNAVAILABLE,
+});
+
+///DD-165：上报回执。新建 201、同键同内容重复 200（duplicate=true）。usageEventId 是 Core UsageEvent 与 OpenMeter
+///event 的同一 ID；回执不表示 OpenMeter 已存储。
+class ComponentUsageReceipt {
+  final bool duplicate;
+  final String usageEventId;
+
+  ComponentUsageReceipt({required this.duplicate, required this.usageEventId});
+
+  factory ComponentUsageReceipt.fromJson(Map<String, dynamic> json) =>
+      ComponentUsageReceipt(
+        duplicate: json["duplicate"],
+        usageEventId: json["usageEventId"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"duplicate": duplicate, "usageEventId": usageEventId});
+}
+
+///DD-165、07 §4.8.9：组件以其成员目录 client 的 client-credentials 令牌向 Core 服务监听面 POST
+////service/v1/component-usage/bindings/{bindingId}/reports 上报的一条已发生用量。Core 写
+///COMPONENT_REPORT UsageEvent；不建立 ActionExecution、不授予权限；未知字段整体拒绝。
+class ComponentUsageReport {
+  ///1–128 个字母、数字、. _ : -，在该 binding 内唯一；同键同内容返回首次结果，同键异内容 409。
+  final String idempotencyKey;
+
+  ///count meter 必填、file_storage_bytes 不得出现；须在该 binding 当前目录范围内。
+  final ComponentPersonRef? member;
+  final ComponentUsageMeter meterKey;
+
+  ///RFC3339，不晚于 Core 当前时刻 5 分钟，不早于 7 天前。
+  final String occurredAt;
+
+  ///非负整数；count meter 恰为 1，file_storage_bytes 为字节数且不超过 10^15。
+  final int quantity;
+
+  ComponentUsageReport({
+    required this.idempotencyKey,
+    this.member,
+    required this.meterKey,
+    required this.occurredAt,
+    required this.quantity,
+  });
+
+  factory ComponentUsageReport.fromJson(Map<String, dynamic> json) =>
+      ComponentUsageReport(
+        idempotencyKey: json["idempotencyKey"],
+        member: json["member"] == null
+            ? null
+            : ComponentPersonRef.fromJson(json["member"]),
+        meterKey: componentUsageMeterValues.map[json["meterKey"]]!,
+        occurredAt: json["occurredAt"],
+        quantity: json["quantity"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "idempotencyKey": idempotencyKey,
+    "member": member?.toJson(),
+    "meterKey": componentUsageMeterValues.reverse[meterKey],
+    "occurredAt": occurredAt,
+    "quantity": quantity,
   });
 }
 
@@ -17371,6 +16976,100 @@ class McpOauthStartRequest {
   });
 }
 
+///DD-165(4)：GET /api/v1/usage/me，当前会话成员本人的用量（「我的用量」）。只列带成员维度的额度项；数值直接读 OpenMeter（按 Customer
+///与本人 member_principal_id 过滤），不含组织上限与组织已用。
+class MemberUsagePage {
+  final List<MemberUsageView> items;
+
+  MemberUsagePage({required this.items});
+
+  factory MemberUsagePage.fromJson(Map<String, dynamic> json) =>
+      MemberUsagePage(
+        items: List<MemberUsageView>.from(
+          json["items"].map((x) => MemberUsageView.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"items": List<dynamic>.from(items.map((x) => x.toJson()))});
+}
+
+class MemberUsageView {
+  final TenantQuotaFeature feature;
+
+  ///本人每期上限；未设置成员上限时不给出。
+  final int? memberLimitPerPeriod;
+  final String? periodResetAt;
+  final MemberUsageState state;
+
+  ///本人本期已用（OpenMeter committed）；state 为 UNAVAILABLE 时不给出。
+  final double? used;
+
+  MemberUsageView({
+    required this.feature,
+    this.memberLimitPerPeriod,
+    this.periodResetAt,
+    required this.state,
+    this.used,
+  });
+
+  factory MemberUsageView.fromJson(Map<String, dynamic> json) =>
+      MemberUsageView(
+        feature: tenantQuotaFeatureValues.map[json["feature"]]!,
+        memberLimitPerPeriod: json["memberLimitPerPeriod"],
+        periodResetAt: json["periodResetAt"],
+        state: memberUsageStateValues.map[json["state"]]!,
+        used: json["used"]?.toDouble(),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "feature": tenantQuotaFeatureValues.reverse[feature],
+    "memberLimitPerPeriod": memberLimitPerPeriod,
+    "periodResetAt": periodResetAt,
+    "state": memberUsageStateValues.reverse[state],
+    "used": used,
+  });
+}
+
+enum TenantQuotaFeature {
+  AGENT_MEMORY_WRITES,
+  AGENT_TOKENS,
+  AUTOMATION_RUNS,
+  COMPONENT_TOKENS,
+  DATA_QUERIES,
+  FILE_STORAGE,
+  KNOWLEDGE_ANSWERS,
+}
+
+final tenantQuotaFeatureValues = EnumValues({
+  "agent_memory_writes": TenantQuotaFeature.AGENT_MEMORY_WRITES,
+  "agent_tokens": TenantQuotaFeature.AGENT_TOKENS,
+  "automation_runs": TenantQuotaFeature.AUTOMATION_RUNS,
+  "component_tokens": TenantQuotaFeature.COMPONENT_TOKENS,
+  "data_queries": TenantQuotaFeature.DATA_QUERIES,
+  "file_storage": TenantQuotaFeature.FILE_STORAGE,
+  "knowledge_answers": TenantQuotaFeature.KNOWLEDGE_ANSWERS,
+});
+
+///
+///DD-165(4)：成员本人在一个额度项上的当前状态。AVAILABLE：可用；MEMBER_LIMIT_REACHED：本人已达成员上限；TENANT_EXHAUSTED：组织额度已用完（不显示组织数字）；UNAVAILABLE：OpenMeter
+///不可读或映射不唯一，不显示数值。NOT_CONFIGURED：该额度项尚未在 Kailo 中完成登记（DD-165(5)），不显示数值。
+enum MemberUsageState {
+  AVAILABLE,
+  MEMBER_LIMIT_REACHED,
+  NOT_CONFIGURED,
+  TENANT_EXHAUSTED,
+  UNAVAILABLE,
+}
+
+final memberUsageStateValues = EnumValues({
+  "AVAILABLE": MemberUsageState.AVAILABLE,
+  "MEMBER_LIMIT_REACHED": MemberUsageState.MEMBER_LIMIT_REACHED,
+  "NOT_CONFIGURED": MemberUsageState.NOT_CONFIGURED,
+  "TENANT_EXHAUSTED": MemberUsageState.TENANT_EXHAUSTED,
+  "UNAVAILABLE": MemberUsageState.UNAVAILABLE,
+});
+
 ///GET /api/v1/moderation/access（DD-125(2)）：原版只对 Community owner/admin 显示的审核入口在 Kailo 对应
 ///Tenant manage。canModerate 是与 moderation.ban 准入同一条 fresh 判定（目录开放、非 Platform Catalog、scope
 ///guard 与 tenant manage）的提示，不是授权票据，提交时仍完整重新准入；它不读取任何限制或队列事实。
@@ -17891,9 +17590,6 @@ class ActionCommand {
   ///仅组件批准：已登记的不可变ComponentRelease标识。
   final String? componentReleaseId;
   final ComponentReleaseRegistration? componentReleaseRegistration;
-
-  ///仅 component.share.set（DD-164(4)）且必带；其他动作携带即拒绝。
-  final ComponentShareSet? componentShareSet;
   final ConversationOpenRequest? conversationOpen;
 
   ///仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
@@ -18056,7 +17752,6 @@ class ActionCommand {
     this.componentAction,
     this.componentReleaseId,
     this.componentReleaseRegistration,
-    this.componentShareSet,
     this.conversationOpen,
     this.delegationGrant,
     this.delegationId,
@@ -18156,9 +17851,6 @@ class ActionCommand {
         : ComponentReleaseRegistration.fromJson(
             json["componentReleaseRegistration"],
           ),
-    componentShareSet: json["componentShareSet"] == null
-        ? null
-        : ComponentShareSet.fromJson(json["componentShareSet"]),
     conversationOpen: json["conversationOpen"] == null
         ? null
         : ConversationOpenRequest.fromJson(json["conversationOpen"]),
@@ -18275,7 +17967,6 @@ class ActionCommand {
     "componentAction": componentAction?.toJson(),
     "componentReleaseId": componentReleaseId,
     "componentReleaseRegistration": componentReleaseRegistration?.toJson(),
-    "componentShareSet": componentShareSet?.toJson(),
     "conversationOpen": conversationOpen?.toJson(),
     "delegationGrant": delegationGrant?.toJson(),
     "delegationId": delegationId,
@@ -18918,40 +18609,6 @@ class ComponentReleaseRegistration {
     "bindingConfigSchemaJson": bindingConfigSchemaJson,
     "manifestJson": manifestJson,
     "packageJson": packageJson,
-  });
-}
-
-///仅 component.share.set（DD-164(4)）且必带；其他动作携带即拒绝。
-///
-///Only component.share.set (DD-164(4)③) and required for it: the share intent naming the
-///native object, the expected Resource version when the object is already a
-///component.shared_object Resource (absent on the first share), and the complete grant list
-///that replaces the current one (owner is implicit and never listed). At most 100 grants,
-///no duplicate subject.
-class ComponentShareSet {
-  final List<ComponentShareGrant> grants;
-  final String intentId;
-  final int? resourceVersion;
-
-  ComponentShareSet({
-    required this.grants,
-    required this.intentId,
-    this.resourceVersion,
-  });
-
-  factory ComponentShareSet.fromJson(Map<String, dynamic> json) =>
-      ComponentShareSet(
-        grants: List<ComponentShareGrant>.from(
-          json["grants"].map((x) => ComponentShareGrant.fromJson(x)),
-        ),
-        intentId: json["intentId"],
-        resourceVersion: json["resourceVersion"],
-      );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "grants": List<dynamic>.from(grants.map((x) => x.toJson())),
-    "intentId": intentId,
-    "resourceVersion": resourceVersion,
   });
 }
 
@@ -19682,33 +19339,37 @@ class TenantProfileInput {
 
 ///仅 tenant.quota.set（DD-123）
 ///
-///DD-123: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
-///OpenMeter entitlement for the platform feature, resetting monthly.
+///DD-123/DD-165: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
+///OpenMeter entitlement for the platform feature, resetting monthly; memberLimitPerPeriod
+///(only knowledge_answers and data_queries) is the per-member cap kept in the same
+///entitlement's metadata. A setting without it removes the member cap.
 class TenantQuotaSetting {
   final TenantQuotaFeature feature;
   final int limitPerPeriod;
 
-  TenantQuotaSetting({required this.feature, required this.limitPerPeriod});
+  ///DD-165(3): per-member cap per period; only for quota items with a member dimension
+  ///(knowledge_answers, data_queries).
+  final int? memberLimitPerPeriod;
+
+  TenantQuotaSetting({
+    required this.feature,
+    required this.limitPerPeriod,
+    this.memberLimitPerPeriod,
+  });
 
   factory TenantQuotaSetting.fromJson(Map<String, dynamic> json) =>
       TenantQuotaSetting(
         feature: tenantQuotaFeatureValues.map[json["feature"]]!,
         limitPerPeriod: json["limitPerPeriod"],
+        memberLimitPerPeriod: json["memberLimitPerPeriod"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "feature": tenantQuotaFeatureValues.reverse[feature],
     "limitPerPeriod": limitPerPeriod,
+    "memberLimitPerPeriod": memberLimitPerPeriod,
   });
 }
-
-enum TenantQuotaFeature { AGENT_MEMORY_WRITES, AGENT_TOKENS, AUTOMATION_RUNS }
-
-final tenantQuotaFeatureValues = EnumValues({
-  "agent_memory_writes": TenantQuotaFeature.AGENT_MEMORY_WRITES,
-  "agent_tokens": TenantQuotaFeature.AGENT_TOKENS,
-  "automation_runs": TenantQuotaFeature.AUTOMATION_RUNS,
-});
 
 ///仅 workspace.canvas.set 且必带（DD-125(4)）：目标 Workspace 由 workspaceId 给出，须带
 ///explicitConfirmation=true；正文是瞬态输入，只冻结摘要。其他命令禁止携带。
@@ -23224,8 +22885,8 @@ class TenantProfileView {
   });
 }
 
-///DD-123: platform quota items of the Tenant read from OpenMeter (the only authority).
-///Tenant admin and auditor only.
+///DD-123/DD-165: platform quota items of the Tenant read from OpenMeter (the only
+///authority). Tenant admin and auditor only.
 class TenantQuotaPage {
   final List<TenantQuotaView> quotas;
 
@@ -23255,6 +22916,10 @@ class TenantQuotaView {
   final bool hardLimit;
   final bool hasAccess;
   final int? limitPerPeriod;
+
+  ///DD-165(3): per-member cap kept in the entitlement metadata; absent when no member cap is
+  ///set.
+  final int? memberLimitPerPeriod;
   final String? periodResetAt;
   final double? usage;
 
@@ -23263,6 +22928,7 @@ class TenantQuotaView {
     required this.hardLimit,
     required this.hasAccess,
     this.limitPerPeriod,
+    this.memberLimitPerPeriod,
     this.periodResetAt,
     this.usage,
   });
@@ -23273,6 +22939,7 @@ class TenantQuotaView {
         hardLimit: json["hardLimit"],
         hasAccess: json["hasAccess"],
         limitPerPeriod: json["limitPerPeriod"],
+        memberLimitPerPeriod: json["memberLimitPerPeriod"],
         periodResetAt: json["periodResetAt"],
         usage: json["usage"]?.toDouble(),
       );
@@ -23282,6 +22949,7 @@ class TenantQuotaView {
     "hardLimit": hardLimit,
     "hasAccess": hasAccess,
     "limitPerPeriod": limitPerPeriod,
+    "memberLimitPerPeriod": memberLimitPerPeriod,
     "periodResetAt": periodResetAt,
     "usage": usage,
   });
@@ -23574,27 +23242,6 @@ class UsageMeterView {
     "state": meterUsageStateValues.reverse[state],
   });
 }
-
-///一个已登记 meter 在所选区间内的 OpenMeter committed usage 查询结论（.design/11 §7）。COMMITTED：原生查询返回该
-///Customer 的聚合值；NO_COMMITTED_USAGE：原生查询成功且区间内没有已存储事件；WORKSPACE_DIMENSION_UNAVAILABLE：原生
-///meter 未声明 workspace_id 维度，不能按 Workspace 归因；METER_NOT_REGISTERED：动作登记的 meter 在 OpenMeter
-///中不存在或不唯一；UNAVAILABLE：查询失败或结果不可查证。后三者都不显示数值。
-enum MeterUsageState {
-  COMMITTED,
-  METER_NOT_REGISTERED,
-  NO_COMMITTED_USAGE,
-  UNAVAILABLE,
-  WORKSPACE_DIMENSION_UNAVAILABLE,
-}
-
-final meterUsageStateValues = EnumValues({
-  "COMMITTED": MeterUsageState.COMMITTED,
-  "METER_NOT_REGISTERED": MeterUsageState.METER_NOT_REGISTERED,
-  "NO_COMMITTED_USAGE": MeterUsageState.NO_COMMITTED_USAGE,
-  "UNAVAILABLE": MeterUsageState.UNAVAILABLE,
-  "WORKSPACE_DIMENSION_UNAVAILABLE":
-      MeterUsageState.WORKSPACE_DIMENSION_UNAVAILABLE,
-});
 
 ///CollaborationUserState 写入成功后的新版本（/api/v1/user-state/* 各 PUT/DELETE 的 200 回应）。DD-125 的
 ///DELETE /api/v1/user-state/sidebar-sections/{sectionId} 与 DELETE

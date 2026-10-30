@@ -555,3 +555,121 @@ describe('Kailo share action (DD-164(4))', () => {
         expect(api.kailoShare(folder())).toBe(false)
     })
 })
+
+// DD-138(6), design 07 §4.8.5 (V-SCN-269/270): an admin surface page renders
+// only the declared admin function its launch key names, else the unavailable
+// state; Kailo draws the header from the surface title.
+describe('Kailo admin surfaces', () => {
+    const FEATURES = 'page toast confirm shortcuts'
+    const DS = '/kailo-admin/data-sources'
+    const META = '/kailo-admin/metadata'
+
+    function surfaceLoad(extra = {}) {
+        window.KailoCells = undefined
+        const loaded = load({ features: FEATURES, pydio: fakePydio('zh-cn'), ...extra })
+        window.KailoCells = loaded.api
+        return loaded
+    }
+
+    afterEach(() => { delete window.KailoCells })
+
+    it('selects the declared surface only for its own path and key', () => {
+        const ok = surfaceLoad({ pathname: DS, search: '?kailo_theme=light&kailo_locale=zh-CN&kailo_admin_surface=storage.dataSources' }).api
+        expect(ok.adminSurfacePage()).toBe(true)
+        expect(ok.adminSurface()).toMatchObject({
+            key: 'storage.dataSources', node: '/data/datasources', component: 'AdminWorkspaces.DataSourcesBoard',
+            access: 'READ_ONLY', readOnly: true, title: '文件存储位置',
+        })
+        const meta = surfaceLoad({ pathname: META, search: '?kailo_locale=en&kailo_admin_surface=files.metadata' }).api
+        expect(meta.adminSurface()).toMatchObject({ key: 'files.metadata', readOnly: false, title: 'File metadata fields' })
+
+        for (const [pathname, search] of [
+            [DS, '?kailo_admin_surface=files.metadata'],
+            [META, '?kailo_admin_surface=storage.dataSources'],
+            [DS, ''],
+            [DS, '?kailo_theme=dark'],
+            [DS, '?kailo_admin_surface=Storage.dataSources'],
+            [DS, '?kailo_admin_surface=members.users'],
+            [DS, '?kailo_admin_surface=storage.dataSources&kailo_admin_surface=storage.dataSources'],
+            [DS + '/', '?kailo_admin_surface=storage.dataSources'],
+            ['/kailo-admin', '?kailo_admin_surface=storage.dataSources'],
+        ]) {
+            const api = surfaceLoad({ pathname, search }).api
+            expect(api.adminSurfacePage(), pathname + search).toBe(true)
+            expect(api.adminSurface(), pathname + search).toBe(null)
+        }
+        // A business page is never an admin surface page.
+        expect(surfaceLoad({ pathname: '/ws-personal-files/a', search: '?kailo_admin_surface=storage.dataSources' }).api.adminSurfacePage()).toBe(false)
+        // Outside Kailo mode there is no surface at all.
+        const native = surfaceLoad({ pathname: DS, search: '?kailo_admin_surface=storage.dataSources', params: {} }).api
+        expect(native.adminSurfacePage()).toBe(false)
+        expect(native.adminSurface()).toBe(null)
+    })
+
+    it('keeps the launched key for its path across the in-page OIDC return', () => {
+        const storage = memoryStorage()
+        // Launch: the runtime records the key for the launched path.
+        surfaceLoad({ pathname: DS, search: '?kailo_admin_surface=storage.dataSources', storage })
+        // Back from the IdP the callback document starts at /login/callback, then the
+        // router replaces the location with the saved path (here without its query).
+        const { api, win } = surfaceLoad({ pathname: '/login/callback', search: '?code=x', storage })
+        expect(api.adminSurface()).toBe(null)
+        win.location.pathname = DS
+        win.location.search = ''
+        expect(api.adminSurface()).toMatchObject({ key: 'storage.dataSources' })
+        // The record does not open another surface path.
+        win.location.pathname = META
+        expect(api.adminSurface()).toBe(null)
+    })
+
+    it('declares only the surface title once the panel is ready, with its own actions', () => {
+        const { api, host, posted } = surfaceLoad({ pathname: META, search: '?kailo_admin_surface=files.metadata' })
+        host({ theme: 'light', locale: 'zh-CN', features: FEATURES.split(' ') })
+        expect(api._internal.syncPage()).toBe(false)
+        const create = vi.fn()
+        api.setAdminSurfaceState({ ready: true, actions: [
+            { id: 'create', label: '新建字段', icon: 'plus', variant: 'primary', run: create },
+            { id: 'Bad id', label: 'x', run: create },
+        ] })
+        expect(api._internal.syncPage()).toBe(true)
+        const { page } = posted('page').pop()
+        // No tabs or breadcrumbs: Kailo draws "管理 › 系统 › 标题" itself.
+        expect(page).toEqual({ title: '文件元数据字段', breadcrumbs: [], tabs: [], actions: [{ id: 'surface:create', label: '新建字段', variant: 'primary', icon: 'plus' }] })
+        api._internal.runAction('surface:create')
+        expect(create).toHaveBeenCalledTimes(1)
+    })
+
+    it('titles the unavailable state and offers no action there', () => {
+        const { api, host, posted } = surfaceLoad({ pathname: DS, search: '?kailo_admin_surface=files.metadata' })
+        host({ theme: 'light', locale: 'en', features: FEATURES.split(' ') })
+        api.setAdminSurfaceState({ ready: true, actions: [{ id: 'create', label: 'x', run: vi.fn() }] })
+        expect(api._internal.syncPage()).toBe(true)
+        expect(posted('page').pop().page).toEqual({ title: 'This admin item is unavailable', breadcrumbs: [], tabs: [], actions: [] })
+    })
+
+    it('shows data source facts as values and never a credential', () => {
+        const { api } = surfaceLoad({ pathname: DS, search: '?kailo_locale=zh-CN&kailo_admin_surface=storage.dataSources' })
+        const s3 = {
+            Name: 'archive', StorageType: 'S3', ObjectsBucket: 'kailo', ObjectsBaseFolder: 'files', FlatStorage: true,
+            ApiKey: 'AKIA-secret-key', ApiSecret: 'vault-ref-secret', VersioningPolicyName: 'default-policy', EncryptionMode: 'MASTER',
+            StorageConfiguration: { customEndpoint: 'https://s3.example.invalid', customRegion: 'eu-1', readOnly: 'true' },
+        }
+        const facts = api.dataSourceFacts(s3, [{ Uuid: 'default-policy', Name: '保留 30 天' }])
+        expect(facts).toEqual([
+            { label: '名称', value: 'archive' },
+            { label: '存储类型', value: 'S3 兼容对象存储' },
+            { label: '状态', value: '已启用' },
+            { label: '存储桶', value: 'kailo/files' },
+            { label: '服务端点', value: 'https://s3.example.invalid' },
+            { label: '区域', value: 'eu-1' },
+            { label: '存储格式', value: '扁平（只经云盘访问）' },
+            { label: '只读存储', value: '是' },
+            { label: '版本保留', value: '保留 30 天' },
+            { label: '加密', value: '已启用' },
+        ])
+        expect(JSON.stringify(facts)).not.toMatch(/secret|AKIA/)
+        const local = api.dataSourceFacts({ Name: 'personal', StorageConfiguration: { folder: '/var/cells/data/personal' } }, [])
+        expect(local.map((f) => f.value)).toEqual(['personal', '本地文件系统', '已启用', '/var/cells/data/personal', '结构化（与目录结构一致）', '不保留版本', '未启用'])
+        expect(api.dataSourceFacts(null)).toEqual([])
+    })
+})

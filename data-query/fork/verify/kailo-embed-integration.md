@@ -87,6 +87,19 @@ Kailo display name (`kailo-qa-1`); the avatar URL answers 404 for every
 same-Tenant requester, so the picture is broken (V-SCN-200, Core, see the Cells
 record).
 
+## Native page release version 1.5.0（2026-10-30，验收批次 5 复验）
+
+1.4.0（release `c4a58df5-453c-54c3-8154-f1191dfd2411`，`data-query-ui` `sha256:5b330f5b…`）登记后，发布 `de21965c1`（源 `4009e1c6`，含验收批次 5 修复与 Buzz 第 11 轮）
+重建 `data-query-ui` 为 `sha256:2209746e…` 并已部署。manifest 升到 `1.5.0-native-page`（release id
+`619584f6-e1d6-58ec-8e0a-e864cf0e0c37`），按 `--source-commit de21965c1e202e3bca724dcc4c97c199186d666b` 渲染、登记、审批并换绑。
+
+## Native page release version 1.4.0（2026-10-29，验收批次 5）
+
+`wren@1.3.0-native-page`（release `de63e77e-62de-55e9-9515-af8b917b43d5`）登记的 `data-query-ui` 为
+`sha256:77fae146…`（发布 `166fa3557`）。发布 `1dff0ea54` 的 pin 改为 `sha256:5b330f5b…` 并已部署；1.3.0 已登记，
+不得复用，manifest 升到 `1.4.0-native-page`（release id `c4a58df5-453c-54c3-8154-f1191dfd2411`），按
+`--source-commit 1dff0ea54cd5db49eb94531a47c987d231dc5eb8` 渲染、登记、审批并换绑。
+
 ## Native page release version 1.3.0（2026-10-23，验收批次 3）
 
 `wren@1.2.0-native-page`（release `5a942f6e`）登记于提交 `8b8dfd4e7`，当时 `data-query/fork/upstream.yaml` 的
@@ -269,3 +282,45 @@ registration, and acceptance with real Tenant members.
 测试（jest，未在本机运行）：`src/viewMetadata.test.ts` 的 `overlapping query identity reads`（refresh 被 preview
 超越、preview 被 focus 超越后采用最新结果、focus 与 visibility 重叠、当前读取确定失败仍报错）；新增
 `src/kailoActorName.test.ts`（标签优先级、分享与看板加入通知的目录名及三种回退）。
+
+## 管理面并入 Kailo 管理区（DD-138(6)，`07` §4.8.5，源码阶段）
+
+native page release 升到 `1.6.0-native-page`（主线已登记到 1.5.0）：`fork/release/manifest.native-page.json` 的
+`frontendPresentationContract.adminSurfaces` 声明三项，与 `wren-ui/src/utils/kailoAdminSurface.ts` 的
+`KAILO_ADMIN_SURFACES` 一致（`kailoAdminSurface.test.ts` 逐字段比对）。尚未构建、登记与换绑。
+
+| key | 分类 | path | 权限 | 内容 |
+|---|---|---|---|---|
+| `dataSources.connection` | `DATA_SOURCES` | `/kailo-admin/data-source` | `BINDING_MANAGE` | 无项目或无模型时为原首次接入流程（连接 → 选表 → 关系），之后为数据源连接设置 |
+| `semantic.modeling` | `DATA_SOURCES` | `/kailo-admin/modeling` | `BINDING_MANAGE` | 模型树与关系图；“发布模型”为页头主操作（顶层访问时在内容区） |
+| `system.project` | `SYSTEM` | `/kailo-admin/project` | `BINDING_MANAGE` | 回答语言与重置项目 |
+
+- `BINDING_MANAGE`：GOVERNED 的管理员即 binding scope 上的 Core `manage`（`isKailoAdmin` 与
+  `nativeProjectResolver(..., 'manage')` 同一判定）；STANDALONE 为目录派生的 Tenant admin。三项都是组件自有业务配置，`EDITABLE`。
+- 页面（`KailoAdminSurface`）只读 `KailoEmbed.adminSurface()`（无运行时退回 URL 参数），key 不是该路径声明的、缺失、
+  未知或会话不是管理员时显示“该管理项不可用”空态；没有外壳、页头、标签与其他管理项链接，就绪后 `setPage({title})`。
+- 关闭原生入口：去掉“建模”标签、`kailo:data-source-settings` 菜单、顶栏齿轮与“发布模型”、设置对话框
+  （`components/settings/index.tsx` 删除）、业务页到建模的视图链接与 `/setup` 重定向。业务页在没有已建模数据源时只显示
+  “请管理员在 Kailo 管理区连接数据源”空态。
+- 服务端：`middleware.ts` 在身份校验之后、任何页面之前，把 `/modeling`、`/setup`、`/setup/*` 一律 307 到 `/home`
+  （两种模式；保留语言前缀）；`/kailo-admin/*` 只有带且仅带一个格式正确、属于该路径声明的 `kailo_admin_surface` 时放行；
+  STANDALONE 另对非目录管理员重定向。写仍由原 resolver 判定。`/api/*`、`/_next/*`、`/kailo/*` 不受影响；
+  `docker/native-gateway.yaml` 只有 `/kailo-embed/` 静态页与 `/` 全量转发，没有绕过中间件的路径。
+- 模型由 Kailo 网关提供，组件内没有模型设置界面（设置对话框只有数据源与项目两项）。
+- **API 调用历史只给管理者**（DD-138(7)）：GraphQL `apiHistory`（含其 `ApiHistoryResponse` 嵌套字段，
+  只能经此 query 取到）先过 `kailoAdminRead`（`apollo/server/services/kailoUserService.ts`）：GOVERNED 以
+  `isKailoAdmin` 对 binding scope 做 fresh Core `manage`（与 `kailoSession.isAdmin`、全部写操作同一判定），
+  STANDALONE 为目录 Tenant admin；成员、匿名与原生服务令牌在读历史之前得到 `KAILO_ADMIN_REQUIRED`。外层仍是原
+  `discover` 包装。没有用 `nativeProjectResolver(..., 'manage')`：它的 manage 分支是写协议，拒绝会带原生写
+  结果（NOT_STARTED/UNKNOWN）外壳，不适合读。没有其他读取历史的 REST 或导出：`/api/v1/*` 只写入自己的记录，
+  原生 ask 的同 ID 复读走该接口自身的所有权校验。前端：Kailo 标签“API”只对管理员出现
+  （`pageTabs(..., isAdmin)`）；非管理员直达 `/api-management/history` 看到 Kailo 空态
+  “API 记录仅对管理员开放”，页面不发起历史查询。API 区只有这一页，详情抽屉中的请求、响应与 SQL 都是历史
+  内容，按最小可见原则一并只给管理员；没有独立的接口说明页。
+- **学习记录关闭**（DD-138(7)，帮助只由 Kailo 提供）：`LearningResolver.getLearningRecord` /
+  `saveLearningRecord`（GraphQL `learningRecord` / `saveLearningRecord`）在两种模式下对任何调用者都抛出
+  `KAILO_FEATURE_UNAVAILABLE`，不读写学习行；没有相关 REST。前端的上手指引早已删除（`remove_paths` 中的
+  `components/learning`），页面不调用这两个操作，也没有指引入口。
+- 测试：`kailoAdminRead.test.ts`（STANDALONE/GOVERNED 判定与 `Query.apiHistory` 接线）、
+  `nativeLearning.test.ts`（改写为关闭断言）、`kailoAdminSurface.test.ts`（API 标签仅管理员）、
+  `viewMetadata.test.ts`（改为渲染历史内容组件 `APIHistory`）。

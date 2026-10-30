@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     # user guide config
     is_oss: bool = Field(default=True)
     doc_endpoint: str = Field(default="https://docs.getwren.ai")
+    # Kailo DD-163 (design 07 §4.8.8): help is Kailo's (DD-138(7)). False
+    # answers the USER_GUIDE intent as a non-data question and never fetches
+    # the upstream product documentation.
+    allow_user_guide: bool = Field(default=True)
 
     # langfuse config
     # in order to use langfuse, we also need to set the LANGFUSE_SECRET_KEY and LANGFUSE_PUBLIC_KEY in the .env or .env.dev file
