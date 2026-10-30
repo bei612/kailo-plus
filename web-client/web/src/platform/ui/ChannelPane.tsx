@@ -984,7 +984,7 @@ export function ChannelPane({
         }} />}
       /> : null}
       {restoreEditEventId && live && !editTarget && !events.some((event) => event.id === restoreEditEventId) ? <p role="status">{t("platform.linkMessageOutsideHistory")}</p> : null}
-      {!denied && mainEditTarget ? <Composer key={`edit:${mainEditTarget.id}`} workspaceId={conversation ? undefined : workspaceId}
+      {!denied && mainEditTarget ? <Composer agentFacts={agentFacts} key={`edit:${mainEditTarget.id}`} workspaceId={conversation ? undefined : workspaceId}
         placeholder={composerPlaceholder}
         mentionPeople={mentionPeople}
         editTarget={mainEditTarget} onCancelEdit={handleCancelEdit} onConfirmed={() => handleEditConfirmed(mainEditTarget)} draftIdentity={myPrincipalId}
@@ -1005,7 +1005,7 @@ export function ChannelPane({
       {timeoutState.active && !denied ? <ComposerTimeoutBanner expiresAtMs={timeoutState.expiresAtMs} /> : null}
       <ComposerDockBackdrop gutterClassName="inset-x-5" />
       {denied ? null : conversation
-        ? <Composer disabled={conversation.state !== "ACTIVE" || timeoutState.active} onSendingChange={onMessageSendingChange} mentionPeople={mentionPeople}
+        ? <Composer agentFacts={agentFacts} disabled={conversation.state !== "ACTIVE" || timeoutState.active} onSendingChange={onMessageSendingChange} mentionPeople={mentionPeople}
             containerClassName="px-5 pb-0" layoutMode="dock"
             channelType="dm"
             onTyping={notifyTyping}
@@ -1018,7 +1018,7 @@ export function ChannelPane({
               : publishConversationMessage(conversation.id, content, attachments, key, undefined, undefined, mentionPubkeys)}
             onMediaUrl={(sha256) => mediaUrl(conversation.id, sha256, conversation.id)}
             onUpload={(file, options) => uploadConversationMedia(conversation.id, file, options)} />
-        : <>{archived ? <p role="status">{t("channel.archived")}</p> : null}<Composer
+        : <>{archived ? <p role="status">{t("channel.archived")}</p> : null}<Composer agentFacts={agentFacts}
             containerClassName="px-5 pb-0" layoutMode="dock"
             onTyping={notifyTyping}
             placeholder={composerPlaceholder}
@@ -1118,10 +1118,12 @@ function newIntentKey(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-export function Composer({ audienceContext = null, channelType, mentionPeople, nonMemberMentionWorkspaceId, workspaceId, linkPreviewTarget, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", compact = false, autocompleteBelow = false, composerHeader, onCancel, toolbarExtraActions, autoSendDraftKey, onAutoSendConsumed, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onEditLastOwnMessage, onConfirmed, draftChannelId, onRequestEmptyEditDelete, onTyping }: {
+export function Composer({ audienceContext = null, channelType, mentionPeople, agentFacts, nonMemberMentionWorkspaceId, workspaceId, linkPreviewTarget, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", compact = false, autocompleteBelow = false, composerHeader, onCancel, toolbarExtraActions, autoSendDraftKey, onAutoSendConsumed, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onEditLastOwnMessage, onConfirmed, draftChannelId, onRequestEmptyEditDelete, onTyping }: {
   audienceContext?: {type: "thread"; rootTags: readonly string[][]} | null;
   channelType?: "stream" | "forum" | "dm" | null;
   mentionPeople?: readonly MentionSuggestion[];
+  /** Original MentionAutocomplete: an Agent row names its owner ("Added by …") from the admitted directory. */
+  agentFacts?: AgentAuthorFacts;
   /** DD-125(8): set once this Workspace channel's ACTIVE members (`mentionPeople`) are resolved,
    * for new messages and thread replies only. The @ picker then also lists same-Tenant people
    * outside the channel, and sending to them asks to invite, send without inviting, or cancel. */
@@ -1172,7 +1174,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   const mentionPeopleRef = useRef(mentionPeople);
   mentionPeopleRef.current = mentionPeople;
   const agentDirectory = useComposerAgentDirectory(bff, {workspaceId, principalId: draftIdentity}, workspaceId !== undefined && channelType !== "dm" && !editTarget);
-  const agentPeople = useMemo(() => agentDirectory.data?.agents.map(agent => ({pubkey: agent.pubkey, displayName: agent.displayName, avatarUrl: agent.avatarUrl, isAgent: true})) ?? [], [agentDirectory.data]);
+  const agentPeople = useMemo(() => agentDirectory.data?.agents.map(agent => ({pubkey: agent.pubkey, displayName: agent.displayName, avatarUrl: agent.avatarUrl, isAgent: true,
+    ...(agentFacts?.get(agent.pubkey.toLowerCase())?.ownerLabel ? {ownerLabel: agentFacts.get(agent.pubkey.toLowerCase())!.ownerLabel!} : {})})) ?? [], [agentDirectory.data, agentFacts]);
   // DD-125(8): only a Workspace channel's new message or thread reply looks outside the channel.
   const nonMemberFlow = nonMemberMentionWorkspaceId !== undefined && channelType !== "dm" && !editTarget;
   // The Tenant directory is read once this composer's @ picker is first used (or at send time).

@@ -278,7 +278,7 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
         onEdit={canEdit && !editBusy && onEdit && canManageMessageForCurrentUser(row.message, editAuthorPubkey, conversation ? undefined : ownedAgentPubkeys)
           ? (message) => {if (onEdit(message) !== false) setReplyId(rootId);} : undefined}
         onReply={canReply ? handleSelectReplyTarget : undefined} />} />}
-    renderComposer={(composer) => <Composer key={editTarget ? `edit:${editTarget.id}` : replyId} workspaceId={conversation ? undefined : workspaceId} draftIdentity={principalId}
+    renderComposer={(composer) => <Composer agentFacts={agentFacts} key={editTarget ? `edit:${editTarget.id}` : replyId} workspaceId={conversation ? undefined : workspaceId} draftIdentity={principalId}
       channelType={conversation ? "dm" : "stream"}
       onUpload={conversation ? (file, options) => uploadConversationMedia(conversation.id, file, options) : undefined}
       onMediaUrl={conversation ? hash => mediaUrl(workspaceId, hash, conversation.id) : undefined}
