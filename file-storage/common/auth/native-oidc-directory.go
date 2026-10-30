@@ -518,7 +518,7 @@ type nativeOIDCDirectoryState struct {
 	Retry bool `json:"retry,omitempty"`
 	// Adopted native Cells (Cell workspace UUID → Kailo Resource) not yet retired.
 	Adopted map[string]nativeOIDCAdoption `json:"adopted,omitempty"`
-	index    map[string]*nativeOIDCDirectoryEntry
+	index   map[string]*nativeOIDCDirectoryEntry
 }
 
 func (s *nativeOIDCDirectoryState) member(issuer, subject string) (*nativeOIDCDirectoryEntry, bool) {

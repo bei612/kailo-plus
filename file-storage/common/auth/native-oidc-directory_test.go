@@ -1,12 +1,12 @@
 package auth_test
 
 import (
-	"fmt"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
