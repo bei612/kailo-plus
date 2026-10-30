@@ -345,6 +345,12 @@ capabilities:
   actions: []
   tools: []
   workflow_kinds: []
+- id: component.admin_surfaces
+  exposure: none
+  routes: []
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: component.application_binding
   exposure: end_user
   routes:
