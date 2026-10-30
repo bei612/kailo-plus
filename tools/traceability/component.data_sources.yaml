@@ -1,0 +1,56 @@
+capability_id: component.data_sources
+title: 数据建模的数据源管理：一个连接即一个原生 project，管理面列表/向导/详情/编辑/删除，凭据经 Core 组件凭据托管存于 OpenBao
+stage: EXT-BASE
+status: in_progress
+# 本批源码尚未构建进任何产物，也未部署；需与 Core 组件凭据托管同批发布（DD-169(5)）。
+exposure: none
+
+design:
+  requirements: [V-REQ-03, V-REQ-08, V-REQ-17]
+  decisions: [DD-169]
+  facts: [SF-WRN-11, SF-WRN-12]
+  seams: []
+  blockers: []
+  entities: [ComponentSecret, ApplicationBinding, FrontendPresentationContract]
+
+validation:
+  scenarios: [V-SCN-312, V-SCN-313, V-SCN-314, V-SCN-315]
+  evidence:
+    - dimension: 单元测试
+      ref: data-query/wren-ui/src/kailoDataSources.test.ts
+    - dimension: 单元测试
+      ref: data-query/wren-ui/src/kailoAdminSurface.test.ts
+    - dimension: 呈现
+      ref: data-query/fork/verify/data-sources.md
+
+implementation:
+  owners: [team-capabilities]
+  paths:
+    - data-query/fork/release/manifest.native-page.json
+    - data-query/wren-ui/migrations/20261103000000_kailo_data_sources.js
+    - data-query/wren-ui/src/apollo/server/utils/dataSourceScope.ts
+    - data-query/wren-ui/src/apollo/server/repositories/projectRepository.ts
+    - data-query/wren-ui/src/apollo/server/services/kailoComponentSecrets.ts
+    - data-query/wren-ui/src/apollo/server/services/connectionCredentials.ts
+    - data-query/wren-ui/src/apollo/server/resolvers/dataSourceResolver.ts
+    - data-query/wren-ui/src/apollo/server/resolvers/projectResolver.ts
+    - data-query/wren-ui/src/apollo/server/backgrounds/aiProjectScope.ts
+    - data-query/wren-ui/src/apollo/server/adaptors/wrenAIAdaptor.ts
+    - data-query/wren-ui/src/apollo/server/adaptors/ibisAdaptor.ts
+    - data-query/wren-ui/src/utils/dataSourceSelection.ts
+    - data-query/wren-ui/src/pages/kailo-admin/data-source.tsx
+    - data-query/wren-ui/src/pages/data-sources.tsx
+    - data-query/wren-ui/src/components/pages/dataSources/DataSourceList.tsx
+    - data-query/wren-ui/src/components/pages/dataSources/DataSourceWizard.tsx
+    - data-query/wren-ui/src/components/pages/dataSources/DataSourceDetail.tsx
+    - data-query/wren-ui/src/components/pages/dataSources/DataSourcePicker.tsx
+  migrations: []
+
+runtime:
+  routes: []
+  actions: []
+  workflow_kinds: []
+
+release:
+  artifacts: []
+  gate: blocked_until_seams_closed

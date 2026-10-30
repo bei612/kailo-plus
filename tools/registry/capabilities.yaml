@@ -384,6 +384,12 @@ capabilities:
   actions: []
   tools: []
   workflow_kinds: []
+- id: component.data_sources
+  exposure: none
+  routes: []
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: component.fused_inbox_search
   exposure: end_user
   routes:
