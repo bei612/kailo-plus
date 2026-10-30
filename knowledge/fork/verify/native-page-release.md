@@ -1,5 +1,28 @@
 # 知识库原生页面 release 版本（DD-127、DD-133(5)）
 
+## 1.6.0-native-page（2026-10-30，验收批次 5 复验）
+
+1.5.0（release `2a94588f-5681-517d-add3-665cc3eed71e`，`knowledge-native-ui` `sha256:92af646f…`）登记后，发布 `de21965c1`（源 `4009e1c6`，含验收批次 5 修复与 Buzz 第 11 轮）
+重建该镜像为 `sha256:9940a69b…` 并已部署。manifest 升到 `1.6.0-native-page`（release id
+`fe333662-3d5b-588b-abd0-3649297db515`），按 `--source-commit de21965c1e202e3bca724dcc4c97c199186d666b` 渲染、登记、审批并换绑。
+
+## 1.5.0-native-page（2026-10-29，验收批次 5，发布 79f63671）
+
+1.4.0（release `ce3ebc65-e30d-5a7d-a778-1f9bd045fe69`，`knowledge-native-ui` `sha256:8d903111…`）登记后，发布
+`79f636714`（源 `1f932e24`，含 DD-157 第 3 轮图标修复）重建该镜像为 `sha256:92af646f…` 并已部署
+（CI 节点回读 `kailo-knowledge-frontend-1` 运行该 digest）。1.4.0 不得复用，manifest 升到 `1.5.0-native-page`
+（release id `2a94588f-5681-517d-add3-665cc3eed71e`），按 `--source-commit 79f636714e1bf71a2e368720a664deb4ef1e5d83`
+渲染、登记、审批并换绑。
+
+## 1.4.0-native-page（2026-10-29，验收批次 5）
+
+`weknora@1.3.0-native-page`（release `9a641509-28f0-5d1f-8c60-52b7d9b3afb4`）登记的 `knowledge-native-ui` 为
+`sha256:d274e73c…`（发布 `166fa3557`）。发布 `1dff0ea54` 的 pin 改为 `sha256:8d903111…`，并已由
+`deploy/components/component-deploy.sh knowledge 1dff0ea54…` 部署（CI 节点回读 `kailo-knowledge-frontend-1` 运行该
+digest）。1.3.0 已登记，不得复用，manifest 升到 `1.4.0-native-page`（release id
+`ce3ebc65-e30d-5a7d-a778-1f9bd045fe69`），按 `--source-commit 1dff0ea54cd5db49eb94531a47c987d231dc5eb8` 渲染、登记、
+审批并换绑。之后若有改变该 UI 镜像的合并（如 DD-157 第 3 轮），下次部署再递增版本。
+
 ## 1.3.0-native-page（2026-10-23，验收批次 3）
 
 `weknora@1.2.0-native-page`（release `2d153bbf-00f5-508e-bf1d-cfa9dee12719`）登记于提交 `8b8dfd4e7`，当时
