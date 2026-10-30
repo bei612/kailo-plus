@@ -18,9 +18,25 @@ V-SCN-282–276）。本记录只陈述本分支源码与已实际运行的检�
 - 组件：WeKnora 问答在 `KnowledgeQA`/`AgentQA` 入口准入、在 assistant 消息完成汇点上报；Wren 在
   `createAskingTask`/`rerunAskingTask` 前准入、建立后以原生 query ID 上报；Cells 每小时上报存储快照。
 
-## 已运行的检查
+## 已运行的检查（2026-10-30，CI 节点，GitHub 固定提交）
 
-见同目录下本批 CI 回执段落（由运行结果回填）。
+`kailo-ci check-step` 只接受 main 可达提交，因此分支提交以同一原入口在 CI 节点的一次性 GitHub 副本内运行
+`tools/check.sh`（`CHECK_SOURCE_REF` 固定提交、设计树取 `DESIGN_COMMIT`、临时 PostgreSQL 与线上同一镜像、
+tmpfs、独立网络，用后即删）。
+
+| 提交 | 步骤 | 结果 |
+|---|---|---|
+| `ff956bacec026659bc366c201037e710244fc403` | lint | exit 0：cargo fmt、clippy、gofmt、go vet、client-kit tsc、web-client tsc、dart analyze、wren-ui prettier、next lint、tsc 全部 PASS |
+| 同上 | contract | exit 0：四侧生成物同步，相对 `contracts-v0.1.0` 无破坏性变更 |
+| 同上 | migrate | exit 0：前进、回退、再前进；sqlx 离线数据同步；65 个命名枚举约束逐值相等 |
+| 同上 | verify | exit 0：cargo test（含 `component_usage::tests` 9 项、`tenant_quota::tests` 15 项）、go test、client-kit（`tenant-quotas.test.tsx` 18 项）、web-client vitest、dart test、知识库与云盘前端测试 |
+| 同上 | trace、docs | exit 0：文档门禁六项、43 条追溯记录、能力注册表一致、runbook 齐全 |
+| `ff956bac…` | 组件定向（检查镜像，GOTOOLCHAIN go1.26.4） | WeKnora `go vet ./internal/application/service/ ./internal/handler/session/` 与 `go test ./internal/application/service/ -run 'KailoUsage\|KailoNotify'` ok；wren-ui `jest src/kailoUsage.test.ts` 5/5 通过、prettier 通过 |
+| `47bb6183636fbb91683048f6397c2f292e02bff2`（Cells 源码与 ff956bac 相同） | 组件定向 | Cells `go vet ./common/auth/ ./frontend/web/service/` 与 `go test ./common/auth/ -run NativeOIDC` ok |
+| `47bb6183…`（迁移与 ff956bac 相同） | 回滚条件演练 | 迁移前进后：触发器拒绝不对应任何 binding generation 的上报；count meter 数量 2 被 `usage_native_source_shape` 拒绝；存在未 `COMMITTED` 的组件上报时回滚以 `uncommitted component usage reports exist` 停止且不改数据；该行 `COMMITTED` 后回滚成功、删除 outbox 行、恢复原约束并删除成员上限列；再前进成功 |
+
+WeKnora 的 `internal/container` 依赖 cgo sqlite 头文件，检查镜像没有，未在本机 vet；它只增加了一个
+`Provide` 与启动注册，随知识库镜像构建（Dockerfile.app 安装 libsqlite3-dev）编译验证。
 
 ## 未覆盖
 
