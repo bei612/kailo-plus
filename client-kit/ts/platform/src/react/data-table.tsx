@@ -1,4 +1,4 @@
-// DD-168 (.design/20 §16.2): the one list and table presentation for platform pages on Web
+// DD-170 (.design/20 §16.2): the one list and table presentation for platform pages on Web
 // and Desktop. A list always states its size: the footer shows the total, the page and the
 // page count, and pages can be turned and resized. Columns are declared, not improvised:
 // each column says how it aligns, whether it truncates and whether it sorts. Rows open a

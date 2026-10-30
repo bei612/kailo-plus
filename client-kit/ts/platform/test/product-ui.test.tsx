@@ -1,4 +1,4 @@
-// DD-168 (.design/20 §16): the shared list, state, structured-data and confirmation components.
+// DD-170 (.design/20 §16): the shared list, state, structured-data and confirmation components.
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { ErrorClass } from "@client-kit/contracts";

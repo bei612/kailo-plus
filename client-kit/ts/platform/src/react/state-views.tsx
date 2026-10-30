@@ -1,4 +1,4 @@
-// DD-168 (.design/20 §16.4): the four page states every list, detail and section designs —
+// DD-170 (.design/20 §16.4): the four page states every list, detail and section designs —
 // empty, loading, error and no access. "Could not load" is never drawn as "nothing here"
 // (use-load.ts): a refusal says the person lacks access, an unknown failure offers a retry,
 // an empty result invites the one next step. Loading keeps the page's shape with skeletons.

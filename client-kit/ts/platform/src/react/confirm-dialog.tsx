@@ -1,4 +1,4 @@
-// DD-168 (.design/20 §16.6, §13.4(3)): one confirmation for destructive or irreversible
+// DD-170 (.design/20 §16.6, §13.4(3)): one confirmation for destructive or irreversible
 // actions. The title is a question naming the object ("Remove Ada from the organization?"),
 // the description states the consequence, the confirm button is the action verb in the danger
 // colour and Cancel is always available. Focus starts on Cancel; Enter does not confirm a

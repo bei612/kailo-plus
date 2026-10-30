@@ -63,7 +63,7 @@ export function Notice({ children, role, icon: Icon }: { children: ReactNode; ro
 
 export type Tone = "neutral" | "positive" | "negative" | "warning" | "info" | "brand";
 
-// DD-141 §9: soft status pairs (tint + readable text), never solid blocks. DD-168 §16.2: a
+// DD-141 §9: soft status pairs (tint + readable text), never solid blocks. DD-170 §16.2: a
 // status never wraps inside a table cell.
 const toneClass: Record<Tone, string> = {
   neutral: "border-border bg-muted text-muted-foreground",
@@ -96,7 +96,7 @@ export function Button({
 }
 
 /**
- * A simple bounded table (DD-168 §16.2 layout: Overline header, 40 px rows, hairline rows,
+ * A simple bounded table (DD-170 §16.2 layout: Overline header, 40 px rows, hairline rows,
  * hover tint, horizontal scroll instead of squeezed columns). Lists that can grow use
  * DataTable, which adds the total, paging, sorting and filtering.
  */

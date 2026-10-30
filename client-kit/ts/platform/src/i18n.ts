@@ -113,7 +113,7 @@ export const platformMessages = {
   "tenantProfile.readOnly": { en: "Only community administrators can edit this profile.", "zh-CN": "仅社区管理员可以修改资料。" },
   "tenantProfile.failed": { en: "Could not read the profile or process the image. Please refresh or choose another image.", "zh-CN": "无法读取资料或处理图片，请刷新或另选图片。" },
   "tenantProfile.loading": { en: "Loading profile\u2026", "zh-CN": "正在读取资料…" },
-  // DD-168 (.design/20 §16): shared list, state and structured-data presentation.
+  // DD-170 (.design/20 §16): shared list, state and structured-data presentation.
   "list.pagination": { en: "Pagination", "zh-CN": "分页" },
   "list.total": { en: "{total} total", "zh-CN": "共 {total} 条" },
   "list.pageOf": { en: "Page {page} of {pages}", "zh-CN": "第 {page} / {pages} 页" },
@@ -2843,7 +2843,7 @@ export const platformMessages = {
   "workflows.trace.status.cancelled": { en: "cancelled", "zh-CN": "已取消" },
   "workflows.trace.status.skipped": { en: "skipped", "zh-CN": "已跳过" },
   "workflows.trace.status.unknown": { en: "outcome unknown", "zh-CN": "结果不明" },
-  // DD-168 agents, Skills, tools, connectors and memory.
+  // DD-170 agents, Skills, tools, connectors and memory.
   "agents.description": { en: "Set up and manage your agents.", "zh-CN": "设置和管理你的 Agent。" },
   "agents.none": { en: "No agents to show on this page.", "zh-CN": "此页暂无可显示的 Agent。" },
   "agents.memory.title": { en: "Agent memory", "zh-CN": "Agent 记忆" },
@@ -3843,7 +3843,7 @@ export const platformMessages = {
   },
   "quota.confirm": { en: "Confirm and set", "zh-CN": "确认设置" },
   "quota.applied": { en: "Quota set. Operation: {operation}.", "zh-CN": "额度已设置。操作：{operation}。" },
-  // DD-168 business operations and workflow runs.
+  // DD-170 business operations and workflow runs.
   "operations.explain": {
     en: "Each row is one governed operation from admission to its outcome. Waiting, running, unknown and reconciling operations are shown as such, never as success or failure.",
     "zh-CN": "每一行是一次受治理操作从准入到结果的过程。等待、运行中、结果不明与待对账的操作如实显示，不当作成功或失败。",
@@ -3868,7 +3868,7 @@ export const platformMessages = {
   "operations.notTimed": { en: "No definite end yet", "zh-CN": "尚无确定终态" },
   "platform.signOut": { en: "Sign out", "zh-CN": "退出" },
   "platform.sessionUnavailable": { en: "Session unavailable", "zh-CN": "会话不可用" },
-  // DD-168 governance pages (tasks, approvals, audit, devices).
+  // DD-170 governance pages (tasks, approvals, audit, devices).
   "platform.loading": { en: "Loading…", "zh-CN": "载入中…" },
   "platform.loadingWorkspaces": { en: "Loading workspaces…", "zh-CN": "正在载入工作区…" },
   "platform.noWorkspace": {
@@ -4045,7 +4045,7 @@ export const platformMessages = {
     en: "Current scope: whole organization. Workspace {name} is not active, so its roles cannot be managed now.",
     "zh-CN": "当前作用域：整个组织。工作区 {name} 未处于正常状态，暂不能管理其角色。",
   },
-  // DD-168 admin area (members, invitations, roles, organizations, feedback, capability contracts).
+  // DD-170 admin area (members, invitations, roles, organizations, feedback, capability contracts).
   "roles.next": { en: "Next page", "zh-CN": "下一页" },
   "roles.previous": { en: "Previous page", "zh-CN": "上一页" },
   "secretRehome.title": { en: "Legacy identity keys", "zh-CN": "旧身份密钥归位" },
