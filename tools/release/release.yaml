@@ -97,6 +97,14 @@ metering:
   apply: align-metering
   verify: verify-metering
 
+# DD-164(3)：成员创建策略的发布对齐。与 metering 同一时点（Core 替换并就绪之后、任何其他服务之前，其后紧随计量对齐）
+# 于容器内执行 /usr/local/bin/platform-core <apply>：对策略为 MEMBERS_CREATE 的每个 ACTIVE 业务 Tenant，只为缺少
+# tenant#creator 的 ACTIVE 成员补写（不删除）并回读，任一缺口非零退出、deploy 中止；verify 只读回读。
+member_create:
+  service: core-bff
+  apply: align-member-create
+  verify: verify-member-create
+
 # 运行目录中由 start-core.sh 持久派生的 Compose 叠加文件；存在即参与每一次 Compose 调用，
 # 否则重建 agentgateway 会丢掉其派生配置。
 overlays:

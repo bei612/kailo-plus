@@ -24,6 +24,9 @@ const changeTenantRevocationAllRelations = "tenant-revocation-all-relations"
 // Tenant 撤权连带收敛该成员的 WorkspaceMembership（.design/10 §5）。
 const changeTenantRevocationWorkspaceMemberships = "tenant-revocation-workspace-memberships"
 
+// DD-164(3)：Tenant 成员建立链在 Core 冻结 memberCreate 时同链写 tenant#creator。
+const changeTenantMemberCreator = "tenant-member-creator"
+
 // DD-164(6)：Tenant 撤权在 roster 收敛之后、成员跃迁到 REVOKED 之前结束此人全部 IdP 会话。在途与已录制
 // 的旧 history 没有这一步，按 GetVersion 走原路径。
 const changeTenantRevocationIdentityProviderSessions = "tenant-revocation-idp-sessions"
@@ -51,6 +54,9 @@ type MembershipTarget struct {
 	// 只有 Tenant 撤权才有：Core 冻结的此人 ACTIVE 外部身份；Worker 以会话终止 client 结束其
 	// 全部 IdP 会话（DD-164(6)）。只定位 IdP 用户，不是凭据。
 	IdentityProviderSubjects []activities.IdentityProviderSubject `json:"identityProviderSubjects,omitempty"`
+	// 只有 Tenant 成员建立链才有：Tenant 成员创建策略为 MEMBERS_CREATE（DD-164(3)），
+	// 与 tenant#member 同链写 tenant#creator，使 Workspace create 经 tenant->create 成立。
+	MemberCreate bool `json:"memberCreate,omitempty"`
 }
 
 // WorkspaceMembershipRef 是 Tenant 撤权连带收敛的一个 WorkspaceMembership。
@@ -496,6 +502,24 @@ func convergeMembership(ctx workflow.Context, t *task, m *MembershipTarget, want
 			}, want)
 	}, nil); err != nil {
 		return err
+	}
+
+	// 1a. DD-164(3)：成员进入 ACTIVE 的同一收敛链写 tenant#creator（Converge 内部读回查证）。
+	//     撤权由上面的 RevokeSubject 一并撤去本 Tenant 的全部关系。
+	if want == activities.Present && m.Scope == "TENANT" && m.MemberCreate &&
+		workflow.GetVersion(ctx, changeTenantMemberCreator, workflow.DefaultVersion, 1) == 1 {
+		if err := t.step(func(ao workflow.Context) workflow.Future {
+			return workflow.ExecuteActivity(ao, (*activities.SpiceDB).Converge,
+				activities.Relationship{
+					ResourceType: "tenant",
+					ResourceID:   m.RelationObjectID,
+					Relation:     "creator",
+					SubjectType:  "principal",
+					SubjectID:    m.SubjectPrincipalID,
+				}, want)
+		}, nil); err != nil {
+			return err
+		}
 	}
 
 	// 1b. Tenant 撤权连带的 WorkspaceMembership：SpiceDB 关系已由上一步按主体

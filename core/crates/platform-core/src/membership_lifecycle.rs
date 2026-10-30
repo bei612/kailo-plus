@@ -124,6 +124,10 @@ pub struct MembershipTarget {
     /// §4.7.5「撤权」）。只是 IdP 用户定位，不是凭据；为空时不写出。
     #[serde(skip_serializing_if = "Vec::is_empty")]
     identity_provider_subjects: Vec<IdentityProviderSubject>,
+    /// DD-164(3)：Tenant 成员建立链在 Tenant 策略为 MEMBERS_CREATE 时同链写 `tenant#creator`。
+    /// 为 false 时不写出，其余 input 的形状与已录制 history 逐字相同。
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    member_create: bool,
 }
 
 /// Tenant 撤权时要结束其 IdP 会话的一个外部身份。
@@ -239,6 +243,22 @@ pub(crate) async fn launch_membership(
             Vec::new()
         };
 
+    // DD-164(3)：建立链冻结启动时的 Tenant 成员创建策略。
+    let member_create = if kind == "MEMBERSHIP_PROJECTION" && req.scope == MembershipScope::Tenant {
+        match sqlx::query_scalar::<_, bool>(
+            "select member_create_policy='MEMBERS_CREATE' from identity.tenant where id=$1",
+        )
+        .bind(tenant_id)
+        .fetch_optional(pool)
+        .await
+        {
+            Ok(v) => v.unwrap_or(false),
+            Err(e) => return Err(unavailable(e)),
+        }
+    } else {
+        false
+    };
+
     let workflow_id =
         component_task::workflow_id(kind, tenant_id, &req.membership_id.to_string(), version);
     let input = ComponentTaskInput {
@@ -255,6 +275,7 @@ pub(crate) async fn launch_membership(
                 relation_object_id: object_id.to_string(),
                 workspace_memberships,
                 identity_provider_subjects,
+                member_create,
             },
         },
     };
@@ -554,6 +575,7 @@ pub(crate) async fn launch_scope(
                     relation_object_id: req.id.to_string(),
                     workspace_memberships: Vec::new(),
                     identity_provider_subjects: Vec::new(),
+                    member_create: false,
                 })
             }
             Some((_, _, _, state)) if state != "ACTIVE" => {

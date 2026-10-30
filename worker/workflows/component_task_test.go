@@ -183,6 +183,12 @@ func runComponentCancellation(t *testing.T, failCancelOnce bool) {
 // runMembershipRevocation 执行一次成员撤权链，按顺序记下每一步。
 func runMembershipRevocation(t *testing.T, m MembershipTarget) ([]string, error) {
 	t.Helper()
+	return runMembershipChain(t, generated.MembershipRevocation, m)
+}
+
+// runMembershipChain 执行一次成员建立或撤权链，按顺序记下每一步。
+func runMembershipChain(t *testing.T, kind generated.WorkflowKind, m MembershipTarget) ([]string, error) {
+	t.Helper()
 	Configure(Retry{
 		StartToClose: time.Second, ScheduleToClose: time.Second, MaxAttempts: 1,
 		InitialInterval: time.Second, MaxInterval: time.Second, RoundInterval: time.Minute,
@@ -234,9 +240,32 @@ func runMembershipRevocation(t *testing.T, m MembershipTarget) ([]string, error)
 			return activities.EndSessionsOutput{Ended: len(in.Subjects)}, nil
 		})
 	env.ExecuteWorkflow(ComponentTaskKind, ComponentTaskInput{
-		Kind: generated.MembershipRevocation, Membership: &m,
+		Kind: kind, Membership: &m,
 	})
 	return steps, env.GetWorkflowError()
+}
+
+// DD-164(3)、V-SCN-309：Tenant 策略为 MEMBERS_CREATE 时，成员建立链在 tenant#member 之后同链写
+// tenant#creator；策略为 ADMINS_ONLY（memberCreate 缺省）时不写。
+func TestTenantMembershipWritesCreatorUnderMembersCreate(t *testing.T) {
+	for _, tc := range []struct {
+		create bool
+		want   []string
+	}{
+		{true, []string{"converge:tenant#member", "converge:tenant#creator", "roster:TENANT:tm:PRESENT", "transition:TENANT:tm:ACTIVE"}},
+		{false, []string{"converge:tenant#member", "roster:TENANT:tm:PRESENT", "transition:TENANT:tm:ACTIVE"}},
+	} {
+		steps, err := runMembershipChain(t, generated.MembershipProjection, MembershipTarget{
+			Scope: "TENANT", MembershipID: "tm", MembershipVersion: 1,
+			SubjectPrincipalID: "p", RelationObjectID: "t", MemberCreate: tc.create,
+		})
+		if err != nil {
+			t.Fatalf("建立链失败：%v", err)
+		}
+		if strings.Join(steps, "\n") != strings.Join(tc.want, "\n") {
+			t.Fatalf("memberCreate=%v 步骤不符：\n%s", tc.create, strings.Join(steps, "\n"))
+		}
+	}
 }
 
 // V-SCN-34：Tenant 撤权先按主体撤全部关系，再逐个把连带的 WorkspaceMembership

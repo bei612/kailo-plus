@@ -265,6 +265,11 @@ pub fn router(state: ServiceState) -> Router {
             "/service/v1/component-directory/bindings/{binding}/receipt",
             axum::routing::put(crate::governance::component_share::put_receipt),
         )
+        // DD-164(4)⑧：既有原生共享的采纳，同一目录 client 身份。
+        .route(
+            "/service/v1/component-directory/bindings/{binding}/share-adoptions",
+            post(crate::governance::component_share::adopt),
+        )
         // DD-138(4), 07 §4.8.3: notification delivery into the Kailo inbox
         // with the same directory-client service identity.
         .route(

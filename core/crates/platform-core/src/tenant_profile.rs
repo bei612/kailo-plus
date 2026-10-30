@@ -275,11 +275,11 @@ async fn read_view(state: &BffState, headers: &HeaderMap) -> Result<(Uuid, i32, 
         Ok(c) => c,
         Err(r) => return Err(r),
     };
-    let row: Option<(String, Option<String>, i32)> = match sqlx::query_as("select t.name,t.icon,t.version from identity.tenant t where t.id=$1 and t.state='ACTIVE' and exists(select 1 from identity.principal p join identity.tenant_membership m on m.tenant_principal_id=p.id where p.id=$2 and p.tenant_id=t.id and m.tenant_id=t.id and p.kind='HUMAN' and p.status='ACTIVE' and m.state='ACTIVE')")
+    let row: Option<(String, Option<String>, i32, String)> = match sqlx::query_as("select t.name,t.icon,t.version,t.member_create_policy from identity.tenant t where t.id=$1 and t.state='ACTIVE' and exists(select 1 from identity.principal p join identity.tenant_membership m on m.tenant_principal_id=p.id where p.id=$2 and p.tenant_id=t.id and m.tenant_id=t.id and p.kind='HUMAN' and p.status='ACTIVE' and m.state='ACTIVE')")
         .bind(ctx.tenant_id).bind(ctx.tenant_principal_id).fetch_optional(&state.pool).await {
         Ok(r) => r, Err(_) => return Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),
     };
-    let Some((name, icon, version)) = row else {
+    let Some((name, icon, version, member_create_policy)) = row else {
         return Err(StatusCode::FORBIDDEN.into_response());
     };
     let mut view =
@@ -297,7 +297,9 @@ async fn read_view(state: &BffState, headers: &HeaderMap) -> Result<(Uuid, i32, 
         Err(_) => return Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),
     };
     drop(conn);
-    if !catalog && crate::capability_registry::action_exposed(ACTION) {
+    let policy_action = crate::governance::tenant_member_policy::ACTION;
+    let policy_exposed = crate::capability_registry::action_exposed(policy_action);
+    if !catalog && (crate::capability_registry::action_exposed(ACTION) || policy_exposed) {
         match state
             .governance
             .spicedb
@@ -311,8 +313,13 @@ async fn read_view(state: &BffState, headers: &HeaderMap) -> Result<(Uuid, i32, 
             .await
         {
             Ok(c) if !c.zed_token.is_empty() => {
-                if c.allowed {
+                if c.allowed && crate::capability_registry::action_exposed(ACTION) {
                     view["updateActionKey"] = json!(ACTION);
+                }
+                // DD-164(3): the member create policy is shown to Tenant managers only.
+                if c.allowed && policy_exposed {
+                    view["memberCreatePolicy"] = json!(member_create_policy);
+                    view["policyActionKey"] = json!(policy_action);
                 }
             }
             _ => return Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),

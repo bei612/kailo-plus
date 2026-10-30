@@ -749,7 +749,7 @@ fn upgrade(mut body: Value, creators: &Creators<'_>, shares: Vec<Value>) -> Valu
 
 /// One `shares[]` item (07 §4.7.4 schema 2): the owner first as WRITE, then
 /// each reader/editor subject still in this snapshot — a listed member, a
-/// listed Workspace, or this Tenant's members (READ only) — editor winning
+/// listed Workspace, or this Tenant's members — editor winning
 /// over reader, ordered by kind, id and access.
 #[allow(clippy::too_many_arguments)]
 fn share_entry(
@@ -774,9 +774,7 @@ fn share_entry(
                 Ok(w) if workspaces.contains(&w) => ("WORKSPACE", w.to_string()),
                 _ => continue,
             },
-            Subject::TenantMembers(id) if *id == tenant.to_string() && !*write => {
-                ("TENANT", String::new())
-            }
+            Subject::TenantMembers(id) if *id == tenant.to_string() => ("TENANT", String::new()),
             Subject::TenantMembers(_) => continue,
         };
         let entry = grants.entry(key).or_insert(false);

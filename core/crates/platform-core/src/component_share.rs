@@ -155,7 +155,7 @@ impl Grant {
             Kind::Workspace => (Some(id("workspaceId")?), 2),
             Kind::Tenant => (None, 1),
         };
-        if subject.len() != fields || (kind == Kind::Tenant && write) {
+        if subject.len() != fields {
             return None;
         }
         Some(Self { kind, id, write })
@@ -186,7 +186,7 @@ pub(crate) struct ShareSet {
 }
 
 /// `ActionCommand.componentShareSet` → canonical parameters: subjects checked
-/// for shape, no duplicate subject, TENANT only READ, at most 100, sorted so the
+/// for shape, no duplicate subject, at most 100, sorted so the
 /// parameter hash does not depend on the order the dialog listed them.
 pub(crate) fn normalize(input: &contracts::ComponentShareSet) -> Result<Value, Refusal> {
     let intent = Uuid::parse_str(&input.intent_id).map_err(|_| invalid())?;
@@ -442,11 +442,7 @@ fn view_grants(relationships: &[(Subject, bool)], owner: Uuid, tenant: Uuid) -> 
     }
     grants
         .into_iter()
-        .map(|((kind, id), write)| Grant {
-            kind,
-            id,
-            write: write && kind != Kind::Tenant,
-        })
+        .map(|((kind, id), write)| Grant { kind, id, write })
         .collect()
 }
 
@@ -1584,6 +1580,448 @@ async fn receipt(
     Ok(body)
 }
 
+// ---------------------------------------------------------------------------
+// Service listener: adoption of existing native shares (DD-164(4)⑧)
+// ---------------------------------------------------------------------------
+
+const ADOPT_ACTION: &str = "component.share.adopt";
+
+/// Validated adoption grants: shape, no duplicate subject, at most 100, sorted.
+pub(crate) fn adoption_grants(
+    grants: &[contracts::ComponentShareGrant],
+) -> Result<Vec<Grant>, Refusal> {
+    if grants.len() > MAX_GRANTS {
+        return Err(invalid());
+    }
+    let mut out = Vec::with_capacity(grants.len());
+    let mut subjects = HashSet::new();
+    for grant in grants {
+        let value = serde_json::to_value(grant).map_err(|_| invalid())?;
+        let grant = Grant::from_json(&value).ok_or_else(invalid)?;
+        if !subjects.insert((grant.kind, grant.id)) {
+            return Err(invalid());
+        }
+        out.push(grant);
+    }
+    out.sort();
+    Ok(out)
+}
+
+fn adoption_answer(
+    resource: Uuid,
+    owner: Uuid,
+    adopted: bool,
+    grants: &[Grant],
+) -> Result<Value, Refusal> {
+    let body = json!({
+        "resourceId": resource,
+        "ownerPrincipalId": owner,
+        "adopted": adopted,
+        "grants": grants.iter().map(|g| g.to_json()).collect::<Vec<_>>(),
+    });
+    let typed: contracts::ComponentShareAdoptionResult =
+        serde_json::from_value(body.clone()).map_err(|_| unavailable("contract"))?;
+    if serde_json::to_value(&typed).map_err(|_| unavailable("contract"))? != body {
+        return Err(unavailable("contract"));
+    }
+    Ok(body)
+}
+
+/// `POST /service/v1/component-directory/bindings/{binding}/share-adoptions`.
+pub(crate) async fn adopt(
+    State(state): State<ServiceState>,
+    headers: HeaderMap,
+    Path(binding): Path<Uuid>,
+    body: Bytes,
+) -> Response {
+    match store_adoption(&state, &headers, binding, &body).await {
+        Ok(answer) => {
+            tracing::info!(%binding, adopted = %answer["adopted"], "既有原生共享采纳已应答");
+            (StatusCode::OK, [(CACHE_CONTROL, "no-store")], Json(answer)).into_response()
+        }
+        Err(error) => {
+            tracing::info!(%binding, reason = ?error.reason(), "既有原生共享采纳被拒绝或不可用");
+            respond_service(&error)
+        }
+    }
+}
+
+#[derive(sqlx::FromRow)]
+struct Adoption {
+    tenant_id: Uuid,
+    owner_principal_id: Uuid,
+    grants: Value,
+    completed_at: Option<DateTime<Utc>>,
+    home_workspace_id: Option<Uuid>,
+    state: String,
+    service_principal_id: Uuid,
+    component_type_key: String,
+}
+
+async fn adoption(
+    conn: &mut PgConnection,
+    resource: Uuid,
+) -> Result<Option<Adoption>, sqlx::Error> {
+    sqlx::query_as(
+        "select a.tenant_id,a.owner_principal_id,a.grants,a.completed_at,r.home_workspace_id,r.state,
+           b.service_principal_id,b.component_type_key
+         from catalog.component_share_adoption a
+         join catalog.resource r on r.id=a.resource_id
+         join catalog.application_binding b on b.id=a.application_binding_id and b.tenant_id=a.tenant_id
+         where a.resource_id=$1",
+    )
+    .bind(resource)
+    .fetch_optional(conn)
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+fn adoption_audit<'a>(
+    resource: Uuid,
+    tenant: Uuid,
+    stage: &str,
+    event_type: &'a str,
+    result_code: &'a str,
+    owner: Uuid,
+    service: Uuid,
+    component_type_key: &'a str,
+    parameter_hash: &'a str,
+    evidence: Vec<crate::audit::Evidence>,
+) -> crate::audit::AuditEntry<'a> {
+    crate::audit::AuditEntry {
+        event_key: format!("share-adopt:{resource}:{stage}"),
+        tenant_id: Some(tenant),
+        workspace_id: None,
+        operation_id: resource,
+        event_type,
+        human_identity_id: None,
+        initiator_principal_id: Some(owner),
+        actor_principal_id: Some(service),
+        action_key: ADOPT_ACTION,
+        action_version: 1,
+        component_type_key,
+        target_type: Some("RESOURCE"),
+        target_id: Some(resource),
+        parameter_hash,
+        decision: "ALLOW",
+        result_code,
+        result_exposure: "NONE",
+        evidence_refs: evidence,
+        correlation_id: resource,
+    }
+}
+
+async fn store_adoption(
+    state: &ServiceState,
+    headers: &HeaderMap,
+    binding: Uuid,
+    body: &[u8],
+) -> Result<Value, Refusal> {
+    let header = crate::component_directory::bearer(headers)?;
+    let core_client = std::env::var("OIDC_SERVICE_CLIENT_ID").ok();
+    let mut tx = state.pool.begin().await?;
+    let entry = crate::component_directory::authorize(
+        state,
+        &mut tx,
+        header,
+        binding,
+        core_client.as_deref(),
+    )
+    .await?;
+    let request: contracts::ComponentShareAdoptionRequest = decode(body)?;
+    let native_type = serde_json::to_value(&request.native_type)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .ok_or_else(invalid)?;
+    if !visible_text(&request.native_id, MAX_NATIVE_ID)
+        || !display_text(&request.name, MAX_NAME)
+        || request.owner.issuer.is_empty()
+        || request.owner.subject.is_empty()
+    {
+        return Err(invalid());
+    }
+    let grants = adoption_grants(&request.grants)?;
+    let now_binding = binding_now(&mut tx, entry.tenant_id, binding)
+        .await?
+        .ok_or_else(denied)?;
+    if now_binding.category.as_deref().and_then(native_type_for) != Some(native_type.as_str()) {
+        return Err(invalid());
+    }
+    let workspace = request
+        .workspace_id
+        .as_deref()
+        .map(|w| Uuid::parse_str(w).map_err(|_| invalid()))
+        .transpose()?;
+    let workspace = match (entry.workspace_id, workspace) {
+        (Some(scope), None) => Some(scope),
+        (Some(scope), Some(w)) if w == scope => Some(scope),
+        (Some(_), Some(_)) => return Err(denied()),
+        (None, w) => w,
+    };
+    if let Some(workspace) = workspace {
+        let active: bool = sqlx::query_scalar(
+            "select exists(select 1 from identity.workspace where id=$1 and tenant_id=$2 and state='ACTIVE')",
+        )
+        .bind(workspace)
+        .bind(entry.tenant_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if !active {
+            return Err(denied());
+        }
+    }
+    let owner: Option<Uuid> = sqlx::query_scalar(
+        "select p.id from identity.external_identity ei
+         join identity.human_identity hi on hi.id=ei.human_identity_id and hi.status='ACTIVE'
+         join identity.tenant_membership tm on tm.human_identity_id=hi.id
+           and tm.tenant_id=$1 and tm.state='ACTIVE'
+         join identity.principal p on p.id=tm.tenant_principal_id
+           and p.tenant_id=$1 and p.kind='HUMAN' and p.status='ACTIVE'
+         where ei.issuer=$2 and ei.subject=$3 and ei.status='ACTIVE'",
+    )
+    .bind(entry.tenant_id)
+    .bind(&request.owner.issuer)
+    .bind(&request.owner.subject)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let owner = owner.ok_or_else(denied)?;
+    if let Some(scope) = entry.workspace_id {
+        let checked = state
+            .governance
+            .spicedb
+            .check(
+                "workspace",
+                &scope.to_string(),
+                "discover",
+                &owner.to_string(),
+                Consistency::FullyConsistent,
+            )
+            .await
+            .map_err(|_| unavailable("authorization"))?;
+        if !checked.allowed {
+            return Err(denied());
+        }
+    }
+    // Serialise adoptions of one native object; the unique (binding, type, id)
+    // constraint is the backstop.
+    sqlx::query("select pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(format!(
+            "share-adopt:{binding}:{native_type}:{}",
+            request.native_id
+        ))
+        .execute(&mut *tx)
+        .await?;
+    if let Some(existing) = shared(
+        &mut tx,
+        entry.tenant_id,
+        binding,
+        &native_type,
+        &request.native_id,
+        true,
+    )
+    .await?
+    {
+        let pending: Option<Option<DateTime<Utc>>> = sqlx::query_scalar(
+            "select completed_at from catalog.component_share_adoption where resource_id=$1",
+        )
+        .bind(existing.id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        return match (existing.state.as_str(), pending) {
+            // An adoption that has not finished: finish it with its frozen grants.
+            ("PROVISIONING", Some(None)) => finish_adoption(state, existing.id).await,
+            ("ACTIVE", _) => {
+                let relationships = grants_of(
+                    &state.governance.spicedb,
+                    existing.id,
+                    state.governance.cfg.relationship_page,
+                )
+                .await
+                .map_err(|_| unavailable("authorization"))?;
+                let current =
+                    view_grants(&relationships, existing.owner_principal_id, entry.tenant_id);
+                adoption_answer(existing.id, existing.owner_principal_id, false, &current)
+            }
+            _ => Err(conflict()),
+        };
+    }
+    subjects_admissible(
+        &mut tx,
+        entry.tenant_id,
+        &native_type,
+        &now_binding,
+        owner,
+        &grants,
+    )
+    .await?;
+    let resource = Uuid::new_v4();
+    sqlx::query(
+        "insert into catalog.resource
+           (id,tenant_id,type_key,home_workspace_id,owner_principal_id,component_type_key,
+            application_binding_id,native_type,native_id,state,version)
+         values($1,$2,$3,$4,$5,$6,$7,$8,$9,'PROVISIONING',1)",
+    )
+    .bind(resource)
+    .bind(entry.tenant_id)
+    .bind(TYPE_KEY)
+    .bind(workspace)
+    .bind(owner)
+    .bind(&now_binding.component_type_key)
+    .bind(binding)
+    .bind(&native_type)
+    .bind(&request.native_id)
+    .execute(&mut *tx)
+    .await?;
+    let frozen = Value::Array(grants.iter().map(|g| g.to_json()).collect());
+    sqlx::query(
+        "insert into catalog.component_share_adoption
+           (resource_id,tenant_id,application_binding_id,owner_principal_id,grants)
+         values($1,$2,$3,$4,$5)",
+    )
+    .bind(resource)
+    .bind(entry.tenant_id)
+    .bind(binding)
+    .bind(owner)
+    .bind(&frozen)
+    .execute(&mut *tx)
+    .await?;
+    let service: Uuid = sqlx::query_scalar(
+        "select service_principal_id from catalog.application_binding where id=$1",
+    )
+    .bind(binding)
+    .fetch_one(&mut *tx)
+    .await?;
+    let digest = collab_bridge::limits::canonical_digest(&frozen);
+    crate::audit::append(
+        &mut tx,
+        adoption_audit(
+            resource,
+            entry.tenant_id,
+            "intent",
+            "INTENT",
+            "COMPONENT_SHARE_ADOPTION_PENDING",
+            owner,
+            service,
+            &now_binding.component_type_key,
+            &digest,
+            Vec::new(),
+        ),
+    )
+    .await?;
+    tx.commit().await?;
+    finish_adoption(state, resource).await
+}
+
+/// Write the adopted object's projection and frozen grants, read them back,
+/// then make the Resource ACTIVE and audit COMPONENT_SHARE_ADOPTED. Every step
+/// is idempotent; a failure leaves the adoption PROVISIONING for the
+/// component's retry.
+async fn finish_adoption(state: &ServiceState, resource: Uuid) -> Result<Value, Refusal> {
+    let mut conn = state.pool.acquire().await?;
+    let a = adoption(&mut conn, resource)
+        .await?
+        .ok_or_else(|| unavailable("adoption"))?;
+    drop(conn);
+    let grants: Vec<Grant> = a
+        .grants
+        .as_array()
+        .ok_or_else(|| unavailable("adoption"))?
+        .iter()
+        .map(Grant::from_json)
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| unavailable("adoption"))?;
+    if a.completed_at.is_some() || a.state != "PROVISIONING" {
+        return adoption_answer(resource, a.owner_principal_id, true, &grants);
+    }
+    let id = resource.to_string();
+    let tenant = a.tenant_id.to_string();
+    let owner = a.owner_principal_id.to_string();
+    let home = a.home_workspace_id.map(|w| w.to_string());
+    let spicedb = &state.governance.spicedb;
+    match spicedb
+        .replace_resource_projection(&id, &tenant, &owner, &owner, home.as_deref())
+        .await
+    {
+        Ok(token) if !token.is_empty() => {}
+        _ => return Err(unavailable("projection")),
+    }
+    let desired: Vec<Relationship> = grants
+        .iter()
+        .map(|g| g.relationship(resource, a.tenant_id))
+        .collect();
+    let current = grant_relationships(&state.governance, &id).await?;
+    let writes = grant_writes(&current, &desired);
+    if !writes.is_empty() {
+        match spicedb.write(&writes).await {
+            Ok(token) if !token.is_empty() => {}
+            _ => return Err(unavailable("grants")),
+        }
+    }
+    let as_set = |rs: &[Relationship]| rs.iter().map(|r| r.to_string()).collect::<BTreeSet<_>>();
+    if as_set(&grant_relationships(&state.governance, &id).await?) != as_set(&desired) {
+        return Err(unavailable("grants read back"));
+    }
+    let proof = match spicedb
+        .check(
+            "resource",
+            &id,
+            "share",
+            &owner,
+            Consistency::FullyConsistent,
+        )
+        .await
+    {
+        Ok(proof) if proof.allowed && !proof.zed_token.is_empty() => proof,
+        _ => return Err(unavailable("owner projection")),
+    };
+    let mut tx = state.pool.begin().await?;
+    let activated = sqlx::query(
+        "update catalog.resource set state='ACTIVE' where id=$1 and type_key=$2 and state='PROVISIONING'",
+    )
+    .bind(resource)
+    .bind(TYPE_KEY)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("update catalog.component_share_adoption set completed_at=now() where resource_id=$1 and completed_at is null")
+        .bind(resource)
+        .execute(&mut *tx)
+        .await?;
+    if activated.rows_affected() == 1 {
+        let mut evidence = vec![
+            crate::audit::Evidence::new(EvidenceKind::SpicedbZedtoken, &proof.zed_token),
+            crate::audit::Evidence::new(
+                EvidenceKind::SpicedbRelationship,
+                format!("resource:{id}#owner@principal:{owner}"),
+            ),
+        ];
+        evidence.extend(
+            desired
+                .iter()
+                .map(|r| crate::audit::Evidence::new(EvidenceKind::SpicedbRelationship, r)),
+        );
+        let digest = collab_bridge::limits::canonical_digest(&a.grants);
+        crate::audit::append(
+            &mut tx,
+            adoption_audit(
+                resource,
+                a.tenant_id,
+                "outcome",
+                "OUTCOME",
+                "COMPONENT_SHARE_ADOPTED",
+                a.owner_principal_id,
+                a.service_principal_id,
+                &a.component_type_key,
+                &digest,
+                evidence,
+            ),
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    adoption_answer(resource, a.owner_principal_id, true, &grants)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1607,6 +2045,33 @@ mod tests {
             intent_id: Uuid::new_v4().to_string(),
             resource_version: version,
         }
+    }
+
+    #[test]
+    fn adoption_grants_are_closed_and_tenant_write_is_allowed() {
+        let w = Uuid::new_v4();
+        let ok = adoption_grants(&[
+            grant("WORKSPACE", Some(w), "READ"),
+            grant("TENANT", None, "WRITE"),
+        ])
+        .unwrap();
+        assert_eq!(ok[0].kind, Kind::Tenant);
+        assert!(ok[0].write);
+        assert!(adoption_grants(&[
+            grant("WORKSPACE", Some(w), "READ"),
+            grant("WORKSPACE", Some(w), "WRITE")
+        ])
+        .is_err());
+        let many: Vec<_> = (0..101)
+            .map(|_| grant("PRINCIPAL", Some(Uuid::new_v4()), "READ"))
+            .collect();
+        assert!(adoption_grants(&many).is_err());
+        let answer = adoption_answer(Uuid::new_v4(), Uuid::new_v4(), true, &ok).unwrap();
+        assert_eq!(answer["adopted"], true);
+        assert_eq!(
+            answer["grants"][0],
+            json!({"subject": {"kind": "TENANT"}, "access": "WRITE"})
+        );
     }
 
     #[test]
@@ -1649,8 +2114,10 @@ mod tests {
     #[test]
     fn out_of_contract_grants_are_refused() {
         let p = Uuid::new_v4();
-        // TENANT only READ; duplicate subject; zero version; too many grants.
-        assert!(normalize(&input(vec![grant("TENANT", None, "WRITE")], None)).is_err());
+        // DD-164(4)③ (design 1c803580): every Tenant member may also get WRITE.
+        let all = normalize(&input(vec![grant("TENANT", None, "WRITE")], None)).unwrap();
+        assert_eq!(all["grants"][0]["access"], "WRITE");
+        // Duplicate subject; zero version; too many grants.
         assert!(normalize(&input(
             vec![
                 grant("PRINCIPAL", Some(p), "READ"),
@@ -1749,6 +2216,16 @@ mod tests {
         assert_eq!(
             all.to_string(),
             format!("resource:{r}#reader@tenant:{t}#member")
+        );
+        let all_write = Grant {
+            kind: Kind::Tenant,
+            id: None,
+            write: true,
+        }
+        .relationship(r, t);
+        assert_eq!(
+            all_write.to_string(),
+            format!("resource:{r}#editor@tenant:{t}#member")
         );
         // Replacing: keep what stays, touch what is new, delete what left.
         let old = Grant {

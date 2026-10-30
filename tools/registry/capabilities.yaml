@@ -429,6 +429,7 @@ capabilities:
   - /api/v1/application-bindings/{id}/directory-receipt
   actions:
   - component.share.set
+  - tenant.member_create_policy.set
   tools: []
   workflow_kinds: []
 - id: component.unified_metering

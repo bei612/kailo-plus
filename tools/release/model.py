@@ -467,20 +467,30 @@ def idp_declaration(decl=None):
 METERING_MODE = re.compile(r"[a-z][a-z0-9-]*")
 
 
-def metering_declaration(decl=None):
-    """release.yaml 的 metering 段（DD-165(5)）：在哪个服务里以 /usr/local/bin/platform-core 执行对齐与回读。
-    apply 在该服务替换并就绪之后、任何其他服务之前执行（服务未替换时在替换其他服务之前执行）；verify 只读。
-    没有该段返回 None（旧发布树）。"""
+def core_alignment_declaration(section, decl=None):
+    """release.yaml 中一段 Core 发布对齐（metering：DD-165(5)；member_create：DD-164(3)）：在哪个服务里以
+    /usr/local/bin/platform-core 执行对齐与回读。apply 在该服务替换并就绪之后、任何其他服务之前执行（服务未替换时在
+    替换其他服务之前执行）；verify 只读。没有该段返回 None（旧发布树）。"""
     decl = decl or declarations()
-    spec = decl.get("metering")
+    spec = decl.get(section)
     if spec is None:
         return None
     if not isinstance(spec, dict) or not isinstance(spec.get("service"), str) or set(spec) != {"service", "apply", "verify"}:
-        raise ReleaseError(f"{DECLARATIONS}: metering 必须恰有 service、apply、verify")
+        raise ReleaseError(f"{DECLARATIONS}: {section} 必须恰有 service、apply、verify")
     for key in ("apply", "verify"):
         if not isinstance(spec[key], str) or not METERING_MODE.fullmatch(spec[key]):
-            raise ReleaseError(f"{DECLARATIONS}: metering.{key} 必须是 platform-core 的子命令名")
+            raise ReleaseError(f"{DECLARATIONS}: {section}.{key} 必须是 platform-core 的子命令名")
     return spec
+
+
+def metering_declaration(decl=None):
+    """release.yaml 的 metering 段（DD-165(5)）。"""
+    return core_alignment_declaration("metering", decl)
+
+
+def member_create_declaration(decl=None):
+    """release.yaml 的 member_create 段（DD-164(3)）：为 MEMBERS_CREATE 的 Tenant 补齐成员 tenant#creator。"""
+    return core_alignment_declaration("member_create", decl)
 
 
 def _literal(tree, name):

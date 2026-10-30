@@ -543,6 +543,7 @@ class MeteringStep:
     (退出码, 标准输出)；标准输出最后一行是 Core 输出的计数与缺口 JSON（只含 meter/feature 键与 Tenant ID）。"""
 
     KEEP = ("mode", "meters", "features", "tenants", "entitlements")
+    LABEL = "计量"
 
     def __init__(self, spec, run):
         self.spec, self.run = spec, run
@@ -566,15 +567,24 @@ class MeteringStep:
         result = self._one(self.spec["apply"])
         if result["exit_code"] != 0:
             # 发布就此中止：其后的服务不被替换；命令幂等，下一次 deploy 从头重跑
-            raise NodeError(f"计量对齐 {result['command']} 退出 {result['exit_code']}："
+            raise NodeError(f"{self.LABEL}对齐 {result['command']} 退出 {result['exit_code']}："
                             + "；".join(result["problems"][:10]))
         return result
 
     def verify(self):
         result = self._one(self.spec["verify"])
         problems = [] if result["exit_code"] == 0 else (
-            [f"计量回读：{p}" for p in result["problems"]] or [f"计量回读 {result['command']} 退出 {result['exit_code']}"])
+            [f"{self.LABEL}回读：{p}" for p in result["problems"]]
+            or [f"{self.LABEL}回读 {result['command']} 退出 {result['exit_code']}"])
         return dict(result, problems=problems)
+
+
+class MemberCreateStep(MeteringStep):
+    """DD-164(3) 发布对齐：为成员创建策略为 MEMBERS_CREATE 的 Tenant 补齐 ACTIVE 成员的 tenant#creator（只写缺失、
+    再回读），verify 只读回读；标准输出最后一行是计数与缺口 JSON（只含 Tenant ID）。"""
+
+    KEEP = ("mode", "tenants", "members", "written")
+    LABEL = "成员创建策略"
 
 
 # ---- inspect：只读探针 ---------------------------------------------------------
@@ -1236,6 +1246,18 @@ class Release:
             return r.returncode, (r.stdout or b"").decode(errors="replace")
 
         return MeteringStep(spec, execute)
+
+    def member_create_step(self):
+        """DD-164(3) 的成员创建策略对齐；release.yaml 没有 member_create 段（旧发布树）时为 None。"""
+        if "member_create" not in self.decl:
+            return None
+        spec = self.model.member_create_declaration(self.decl)
+
+        def execute(mode):
+            r = self.compose("exec", "-T", spec["service"], "/usr/local/bin/platform-core", mode, check=False)
+            return r.returncode, (r.stdout or b"").decode(errors="replace")
+
+        return MemberCreateStep(spec, execute)
 
     def _preflight(self, need_receipt):
         root = os.path.dirname(self.tree)
@@ -1911,6 +1933,15 @@ class Release:
         self.write_journal("deploy.json", journal)
         extra = self.ci_env
         metering = self.metering_step()
+        member_create = self.member_create_step()
+
+        def align_member_create():
+            # DD-164(3)：与计量对齐同一时点（Core 就绪后、其他服务之前）；失败即中止 deploy
+            say(f"== 成员创建策略对齐（{member_create.service} 内 platform-core {member_create.spec['apply']}）")
+            journal["member_create"] = member_create.apply()
+            say("   Tenant {tenants}、成员 {members}、补写 {written}".format(
+                **{k: journal["member_create"].get(k, "?") for k in ("tenants", "members", "written")}))
+            self.write_journal("deploy.json", journal)
 
         def align_metering():
             # DD-165(5)：Core 就绪后、其他服务之前；失败即中止 deploy（MeteringStep 抛出）
@@ -1924,6 +1955,9 @@ class Release:
             # 运行中的 Core 已是本次 pin：在替换任何其他服务之前对齐
             self.wait_ready(metering.service)
             align_metering()
+        if member_create and member_create.service not in targets:
+            self.wait_ready(member_create.service)
+            align_member_create()
         # 同一启动入口（例如 start-core.sh 同时建 core-bff 与带叠加的 Worker）在一次 deploy 中只执行一次。
         commands_run = set()
         for svc in targets:
@@ -1952,6 +1986,8 @@ class Release:
             self.write_journal("deploy.json", journal)
             if metering and svc == metering.service:
                 align_metering()
+            if member_create and svc == member_create.service:
+                align_member_create()
         self.recreate_drifted(converge["after"], rendered, hashes, journal)
         # 部署前已运行、且不属于本次替换的容器必须仍在运行。同名但 ID 变化的（例如 start-core.sh
         # 按投递变化重建 Worker）如实记为重建，不当作停止；不再运行的才是失败。
@@ -2007,6 +2043,10 @@ class Release:
         metering = metering_step.verify() if metering_step else None
         if metering:
             bad += metering["problems"]
+        member_create_step = self.member_create_step()
+        member_create = member_create_step.verify() if member_create_step else None
+        if member_create:
+            bad += member_create["problems"]
         found = containers(self.cfg["compose_project"])
         rendered, hashes = self.desired()
         drift = self.drift(rendered, hashes, found)
@@ -2026,7 +2066,7 @@ class Release:
         if os.path.isfile(journal_path):
             with open(journal_path, encoding="utf-8") as stream:
                 deploy = json.load(stream)
-        value = dict(commit=self.commit, services=results, problems=bad, idp=idp, metering=metering,
+        value = dict(commit=self.commit, services=results, problems=bad, idp=idp, metering=metering, member_create=member_create,
                      config_drift_reported=[d for d in drift["drift"] if d["service"] in reported],
                      not_running=drift["absent"],
                      deploy_state=(deploy or {}).get("state"),

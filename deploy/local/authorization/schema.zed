@@ -36,7 +36,7 @@ definition resource {
   relation reader: principal | tenant#member | workspace#member
   relation exporter: principal
   relation creator: principal
-  relation editor: principal | workspace#member
+  relation editor: principal | workspace#member | tenant#member
   relation deleter: principal
   relation sharer: principal | tenant#member
   relation manager: principal

@@ -11,10 +11,10 @@ design:
   facts: []
   seams: []
   blockers: []
-  entities: [Resource, ComponentShareIntent, ComponentDirectoryReceipt, ApplicationBinding, TenantMembership, WorkspaceMembership]
+  entities: [Tenant, Resource, ComponentShareIntent, ComponentDirectoryReceipt, ApplicationBinding, TenantMembership, WorkspaceMembership]
 
 validation:
-  scenarios: [V-SCN-273, V-SCN-274, V-SCN-275, V-SCN-276]
+  scenarios: [V-SCN-273, V-SCN-274, V-SCN-275, V-SCN-276, V-SCN-309, V-SCN-310, V-SCN-311]
   evidence:
     - dimension: 合同一致
       ref: contracts/api/component_member_directory_v2.schema.json
@@ -24,6 +24,12 @@ validation:
       ref: core/crates/platform-core/src/component_directory.rs
     - dimension: 单元测试
       ref: core/crates/platform-core/src/component_share.rs
+    - dimension: 单元测试
+      ref: core/crates/platform-core/src/tenant_member_policy.rs
+    - dimension: 单元测试
+      ref: worker/workflows/component_task_test.go
+    - dimension: 单元测试
+      ref: tools/release/test_node.py
     - dimension: 单元测试
       ref: core/crates/platform-core/src/spicedb.rs
     - dimension: 组件集成
@@ -52,6 +58,12 @@ implementation:
   paths:
     - core/crates/platform-core/src/component_directory.rs
     - core/crates/platform-core/src/component_share.rs
+    - core/crates/platform-core/src/tenant_member_policy.rs
+    - core/crates/platform-core/src/member_create_alignment.rs
+    - core/crates/platform-core/src/membership_lifecycle.rs
+    - core/crates/platform-core/src/tenant_profile.rs
+    - worker/workflows/component_task.go
+    - tools/release/release.yaml
     - core/crates/platform-core/src/governance.rs
     - core/crates/platform-core/src/spicedb.rs
     - core/crates/platform-core/src/service_api.rs
@@ -83,17 +95,21 @@ implementation:
     - contracts/domain/component_share_subject.schema.json
     - contracts/domain/component_share_grant.schema.json
     - contracts/domain/component_share_set.schema.json
+    - contracts/api/component_share_adoption_request.schema.json
+    - contracts/api/component_share_adoption_result.schema.json
+    - contracts/domain/tenant_member_create_policy_input.schema.json
+    - contracts/enums/tenant_member_create_policy.schema.json
     - contracts/enums/component_share_access.schema.json
     - contracts/enums/component_share_subject_kind.schema.json
     - contracts/enums/component_shared_native_type.schema.json
     - contracts/enums/component_receipt_outcome.schema.json
     - contracts/enums/component_receipt_failure_kind.schema.json
     - contracts/enums/component_directory_receipt_state.schema.json
-  migrations: [core/migrations/20261102010000_component_share.up.sql]
+  migrations: [core/migrations/20261102010000_component_share.up.sql, core/migrations/20261102040000_member_create_policy.up.sql]
 
 runtime:
   routes: ["/api/v1/component-shares/intents/{id}", "/api/v1/application-bindings/{id}/directory-receipt"]
-  actions: [component.share.set]
+  actions: [component.share.set, tenant.member_create_policy.set]
   workflow_kinds: []
 
 release:

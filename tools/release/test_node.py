@@ -315,6 +315,38 @@ class DeployOrder(unittest.TestCase):
         self.assertEqual(journal["state"], "SUCCEEDED")
 
 
+class MemberCreateAlignment(unittest.TestCase):
+    """DD-164(3)：MEMBERS_CREATE 的 Tenant 补齐 tenant#creator；与计量对齐同一时点，失败中止；verify 只读回读。"""
+
+    SPEC = dict(service="core-bff", apply="align-member-create", verify="verify-member-create")
+
+    def test_apply_and_verify_keep_counts_only(self):
+        body = dict(mode="ALIGN", tenants=2, members=5, written=3, problems=[], unexpected=SENTINELS[1])
+        result = node.MemberCreateStep(self.SPEC, lambda mode: (0, json.dumps(body))).apply()
+        self.assertEqual((result["tenants"], result["members"], result["written"]), (2, 5, 3))
+        self.assertNotIn(SENTINELS[1], json.dumps(result))
+        gap = dict(body, problems=["Tenant t: 2 个成员缺 tenant#creator"])
+        with self.assertRaises(node.NodeError) as caught:
+            node.MemberCreateStep(self.SPEC, lambda mode: (5, json.dumps(gap))).apply()
+        self.assertIn("成员创建策略对齐", str(caught.exception))
+        problems = node.MemberCreateStep(self.SPEC, lambda mode: (5, json.dumps(gap))).verify()["problems"]
+        self.assertEqual(problems, ["成员创建策略回读：Tenant t: 2 个成员缺 tenant#creator"])
+
+    def test_declaration_is_closed_and_present(self):
+        model = load_model()
+        self.assertEqual(model.member_create_declaration(), self.SPEC)
+        self.assertIsNone(model.member_create_declaration(dict(DECL)))
+        with self.assertRaises(model.ReleaseError):
+            model.member_create_declaration(dict(member_create=dict(self.SPEC, extra=1)))
+
+    def test_alignment_runs_after_core_and_metering(self):
+        events, journal = MeteringAlignment().deploy(["core-bff", "buzz-web"], member_create=self.SPEC)
+        ups = [e for e in events if e.startswith(("up ", "metering ", "member-create "))]
+        self.assertEqual(ups, ["up core-bff", "metering align-metering", "member-create align-member-create",
+                               "up buzz-web"])
+        self.assertEqual(journal["member_create"]["written"], 2)
+
+
 class MeteringAlignment(unittest.TestCase):
     """DD-165(5)：Core 就绪后、其他服务之前执行 platform-core 计量对齐；失败中止 deploy；verify 只读回读。"""
 
@@ -365,7 +397,7 @@ class MeteringAlignment(unittest.TestCase):
             with self.assertRaises(model.ReleaseError):
                 model.metering_declaration(dict(metering=bad))
 
-    def deploy(self, targets, fail=False):
+    def deploy(self, targets, fail=False, member_create=None):
         events = []
         svcs = services(**{"core-bff": ("core", []), "worker": ("worker", ["core-bff"]), "buzz-web": ("web-client", [])})
         doc = rendered(**{"core-bff": {}, "worker": {}, "buzz-web": {}})
@@ -377,12 +409,17 @@ class MeteringAlignment(unittest.TestCase):
             prerequisites = staticmethod(lambda services, svc: [])
             idp_declaration = staticmethod(lambda decl: dict(wait="keycloak"))
             metering_declaration = staticmethod(lambda decl: spec)
+            member_create_declaration = staticmethod(lambda decl: member_create)
 
         class Idp:
             def apply(self, commit):
                 return dict(applied=False, native_clients_declared=True, state="unchanged", commands=[])
 
         def compose(*args, **kw):
+            if args[0] == "exec" and args[-1].endswith("member-create"):
+                events.append("member-create " + args[-1])
+                body = dict(mode="ALIGN", tenants=1, members=3, written=2, problems=[])
+                return type("R", (), dict(returncode=0, stdout=json.dumps(body).encode()))()
             if args[0] == "exec":
                 events.append("metering " + args[-1])
                 code = 5 if fail else 0
@@ -395,7 +432,10 @@ class MeteringAlignment(unittest.TestCase):
             os.makedirs(os.path.join(tmp, "backups"))
             open(os.path.join(tmp, "backups", "manifest.json"), "w").close()
             r = node.Release.__new__(node.Release)
-            r.model, r.decl, r.commit, r.journal, r.backups = Model, dict(DECL, overlays=[], metering=spec), "c" * 40, \
+            decl = dict(DECL, overlays=[], metering=spec)
+            if member_create:
+                decl["member_create"] = member_create
+            r.model, r.decl, r.commit, r.journal, r.backups = Model, decl, "c" * 40, \
                 tmp, os.path.join(tmp, "backups")
             r.services, r.managed, r.cfg, r.ci_env = svcs, {"buzz-web": "web-client"}, dict(compose_project="p"), {}
             r.decl["services"] = {}

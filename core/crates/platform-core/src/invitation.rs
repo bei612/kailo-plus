@@ -538,6 +538,7 @@ impl Governance {
             component_share_set: None,
             tenant_quota_setting: None,
             tenant_profile: None,
+            tenant_member_create_policy: None,
             skill_version_upload: None,
         };
         let admit = match open_execution(

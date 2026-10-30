@@ -76,6 +76,7 @@ mod mcp_client;
 mod mcp_connection;
 mod mcp_egress;
 mod mcp_oauth;
+mod member_create_alignment;
 mod membership_lifecycle;
 mod membership_projection;
 mod membership_state;
@@ -192,6 +193,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err(format!("{mode} takes no arguments").into());
         }
         let report = metering_alignment::run(mode == "align-metering").await?;
+        println!("{}", serde_json::to_string(&report)?);
+        std::process::exit(if report.problems.is_empty() { 0 } else { 5 });
+    }
+    // DD-164(3)：发布入口在 Core 就绪后为 MEMBERS_CREATE 的 Tenant 补齐成员的 tenant#creator（只写缺失、
+    // 再回读）与 verify 阶段的只读回读；有任一缺口即以 5 退出并列出 Tenant。
+    if let Some(mode @ ("align-member-create" | "verify-member-create")) =
+        argv.get(1).map(String::as_str)
+    {
+        if argv.len() != 2 {
+            return Err(format!("{mode} takes no arguments").into());
+        }
+        let report = member_create_alignment::run(mode == "align-member-create").await?;
         println!("{}", serde_json::to_string(&report)?);
         std::process::exit(if report.problems.is_empty() { 0 } else { 5 });
     }
