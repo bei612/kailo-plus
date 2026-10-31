@@ -170,9 +170,21 @@ jobs=${MOBILE_CHECK_CPUS%%.*}; [ "${jobs:-0}" -ge 1 ] 2>/dev/null || jobs=1
 
 work=$(mktemp -d "$TMPDIR/mobile-check.XXXXXX")
 container_id=
-trap 'if [ -n "$container_id" ]; then "${CONTAINER_DOCKER[@]}" rm -f "$container_id" >/dev/null 2>&1 || true; fi; rm -rf -- "$work/src" "$work/tmp"' EXIT
+cleanup() {
+  if [ -n "$container_id" ]; then "${CONTAINER_DOCKER[@]}" rm -f "$container_id" >/dev/null 2>&1 || true; fi
+  if [ -d "$work/export" ]; then git worktree remove --force "$work/export" >/dev/null 2>&1 || true; fi
+  rm -rf -- "$work/src" "$work/tmp" "$work/export"
+}
+trap cleanup EXIT
 mkdir -p "$work/src" "$work/tmp" "$work/out"
-git archive "$commit" -- collaboration/mobile client-kit/dart | tar -xf - -C "$work/src"
+# 只导出这两个目录：经临时稀疏 worktree 检出，部分克隆（--filter=blob:none）也只取这两处
+# 的 blob。git archive 在部分克隆里会先预取整棵树的 blob，经 GitHub 拉取既慢又会被断开。
+paths=(collaboration/mobile client-kit/dart)
+git worktree add --quiet --detach --no-checkout "$work/export" "$commit"
+git -C "$work/export" sparse-checkout set --cone "${paths[@]}"
+git -C "$work/export" reset --quiet --hard "$commit"
+tar -C "$work/export" -cf - "${paths[@]}" | tar -xf - -C "$work/src"
+git worktree remove --force "$work/export"
 
 printf '检查对象：commit %s（tree %s）\n' "$commit" "$(git rev-parse "$commit^{tree}")"
 printf 'Flutter 镜像：%s（image ID %s）\n' "$image" "$image_id"

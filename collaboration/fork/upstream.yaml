@@ -979,7 +979,10 @@ remove_paths:
   - mobile/android/app/src/test/kotlin/xyz/block/buzz/mobile/AgeSignalPayloadTest.kt
   - mobile/android/app/src/test/kotlin/xyz/block/buzz/mobile/AgeSignalRequestTest.kt
   - mobile/android/app/src/test/kotlin/xyz/block/buzz/mobile/HuddleActiveTalkerSelectorTest.kt
-  - mobile/lib/features/activity
+  - mobile/lib/features/activity/compose_drafts_provider.dart
+  - mobile/lib/features/activity/dm_resurface.dart
+  - mobile/lib/features/activity/inbox_local_state_provider.dart
+  - mobile/lib/features/activity/reminders_provider.dart
   - mobile/lib/features/age_gate
   - mobile/lib/features/channels/add_members_sheet.dart
   - mobile/lib/features/channels/agent_activity
@@ -1067,7 +1070,9 @@ remove_paths:
   - mobile/lib/shared/widgets/masked_avatar_badge.dart
   - mobile/lib/shared/widgets/playing_avatar_image.dart
   - mobile/lib/shared/widgets/tappable_flapping_bee.dart
-  - mobile/test/features/activity
+  - mobile/test/features/activity/compose_drafts_provider_test.dart
+  - mobile/test/features/activity/dm_resurface_test.dart
+  - mobile/test/features/activity/reminders_provider_test.dart
   - mobile/test/features/age_gate
   - mobile/test/features/channels/agent_activity
   - mobile/test/features/channels/channel_actions_sheet_test.dart
