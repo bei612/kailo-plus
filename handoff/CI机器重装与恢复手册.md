@@ -4,6 +4,13 @@
 这台机器**同时运行 Kailo 生产环境和 CI**，另外还跑着 volcengine 数字人、ASR/TTS、agent-platform 等其他项目。
 本文所有信息都是 2026-10-31 重启后，从机器上只读核对得到的。文中不含任何私钥、口令或 .env 值；这些内容只存在于数据盘上的备份包里。
 
+> **用户 2026-10-31 裁定：重装后从 0 开始**
+> - 系统、Docker、Kailo 生产和 CI 一律全新安装、全新部署，数据重新生成，不恢复旧的容器、数据卷、数据库或 home 目录。
+> - 只需从备份中取回 **WireGuard 配置**（`etc.tar.zst` 中的 `etc/wireguard/`）。这样两条隧道的私钥保持不变，开发机侧和 primedata 侧都不用改。
+> - 是否保留原 SSH 主机密钥（`etc/ssh/ssh_host_*`）由你决定；不保留的话，开发机需要清掉旧的 known_hosts 记录（见 1.6）。
+> - 冷备份已在 06:17Z 跑完主体部分：`/etc`、`/root`、`/usr/local`、`/home/ubuntu`、Docker 卷、`/volumes/*`、`/opt`、宿主 PG 都已打包；k8s 状态和 `/var/lib/kailo-ci` 没有打。这份备份现在只作为额外保险，放在 sda 的 `/volumes/data/reinstall-backup-20261031/`，约 210G，不需要时可以整目录删除。
+> - **重装时只格式化 NVMe（nvme0n1）**，不要动 sda、sdb、sdc。
+
 ---
 
 ## 0. 重装前必须确认（按顺序执行）
@@ -217,7 +224,22 @@ PersistentKeepalive = 25
 
 ---
 
-## 3. 重装后的恢复顺序
+## 3. 重装后的步骤（从 0 开始）
+从 0 开始的做法：
+1. 装 Ubuntu 24.04，只格式化 nvme0n1；建用户 `ubuntu`（uid 1000，免密 sudo）；装 NVIDIA 驱动。
+2. 在 fstab 中挂 sda1，然后建 `/volumes/data`。旧数据盘上的 `/volumes/data/kailo/*` 是历史残留，新部署不要沿用，等确认无用后再清理。
+3. 恢复 WG：从 `etc.tar.zst` 中解出 `etc/wireguard/`，放回 `/etc/wireguard/`，权限设为 0600，然后 `systemctl enable --now wg-quick@wg-game wg-quick@wg0`；在开发机上 `ping 10.203.193.2` 验证。
+4. 恢复开发机的 SSH 登录：在 `~ubuntu/.ssh/authorized_keys` 中加入开发机公钥（`/root/.ssh/id_ed25519_kailo_ci.pub`，限定 `from="10.203.193.1",no-agent-forwarding,no-X11-forwarding`），其他公钥按需添加。
+5. 从 0 安装 Docker（官方 docker-ce），daemon.json 先只配 `default-address-pools`。如果开发机还要用 `kailo-ci` 远程 Docker，就重新签发 mTLS 证书，并更新开发机 docker context `kailo-ci`。
+6. Kailo 生产和 CI 都从 GitHub `bei612/kailo-plus` 的 main 全新部署：
+   - 按 `CI-CD部署测试手册.md`、`apps/deploy/local/init-local.sh`、`start-core.sh` 和发布入口 `tools/release/kailo-release.sh` 执行；
+   - 热数据一律放在 NVMe 的 `/var/lib/kailo-ci`，这是新设计（07 §2.1、ADR-20 §12）；
+   - 生产与 CI 尽量分机。做不到的话，给 CI 设硬内存上限，比如 systemd slice ≤24G。
+   - 装好后启用 `tools/ci/ci-slot.sh`、`tools/ci/retention`、`tools/ci/dep-cache`。
+
+下文是"整机恢复"的旧顺序，仅供参考；按用户裁定，**这次不执行**。
+
+## 3A. 整机恢复顺序（参考，不执行）
 1. 装 Ubuntu 24.04，只格式化 `nvme0n1`。创建用户 `ubuntu`（uid 1000），装好 NVIDIA 驱动。
 2. 挂载 sda1：把 `UUID=dc6065d9-b3de-42fb-bf03-e4c422eb2419 /volumes/data xfs defaults,noatime 0 2` 写进 fstab，然后 `mount -a`。
 3. 安装软件包：docker-ce 29.x、docker-compose-plugin、wireguard、zstd、pigz、postgresql-16、python3、git、tinyproxy（可选）。
