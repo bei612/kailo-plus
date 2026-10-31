@@ -512,7 +512,7 @@ func (l *pydioObjects) getObject(ctx context.Context, bucket string, key string,
 
 // PutObject creates a new object with the incoming data,
 func (l *pydioObjects) PutObject(ctx context.Context, bucket, object string, data *minio.PutObjReader, opts minio.ObjectOptions) (objInfo minio.ObjectInfo, err error) {
-	writer, err := l.claimNativeUpload(ctx, object, "put", "", data.Size())
+	writer, err := l.claimNativeUpload(ctx, object, "put", "", data.Size(), "", "", (&models.PutRequestData{Metadata: opts.UserDefined}).MetaContentType())
 	if err != nil {
 		return objInfo, pydioToMinioError(err, bucket, object)
 	}
@@ -653,7 +653,7 @@ func (l *pydioObjects) ListMultipartUploads(ctx context.Context, bucket string, 
 
 // NewMultipartUpload upload object in multiple parts
 func (l *pydioObjects) NewMultipartUpload(ctx context.Context, bucket string, object string, o minio.ObjectOptions) (uploadID string, err error) {
-	writer, err := l.claimNativeUpload(ctx, object, "create", "", 0)
+	writer, err := l.claimNativeUpload(ctx, object, "create", "", 0, "", "", (&models.PutRequestData{Metadata: minio.ToMinioClientMetadata(o.UserDefined)}).MetaContentType())
 	if err != nil {
 		return "", pydioToMinioError(err, bucket, object)
 	}

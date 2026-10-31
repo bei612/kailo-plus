@@ -32,6 +32,7 @@ pub(crate) mod read_grant;
 pub(crate) mod secret;
 
 pub(crate) const CREATE: &str = "application_binding.create";
+pub(crate) const UPGRADE: &str = "application_binding.upgrade";
 pub(crate) const DISABLE: &str = "application_binding.disable";
 pub(crate) const KIND: &str = "COMPONENT_BINDING";
 pub(crate) const DISABLE_KIND: &str = "COMPONENT_DISABLE";
@@ -222,6 +223,20 @@ pub(crate) fn validate_params(params: &Params, creating: bool) -> Result<(), Ref
     Ok(())
 }
 
+// DD-100: an upgrade targets the existing binding and a separately approved
+// release. No new model mode or caller-supplied generation is accepted.
+pub(crate) fn validate_upgrade_params(params: &Params) -> Result<(), Refusal> {
+    let value = params.to_json();
+    exact(&value, &["applicationBindingId", "applicationBindingVersion", "componentReleaseId", "explicitConfirmation"], &[])?;
+    uuid(&value, "applicationBindingId")?;
+    uuid(&value, "componentReleaseId")?;
+    if value["applicationBindingVersion"].as_i64().is_none_or(|v| v <= 0 || v > i32::MAX.into())
+        || value["explicitConfirmation"] != true {
+        return Err(invalid());
+    }
+    Ok(())
+}
+
 async fn approved_release(conn: &mut PgConnection, request: &Requested) -> Result<Value, Refusal> {
     let row: Option<(Value, Value, String)> = sqlx::query_as(
         "select r.manifest,r.binding_config_schema,r.manifest_digest
@@ -367,6 +382,41 @@ pub(crate) async fn target(
     frozen: Option<Uuid>,
     lock: bool,
 ) -> Result<Target, Refusal> {
+    // Validate the same binding and an approved release of the same component
+    // under the original binding lock. This is not a successful admission:
+    // the upgrade projection and old-generation route still need to exist.
+    if def.action_key == UPGRADE {
+        validate_upgrade_params(params)?;
+        if def.target_type != "APPLICATION_BINDING" || def.tenant_rule != "SESSION_TENANT"
+            || def.permission != "manage" || def.execution_mode != "TEMPORAL"
+            || def.workspace_rule != "DECLARED_WORKSPACE" || def.permission_object_type != "tenant"
+            || def.workflow_kind.as_deref() != Some(KIND) || def.confirmation_mode != "EXPLICIT"
+            || def.result_exposure != "NONE" || def.quota_policy != "NONE" || !def.meters.is_empty()
+            || crate::platform_bootstrap::is_catalog_tenant(conn, tenant).await? {
+            return Err(blocked());
+        }
+        let value = params.to_json();
+        let id = uuid(&value, "applicationBindingId")?;
+        let release = uuid(&value, "componentReleaseId")?;
+        if frozen.is_some_and(|original| original != id) { return Err(conflict()); }
+        let query = format!("select b.version,b.component_type_key,b.normalized_config,b.model_call_mode,
+            b.capability_categories,r.manifest,r.binding_config_schema,r.manifest_digest
+            from catalog.application_binding b join catalog.component_release r on r.id=$3
+            where b.id=$1 and b.tenant_id=$2 and b.state='ACTIVE'
+              and r.component_type_key=b.component_type_key and r.status='APPROVED'
+              and r.approved_by_action_execution_id is not null{}",
+            if lock { " for update of b" } else { "" });
+        let row: Option<(i32, String, Value, String, Value, Value, Value, String)> =
+            sqlx::query_as(&query).bind(id).bind(tenant).bind(release).fetch_optional(&mut *conn).await?;
+        let (version, component, config, mode, categories, manifest, schema, digest) = row.ok_or_else(conflict)?;
+        if value["applicationBindingVersion"] != version || manifest["componentTypeKey"] != component ||
+            collab_bridge::limits::canonical_digest(&manifest) != digest ||
+            !crate::capability_contract::schema_validator(&schema, &BTreeMap::new())?.is_valid(&config) {
+            return Err(conflict());
+        }
+        crate::model_route::application::configuration(&mode, &config, &categories, &manifest)?;
+        return Err(blocked());
+    }
     let creating = def.action_key == CREATE;
     validate_params(params, creating)?;
     if !matches!(def.action_key.as_str(), CREATE | DISABLE)
@@ -447,6 +497,76 @@ pub(crate) async fn target(
     }
 }
 
+// Build the next original runtime row under the same binding lock used by
+// action admission. The caller must materialize and validate every projection
+// before switching; a PENDING row is not a release or a successful upgrade.
+async fn prepare_upgrade_runtime(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ae: &Execution,
+    params: &Params,
+) -> Result<i32, Refusal> {
+    validate_upgrade_params(params)?;
+    if ae.action_key != UPGRADE || ae.actor_principal_id != ae.initiator_principal_id {
+        return Err(blocked());
+    }
+    let value = params.to_json();
+    let id = uuid(&value, "applicationBindingId")?;
+    let release = uuid(&value, "componentReleaseId")?;
+    if id != ae.target_id { return Err(conflict()); }
+    let binding: Option<(i32, String, Uuid, Value, String, Value)> = sqlx::query_as(
+        "select version,component_type_key,component_release_id,normalized_config,model_call_mode,capability_categories from catalog.application_binding
+         where id=$1 and tenant_id=$2 and workspace_id is not distinct from $3 and state='ACTIVE' for update")
+        .bind(id).bind(ae.tenant_id).bind(ae.workspace_id).fetch_optional(&mut **tx).await?;
+    let (version, component, old_release, config, mode, categories) = binding.ok_or_else(conflict)?;
+    if value["applicationBindingVersion"] != version || release == old_release { return Err(conflict()); }
+    let candidate: Option<(Value, Value, String)> = sqlx::query_as(
+        "select manifest,binding_config_schema,manifest_digest from catalog.component_release
+         where id=$1 and component_type_key=$2 and status='APPROVED'
+           and approved_by_action_execution_id is not null for share")
+        .bind(release).bind(&component).fetch_optional(&mut **tx).await?;
+    let (manifest, schema, digest) = candidate.ok_or_else(blocked)?;
+    if collab_bridge::limits::canonical_digest(&manifest) != digest ||
+        !crate::capability_contract::schema_validator(&schema, &BTreeMap::new())?.is_valid(&config) {
+        return Err(blocked());
+    }
+    crate::model_route::application::configuration(&mode, &config, &categories, &manifest)?;
+    let implements = manifest["implements"].as_array().ok_or_else(blocked)?;
+    for category in categories.as_array().ok_or_else(blocked)? {
+        if !implements.iter().any(|item| item["categoryKey"] == category["category"] &&
+            item["contractVersion"] == category["version"]) { return Err(blocked()); }
+        let contract: Option<Value> = sqlx::query_scalar(
+            "select c.content from catalog.capability_contract c join catalog.capability_category k
+             on k.category_key=c.category_key and k.catalog_tenant_id=c.catalog_tenant_id
+             where c.category_key=$1 and c.contract_version=$2 and c.status='ACTIVE' and k.status='ACTIVE'")
+            .bind(text(category, "category")?)
+            .bind(category["version"].as_i64().and_then(|v| i32::try_from(v).ok()).ok_or_else(invalid)?)
+            .fetch_optional(&mut **tx).await?;
+        enabled_operations(&manifest, &contract.ok_or_else(blocked)?)?;
+    }
+    let pending: Vec<(Uuid, Uuid)> = sqlx::query_as(
+        "select action_execution_id,component_release_id from projection.application_runtime
+         where binding_id=$1 and state='PENDING' order by generation")
+        .bind(id).fetch_all(&mut **tx).await?;
+    if !pending.is_empty() {
+        // A retry may observe only its own exact durable intent. It must not
+        // allocate another generation or absorb an unrelated pending change.
+        return if pending.len() == 1 && pending[0] == (ae.id, release) {
+            Ok(version)
+        } else { Err(conflict()) };
+    }
+    let generation: i64 = sqlx::query_scalar(
+        "select coalesce(max(generation),0)+1 from projection.application_runtime where binding_id=$1")
+        .bind(id).fetch_one(&mut **tx).await?;
+    sqlx::query("insert into projection.application_runtime
+        (binding_id,generation,component_release_id,normalized_manifest_digest,adapter_contract_digest,state,action_execution_id,validation_keys)
+        values ($1,$2,$3,$4,$5,'PENDING',$6,$7)")
+        .bind(id).bind(generation).bind(release)
+        .bind(collab_bridge::limits::canonical_digest(&manifest)).bind(text(&manifest,"adapterBuildRef")?)
+        .bind(ae.id).bind(json!({"handshake":Uuid::new_v4(),"validate_binding":Uuid::new_v4()}))
+        .execute(&mut **tx).await?;
+    Ok(version)
+}
+
 /// This write runs inside the original admission transaction, after the same
 /// HUMAN scope/permission evaluation. No adapter side effect precedes it.
 pub(crate) async fn prewrite(
@@ -454,6 +574,12 @@ pub(crate) async fn prewrite(
     ae: &Execution,
     params: &Params,
 ) -> Result<i32, Refusal> {
+    // Until the upgrade projection transaction is implemented, never route an
+    // upgrade through the existing disable prewrite branch.
+    if ae.action_key == UPGRADE {
+        validate_upgrade_params(params)?;
+        return Err(blocked());
+    }
     let creating = ae.action_key == CREATE;
     validate_params(params, creating)?;
     if ae.actor_principal_id != ae.initiator_principal_id {
@@ -1351,4 +1477,26 @@ mod binding_admission_tests {
         missing["actionDefinitions"] = json!([]);
         assert!(enabled_operations(&missing, &contract).is_err());
     }
+    #[test]
+    fn upgrade_requires_original_binding_version_and_explicit_release() {
+        let binding = Uuid::new_v4();
+        let release = Uuid::new_v4();
+        let input = json!({"applicationBindingId": binding, "applicationBindingVersion": 7,
+            "componentReleaseId": release, "explicitConfirmation": true});
+        let params = Params::from_json(&input).expect("upgrade parameters parse");
+        assert!(validate_upgrade_params(&params).is_ok());
+        for field in ["applicationBindingId", "applicationBindingVersion", "componentReleaseId", "explicitConfirmation"] {
+            let mut missing = input.clone();
+            missing.as_object_mut().unwrap().remove(field);
+            let invalid = Params::from_json(&missing).expect("missing optional field parses");
+            assert!(validate_upgrade_params(&invalid).is_err(), "{field}");
+        }
+        let mut bad_version = input.clone();
+        bad_version["applicationBindingVersion"] = json!(0);
+        assert!(validate_upgrade_params(&Params::from_json(&bad_version).unwrap()).is_err());
+        let mut wrong_mode = input;
+        wrong_mode["applicationBindingCreate"] = json!({"modelCallMode":"NONE"});
+        assert!(validate_upgrade_params(&Params::from_json(&wrong_mode).unwrap()).is_err());
+    }
+
 }

@@ -192,15 +192,56 @@ func (w *nativeUploadWriter) finish(ctx context.Context, router nodes.Client, in
 		draft.Size != info.Size || draft.ETag != info.ETag || draft.Location == nil {
 		return refused
 	}
+	// The task freezes the original request type before any bytes. Missing
+	// evidence is not permission to infer the type from the mutable live node.
+	step := "put"
+	if u.Input["multipart"] == true {
+		step = "create"
+	}
+	origin, err := jobstore.NativeUploadRecordedStep(w.task, step)
+	if err != nil || origin == nil || origin.ContentType == nil {
+		return refused
+	}
+	if err := u.Fresh(ctx); err != nil {
+		return err
+	}
+	body, err := router.GetObject(ctx, w.node.Clone(), &models.GetRequestData{VersionId: u.NativeIntentID, Length: -1})
+	if err != nil {
+		return err
+	}
+	if body == nil {
+		return refused
+	}
+	prefixSize := draft.Size
+	if prefixSize > 8192 {
+		prefixSize = 8192
+	}
+	prefix := make([]byte, int(prefixSize))
+	_, readErr := io.ReadFull(body, prefix)
+	closeErr := body.Close()
+	if readErr != nil {
+		return readErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if err := u.Fresh(ctx); err != nil {
+		return err
+	}
+	contentType := *origin.ContentType
+	if (&models.PutRequestData{Metadata: map[string]string{common.XContentType: contentType}}).ContentTypeUnknown() {
+		contentType = nodes.DetectMime(prefix)
+	}
 	read, err := router.ReadNode(ctx, &tree.ReadNodeRequest{Node: w.node.Clone()})
 	if err != nil {
 		return err
 	}
 	node := read.GetNode()
 	if node.GetUuid() != w.node.Uuid || node.GetType() != tree.NodeType_LEAF || versions.PolicyForNode(ctx, node) == nil ||
-		node.GetStringMeta(common.MetaNamespaceMime) == "" {
+		contentType == "" {
 		return refused
 	}
+	node.MustSetMeta(common.MetaNamespaceMime, contentType)
 	if err := u.Fresh(ctx); err != nil {
 		return err
 	}

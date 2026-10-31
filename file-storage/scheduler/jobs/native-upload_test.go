@@ -60,7 +60,13 @@ func TestNativeUploadConcurrentPartsMergeAndCompletion(t *testing.T) {
 			t.Fatal(step, err)
 		}
 	}
-	claim(task, "create", 0)
+	createRequest := proto.Clone(task).(*jobproto.Task)
+	claim(createRequest, "create", 0, "", "", "image/custom")
+	var err error
+	task, err = MergeNativeUploadStep(task, createRequest, "create")
+	if err != nil {
+		t.Fatal("create content type was not preserved under task CAS", err)
+	}
 	claim(task, "created", 0)
 	left, right := proto.Clone(task).(*jobproto.Task), proto.Clone(task).(*jobproto.Task)
 	claim(left, "part/1", 3)
@@ -87,6 +93,10 @@ func TestNativeUploadConcurrentPartsMergeAndCompletion(t *testing.T) {
 	claim(merged, "complete", 6, "", NativeUploadPartsDigest(map[string]string{"1": "a", "2": "b"}))
 	if _, err = ClaimNativeUploadStep(merged, "part/3", uuid.New(), "workspace/file", "original-upload", 0); err == nil {
 		t.Fatal("late part after completion admitted")
+	}
+	origin, err := NativeUploadRecordedStep(merged, "create")
+	if err != nil || origin == nil || origin.ContentType == nil || *origin.ContentType != "image/custom" {
+		t.Fatal("concurrent part merge lost the original content type", origin, err)
 	}
 	if _, _, err = NativeUploadRevision(merged); err == nil {
 		t.Fatal("multipart ACK claimed immutable Version success")

@@ -83,11 +83,7 @@ func NewTeeMimeReader(reader io.Reader, callbackRoutine func(result *MimeResult)
 	go func() {
 		<-mr.loaded
 		//fmt.Printf("Stored %d bytes in buffer - Error: %v\n", len(mr.data), mr.loadError)
-		kind, _ := filetype.Match(mr.data)
-		mime := kind.MIME.Value
-		if mime == "" || defaultRx.MatchString(mime) {
-			mime = http.DetectContentType(mr.data)
-		}
+		mime := DetectMime(mr.data)
 		if callbackRoutine != nil {
 			callbackRoutine(&MimeResult{mime: mime, err: mr.loadError})
 		}
@@ -97,6 +93,16 @@ func NewTeeMimeReader(reader io.Reader, callbackRoutine func(result *MimeResult)
 		}
 	}()
 	return mr
+}
+
+// DetectMime applies the original sniffing rule to a confirmed body prefix.
+func DetectMime(data []byte) string {
+	kind, _ := filetype.Match(data)
+	mime := kind.MIME.Value
+	if mime == "" || defaultRx.MatchString(mime) {
+		mime = http.DetectContentType(data)
+	}
+	return mime
 }
 
 // SetLimit can override default mimeReadLimit (used mainly for testing)

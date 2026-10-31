@@ -217,7 +217,7 @@ func (m *Handler) PutObject(ctx context.Context, node *tree.Node, reader io.Read
 
 		log.Logger(ctx).Debug("PUT: Appending node Uuid to request metadata: " + node.Uuid)
 		requestData.Metadata[common.XAmzMetaNodeUuid] = node.Uuid
-		if requestData.ContentTypeUnknown() {
+		if requestData.ContentTypeUnknown() && auth.NativeUploadFromContext(ctx) == nil {
 			reader = nodes.WrapReaderForMime(ctx, node.Clone(), reader)
 		}
 		return m.Next.PutObject(ctx, node, reader, requestData)
@@ -236,7 +236,7 @@ func (m *Handler) PutObject(ctx context.Context, node *tree.Node, reader io.Read
 			// This was a PydioSyncHiddenFile and the folder already exists, replace the content
 			// with the actual folder Uuid to avoid replacing it We should never pass there???
 			reader = bytes.NewBufferString(newNode.Uuid)
-		} else if requestData.ContentTypeUnknown() {
+		} else if requestData.ContentTypeUnknown() && auth.NativeUploadFromContext(ctx) == nil {
 			reader = nodes.WrapReaderForMime(ctx, newNode.Clone(), reader)
 		}
 
@@ -351,7 +351,7 @@ func (m *Handler) MultipartPutObjectPart(ctx context.Context, target *tree.Node,
 		return models.MultipartObjectPart{}, errors.WithStack(errors.StatusConflict)
 	}
 
-	if partNumberMarker == 1 && requestData.ContentTypeUnknown() {
+	if partNumberMarker == 1 && requestData.ContentTypeUnknown() && auth.NativeUploadFromContext(ctx) == nil {
 		cl := resp.GetNode().Clone()
 		cl.Type = tree.NodeType_LEAF // Force leaf!
 		reader = nodes.WrapReaderForMime(ctx, cl, reader)

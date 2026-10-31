@@ -29,6 +29,7 @@ import (
 	"github.com/pydio/cells/v5/common/nodes"
 	"github.com/pydio/cells/v5/common/nodes/acl"
 	"github.com/pydio/cells/v5/common/nodes/compose"
+	"github.com/pydio/cells/v5/common/nodes/core"
 	"github.com/pydio/cells/v5/common/nodes/models"
 	objectmock "github.com/pydio/cells/v5/common/nodes/objects/mock"
 	"github.com/pydio/cells/v5/common/nodes/put"
@@ -58,9 +59,24 @@ type uploadPool struct {
 // The upstream in-memory object's GET omits Key/ETag although its stored
 // object has both. Preserve that original stored evidence for the real
 // revision-copy consumer, including the conditional GET it actually sends.
-type uploadObjectStore struct{ *objectmock.Client }
+type uploadObjectStore struct {
+	*objectmock.Client
+	failGet  bool
+	racedGet bool
+}
 
 func (s *uploadObjectStore) GetObject(ctx context.Context, bucket, key string, meta models.ReadMeta) (io.ReadCloser, models.ObjectInfo, error) {
+	if s.failGet {
+		return nil, models.ObjectInfo{}, io.ErrUnexpectedEOF
+	}
+	if meta != nil && meta["If-Match"] == "" {
+		return nil, models.ObjectInfo{}, errors.WithStack(errors.StatusConflict)
+	}
+	if s.racedGet && meta != nil {
+		// The native storage must evaluate the GET condition after its prior
+		// Stat, even when that earlier observation matched the draft.
+		return nil, models.ObjectInfo{}, errors.WithStack(errors.StatusConflict)
+	}
 	info, err := s.StatObject(ctx, bucket, key, meta)
 	if err != nil {
 		return nil, info, err
@@ -288,11 +304,13 @@ func (s *uploadTasks) PutTask(_ context.Context, request *jobs.PutTaskRequest) (
 
 type uploadByteStore struct {
 	*nodes.HandlerMock
-	root, node *tree.Node
-	storage    *uploadObjectStore
-	writes     int
-	readBytes  int
-	partial    bool
+	root, node      *tree.Node
+	storage         *uploadObjectStore
+	writes          int
+	readBytes       int
+	partial         bool
+	multipartTarget *tree.Node
+	multipartBody   []byte
 }
 
 func (s *uploadByteStore) ReadNode(_ context.Context, request *tree.ReadNodeRequest, _ ...grpc.CallOption) (*tree.ReadNodeResponse, error) {
@@ -317,8 +335,76 @@ func (s *uploadByteStore) PutObject(ctx context.Context, node *tree.Node, reader
 		models.PutMeta{UserMetadata: map[string]string{"eTag": hex.EncodeToString(digest[:])}})
 }
 
+func (s *uploadByteStore) MultipartCreate(_ context.Context, node *tree.Node, _ *models.MultipartRequestData) (string, error) {
+	s.multipartTarget = node.Clone()
+	return "fixture-upload", nil
+}
+
+func (s *uploadByteStore) MultipartPutObjectPart(_ context.Context, _ *tree.Node, uploadID string, part int, reader io.Reader, _ *models.PutRequestData) (models.MultipartObjectPart, error) {
+	if uploadID != "fixture-upload" || part != 1 || s.multipartTarget == nil {
+		return models.MultipartObjectPart{}, io.ErrUnexpectedEOF
+	}
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		return models.MultipartObjectPart{}, err
+	}
+	s.multipartBody = body
+	digest := md5.Sum(body)
+	return models.MultipartObjectPart{PartNumber: part, Size: int64(len(body)), ETag: hex.EncodeToString(digest[:])}, nil
+}
+
+func (s *uploadByteStore) MultipartComplete(ctx context.Context, _ *tree.Node, uploadID string, parts []models.MultipartObjectPart) (models.ObjectInfo, error) {
+	if uploadID != "fixture-upload" || s.multipartTarget == nil || len(parts) != 1 || parts[0].PartNumber != 1 {
+		return models.ObjectInfo{}, io.ErrUnexpectedEOF
+	}
+	s.writes++
+	return s.storage.PutObject(ctx, "versions", s.multipartTarget.Uuid, bytes.NewReader(s.multipartBody), int64(len(s.multipartBody)), models.PutMeta{})
+}
+
+func (s *uploadByteStore) GetObject(ctx context.Context, node *tree.Node, data *models.GetRequestData) (io.ReadCloser, error) {
+	return (&core.Executor{}).GetObject(ctx, node, data)
+}
+
 func (s *uploadByteStore) CopyObject(ctx context.Context, from, to *tree.Node, _ *models.CopyRequestData) (models.ObjectInfo, error) {
 	return s.storage.CopyObject(ctx, "versions", from.Uuid, "live", to.Uuid, nil, nil, nil)
+}
+
+// The reduced test router omits PathClient's workspace path handlers, which
+// ordinarily establish branch state inside each router invocation. Isolate its
+// fixture branch map at that same boundary instead of placing a mutable map
+// owned by the test's gateway context into the middleware chain.
+type isolatedUploadRouter struct{ nodes.Client }
+
+func fixtureUploadBranch(ctx context.Context) context.Context {
+	branch, err := nodes.GetBranchInfo(ctx, "in")
+	if err != nil {
+		return ctx
+	}
+	return nodes.WithBranchInfo(ctx, "in", branch, true)
+}
+
+func (r isolatedUploadRouter) ReadNode(ctx context.Context, req *tree.ReadNodeRequest, opts ...grpc.CallOption) (*tree.ReadNodeResponse, error) {
+	return r.Client.ReadNode(fixtureUploadBranch(ctx), req, opts...)
+}
+
+func (r isolatedUploadRouter) GetObject(ctx context.Context, node *tree.Node, data *models.GetRequestData) (io.ReadCloser, error) {
+	return r.Client.GetObject(fixtureUploadBranch(ctx), node, data)
+}
+
+func (r isolatedUploadRouter) CopyObject(ctx context.Context, from, to *tree.Node, data *models.CopyRequestData) (models.ObjectInfo, error) {
+	return r.Client.CopyObject(fixtureUploadBranch(ctx), from, to, data)
+}
+
+func (r isolatedUploadRouter) MultipartCreate(ctx context.Context, node *tree.Node, data *models.MultipartRequestData) (string, error) {
+	return r.Client.MultipartCreate(fixtureUploadBranch(ctx), node, data)
+}
+
+func (r isolatedUploadRouter) MultipartPutObjectPart(ctx context.Context, node *tree.Node, id string, part int, reader io.Reader, data *models.PutRequestData) (models.MultipartObjectPart, error) {
+	return r.Client.MultipartPutObjectPart(fixtureUploadBranch(ctx), node, id, part, reader, data)
+}
+
+func (r isolatedUploadRouter) MultipartComplete(ctx context.Context, node *tree.Node, id string, parts []models.MultipartObjectPart) (models.ObjectInfo, error) {
+	return r.Client.MultipartComplete(fixtureUploadBranch(ctx), node, id, parts)
 }
 
 // Revoke only after the writer's pre-read admission has succeeded and the
@@ -358,8 +444,11 @@ func TestNativeUploadS3RequiresImmutableVersionAndTaskAcknowledgement(t *testing
 	user, principal := uuid.New(), uuid.New()
 	grpcclient.RegisterMock(common.ServiceRoleGRPC, &idm.RoleServiceStub{RoleServiceServer: &uploadRoles{user: user}})
 	grpcclient.RegisterMock(common.ServiceAclGRPC, &idm.ACLServiceStub{ACLServiceServer: new(uploadFrontACLs)})
-	for _, size := range []int{0, 12} {
-		for _, scenario := range []string{"complete", "partial-bytes", "publication-plan-ACK-lost", "version-ACK-lost", "task-ACK-lost", "fresh-revoked", "body-read-revoked", "body-read-EOF-revoked", "body-prefix-revoked"} {
+	for _, size := range []int{0, 12, 8193} {
+		for _, scenario := range []string{"complete", "multipart", "explicit-type", "draft-get-failure", "draft-etag-race", "partial-bytes", "publication-plan-ACK-lost", "version-ACK-lost", "task-ACK-lost", "fresh-revoked", "body-read-revoked", "body-read-EOF-revoked", "body-prefix-revoked"} {
+			if scenario == "multipart" && size != 12 {
+				continue
+			}
 			bodyRevocation := scenario == "body-read-revoked" || scenario == "body-read-EOF-revoked" || scenario == "body-prefix-revoked"
 			if size == 0 && bodyRevocation {
 				continue
@@ -381,7 +470,7 @@ func TestNativeUploadS3RequiresImmutableVersionAndTaskAcknowledgement(t *testing
 					n.MustSetMeta(common.MetaNamespaceDatasourcePath, path.Base(n.Path))
 				}
 				node.MustSetMeta(common.MetaNamespaceMime, "text/plain")
-				storage := &uploadObjectStore{Client: objectmock.New("live", "versions")}
+				storage := &uploadObjectStore{Client: objectmock.New("live", "versions"), failGet: scenario == "draft-get-failure", racedGet: scenario == "draft-etag-race"}
 				index := &uploadTree{nativeReadTree: &nativeReadTree{root: root, file: node}, versions: versions, written: map[string]*tree.Node{}}
 				pool := &uploadPool{SourcesPool: nodes.MakeFakeClientsPool(index, index), storage: storage}
 				setNativeGatewaySources(pool)
@@ -394,7 +483,7 @@ func TestNativeUploadS3RequiresImmutableVersionAndTaskAcknowledgement(t *testing
 					t.Fatal(err)
 				}
 				ctx = acl.WithPresetACL(ctx, access)
-				input := map[string]interface{}{"resourceId": resource, "nativeIntentId": intent, "nativeNodeId": nodeID, "nativeDeadline": float64(time.Now().Add(time.Hour).Unix()), "contentLength": float64(size), "multipart": false}
+				input := map[string]interface{}{"resourceId": resource, "nativeIntentId": intent, "nativeNodeId": nodeID, "nativeDeadline": float64(time.Now().Add(time.Hour).Unix()), "contentLength": float64(size), "multipart": scenario == "multipart"}
 				claims := map[string]interface{}{"tenant_id": binding, "actor_principal_id": principal, "initiating_human_principal_id": principal, "action_key": "file_storage.write@v2", "action_definition_version": float64(1), "target_type": "RESOURCE", "target_id": resource, "operation_id": operation, "action_execution_id": ae, "external_execution_id": ee, "idempotency_key": key, "result_exposure_policy_id": policy, "result_exposure_policy_version": float64(1)}
 				payload, _ := json.Marshal(claims)
 				token := "fixture." + base64.RawURLEncoding.EncodeToString(payload) + ".fixture"
@@ -458,12 +547,13 @@ func TestNativeUploadS3RequiresImmutableVersionAndTaskAcknowledgement(t *testing
 				for name, value := range map[string]string{"X-Kailo-Action-Execution": ae, "X-Kailo-External-Execution": ee, "X-Kailo-Native-Upload": intent, "Idempotency-Key": key} {
 					request.Header.Set(name, value)
 				}
-				if err := auth.PrepareNativeHumanUpload(request); err != nil {
-					t.Fatal(err)
-				}
-				upload := auth.NativeUploadFromContext(request.Context())
-				if upload == nil {
-					t.Fatal("verified original writer context absent")
+				if scenario != "multipart" {
+					if err := auth.PrepareNativeHumanUpload(request); err != nil {
+						t.Fatal(err)
+					}
+					if auth.NativeUploadFromContext(request.Context()) == nil {
+						t.Fatal("verified original writer context absent")
+					}
 				}
 				backing := &uploadByteStore{HandlerMock: nodes.NewHandlerMock(), root: root, node: node, storage: storage, partial: scenario == "partial-bytes"}
 				// Original draft middleware is the real byte-route consumer. Remote
@@ -485,8 +575,40 @@ func TestNativeUploadS3RequiresImmutableVersionAndTaskAcknowledgement(t *testing
 					t.Fatal(err)
 				}
 				gateway := &pydioObjects{Router: router}
-				_, err = gateway.PutObject(ctx, "io", "live/file.txt", minio.NewPutObjReader(reader), minio.ObjectOptions{})
-				if scenario != "complete" {
+				if scenario == "multipart" {
+					gateway.Router = isolatedUploadRouter{Client: router}
+				}
+				opts := minio.ObjectOptions{}
+				if scenario == "explicit-type" {
+					opts.UserDefined = map[string]string{common.XContentType: "application/x-user-chosen"}
+				}
+				if scenario == "multipart" {
+					prepare := func(method, query string) context.Context {
+						t.Helper()
+						r := request.Clone(request.Context())
+						r.Method = method
+						r.URL.RawQuery = query
+						if err := auth.PrepareNativeHumanUpload(r); err != nil {
+							t.Fatal(err)
+						}
+						return nodes.WithBranchInfo(r.Context(), "in", nodes.BranchInfo{LoadedSource: live, Workspace: &idm.Workspace{UUID: resource, Slug: "live", RootUUIDs: []string{resource}}})
+					}
+					createCtx := prepare(http.MethodPost, "uploads=")
+					uploadID, createErr := gateway.NewMultipartUpload(createCtx, "io", "live/file.txt", minio.ObjectOptions{UserDefined: map[string]string{common.XContentType: "application/x-user-chosen"}})
+					if createErr != nil {
+						t.Fatal(createErr)
+					}
+					partCtx := prepare(http.MethodPut, "uploadId="+uploadID+"&partNumber=1")
+					part, partErr := gateway.PutObjectPart(partCtx, "io", "live/file.txt", uploadID, 1, minio.NewPutObjReader(reader), minio.ObjectOptions{})
+					if partErr != nil {
+						t.Fatal(partErr)
+					}
+					completeCtx := prepare(http.MethodPost, "uploadId="+uploadID)
+					_, err = gateway.CompleteMultipartUpload(completeCtx, "io", "live/file.txt", uploadID, []minio.CompletePart{{PartNumber: 1, ETag: part.ETag}}, minio.ObjectOptions{})
+				} else {
+					_, err = gateway.PutObject(ctx, "io", "live/file.txt", minio.NewPutObjReader(reader), opts)
+				}
+				if scenario != "complete" && scenario != "explicit-type" && scenario != "multipart" {
 					if err == nil {
 						t.Fatal("uncertain upload returned S3 success")
 					}
@@ -513,8 +635,19 @@ func TestNativeUploadS3RequiresImmutableVersionAndTaskAcknowledgement(t *testing
 					t.Fatal(err)
 				}
 				published, content, err := jobstore.NativeUploadRevision(tasks.task)
-				if err != nil || published.VersionId == intent || published.Draft || content["nativeRevision"] != published.VersionId || tasks.puts != 3 || backing.writes != 1 || peps < 10 {
+				wantPuts := 3
+				if scenario == "multipart" {
+					wantPuts = 7
+				}
+				if err != nil || published.VersionId == intent || published.Draft || content["nativeRevision"] != published.VersionId || tasks.puts != wantPuts || backing.writes != 1 || peps < 10 {
 					t.Fatal("missing original immutable receipt", err, tasks.puts, backing.writes, peps)
+				}
+				wantType := "text/plain; charset=utf-8"
+				if scenario == "explicit-type" || scenario == "multipart" {
+					wantType = "application/x-user-chosen"
+				}
+				if content["mediaType"] != wantType {
+					t.Fatalf("original request/draft MIME not retained: got %v want %s", content["mediaType"], wantType)
 				}
 				stored, _, err := storage.GetObject(ctx, "versions", published.Location.Uuid, nil)
 				if err != nil {

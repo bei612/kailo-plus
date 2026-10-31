@@ -246,7 +246,7 @@
     "componentReleaseId": {
       "type": "string",
       "format": "uuid",
-      "description": "仅组件批准：已登记的不可变ComponentRelease标识。"
+      "description": "组件批准或同一实现的 application_binding.upgrade：已登记的不可变 ComponentRelease 标识。"
     },
     "capabilityContractRegistration": {
       "$ref": "../domain/capability_contract_registration.schema.json",

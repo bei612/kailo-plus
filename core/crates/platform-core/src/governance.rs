@@ -531,6 +531,7 @@ pub enum Semantic {
     ComponentReleaseRegister,
     ComponentReleaseApprove,
     ApplicationBindingCreate,
+    ApplicationBindingUpgrade,
     ApplicationBindingDisable,
     LlmRouteCreate,
     /// DD-134(7)、05 §2.13：route `ACTIVE → RETAINED_READ_ONLY` 并退役 Gateway 投影。
@@ -621,6 +622,7 @@ impl Semantic {
             "component_release.register" => Self::ComponentReleaseRegister,
             "component_release.approve" => Self::ComponentReleaseApprove,
             "application_binding.create" => Self::ApplicationBindingCreate,
+            "application_binding.upgrade" => Self::ApplicationBindingUpgrade,
             "application_binding.disable" => Self::ApplicationBindingDisable,
             "llm_route.create" => Self::LlmRouteCreate,
             "llm_route.disable" => Self::LlmRouteDisable,
@@ -694,7 +696,7 @@ impl Semantic {
     fn is_application_binding(self) -> bool {
         matches!(
             self,
-            Self::ApplicationBindingCreate | Self::ApplicationBindingDisable
+            Self::ApplicationBindingCreate | Self::ApplicationBindingUpgrade | Self::ApplicationBindingDisable
         )
     }
 
@@ -1635,7 +1637,11 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         return Err(bad());
     }
     if sem.is_application_binding() {
-        crate::application_binding::validate_params(&p, sem == Semantic::ApplicationBindingCreate)?;
+        if sem == Semantic::ApplicationBindingUpgrade {
+            crate::application_binding::validate_upgrade_params(&p)?;
+        } else {
+            crate::application_binding::validate_params(&p, sem == Semantic::ApplicationBindingCreate)?;
+        }
         return Ok(p);
     }
     if p.application_binding_create.is_some()
@@ -2036,6 +2042,7 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         | Semantic::ComponentReleaseRegister
         | Semantic::ComponentReleaseApprove
         | Semantic::ApplicationBindingCreate
+        | Semantic::ApplicationBindingUpgrade
         | Semantic::ApplicationBindingDisable
         | Semantic::ResourceCreate
         | Semantic::TenantProfileUpdate
@@ -2185,7 +2192,7 @@ async fn resolve_target(
         Semantic::AgentDefinitionExport => {
             crate::resource_export::target(conn, tenant, def, p, frozen, lock).await
         }
-        Semantic::ApplicationBindingCreate | Semantic::ApplicationBindingDisable => {
+        Semantic::ApplicationBindingCreate | Semantic::ApplicationBindingUpgrade | Semantic::ApplicationBindingDisable => {
             crate::application_binding::target(conn, tenant, def, p, frozen, lock).await
         }
         Semantic::ComponentReleaseRegister => {
@@ -6136,7 +6143,7 @@ impl Governance {
             }
             Semantic::SecretRefRehome => 1,
             Semantic::ConversationOpen => crate::conversations::prewrite(tx, ae, params).await?,
-            Semantic::ApplicationBindingCreate | Semantic::ApplicationBindingDisable => {
+            Semantic::ApplicationBindingCreate | Semantic::ApplicationBindingUpgrade | Semantic::ApplicationBindingDisable => {
                 crate::application_binding::prewrite(tx, ae, params).await?
             }
             Semantic::ComponentReleaseRegister => {
@@ -7871,7 +7878,7 @@ impl Governance {
                 Semantic::AgentDefinitionExport => {
                     crate::resource_export::start(&self.pool, &self.temporal, ae.id, ae.tenant_id, &workflow_id).await
                 }
-                Semantic::ApplicationBindingCreate | Semantic::ApplicationBindingDisable => {
+                Semantic::ApplicationBindingCreate | Semantic::ApplicationBindingUpgrade | Semantic::ApplicationBindingDisable => {
                     crate::application_binding::start(&self.pool, &self.temporal, ae.id, ae.tenant_id, &workflow_id).await
                 }
                 Semantic::ComponentReleaseRegister => {

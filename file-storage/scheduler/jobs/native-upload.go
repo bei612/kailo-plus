@@ -78,12 +78,13 @@ func NativeBindingJobKind(job *jobproto.Job) string {
 }
 
 type NativeUploadStepRecord struct {
-	Nonce            string `json:"nonce"`
-	NativePath       string `json:"nativePath"`
-	UploadID         string `json:"uploadId"`
-	Length           int64  `json:"length"`
-	ETag             string `json:"eTag,omitempty"`
-	CompletionDigest string `json:"completionDigest,omitempty"`
+	Nonce            string  `json:"nonce"`
+	NativePath       string  `json:"nativePath"`
+	UploadID         string  `json:"uploadId"`
+	Length           int64   `json:"length"`
+	ETag             string  `json:"eTag,omitempty"`
+	CompletionDigest string  `json:"completionDigest,omitempty"`
+	ContentType      *string `json:"contentType,omitempty"`
 }
 
 func NativeUploadPartsDigest(parts map[string]string) string {
@@ -270,7 +271,7 @@ func ClaimNativeUploadStep(task *jobproto.Task, step, nonce, nativePath, uploadI
 		return nil, errors.WithStack(errors.StatusConflict)
 	}
 	refused := errors.WithStack(errors.StatusConflict)
-	if len(etag) > 2 {
+	if len(etag) > 3 {
 		return nil, refused
 	}
 	tag, completionDigest := "", ""
@@ -279,6 +280,14 @@ func ClaimNativeUploadStep(task *jobproto.Task, step, nonce, nativePath, uploadI
 	}
 	if len(etag) > 1 {
 		completionDigest = etag[1]
+	}
+	var contentType *string
+	if len(etag) > 2 {
+		if step != "put" && step != "create" {
+			return nil, refused
+		}
+		value := etag[2]
+		contentType = &value
 	}
 	if strings.HasPrefix(step, "stored/") != (tag != "") {
 		return nil, refused
@@ -356,7 +365,7 @@ func ClaimNativeUploadStep(task *jobproto.Task, step, nonce, nativePath, uploadI
 			}
 		}
 	}
-	body, err := json.Marshal(NativeUploadStepRecord{Nonce: nonce, NativePath: nativePath, UploadID: uploadID, Length: length, ETag: tag, CompletionDigest: completionDigest})
+	body, err := json.Marshal(NativeUploadStepRecord{Nonce: nonce, NativePath: nativePath, UploadID: uploadID, Length: length, ETag: tag, CompletionDigest: completionDigest, ContentType: contentType})
 	if err != nil {
 		return nil, err
 	}
@@ -393,7 +402,11 @@ func MergeNativeUploadStep(stored, request *jobproto.Task, step string) (*jobpro
 		return nil, refused
 	}
 	merged := proto.Clone(stored).(*jobproto.Task)
-	actual, err := ClaimNativeUploadStep(merged, step, body.Nonce, body.NativePath, body.UploadID, body.Length, body.ETag, body.CompletionDigest)
+	receipt := []string{body.ETag, body.CompletionDigest}
+	if body.ContentType != nil {
+		receipt = append(receipt, *body.ContentType)
+	}
+	actual, err := ClaimNativeUploadStep(merged, step, body.Nonce, body.NativePath, body.UploadID, body.Length, receipt...)
 	if err != nil {
 		return nil, err
 	}

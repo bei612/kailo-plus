@@ -31,6 +31,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
 	grpc2 "github.com/pydio/cells/v5/common/client/grpc"
 	"github.com/pydio/cells/v5/common/errors"
 	"github.com/pydio/cells/v5/common/nodes"
@@ -185,7 +186,32 @@ func (e *Executor) GetObject(ctx context.Context, node *tree.Node, requestData *
 			return nil, err
 		}
 	}
-	reader, _, err = writer.GetObject(newCtx, info.ObjectsBucket, s3Path, headers)
+	// A governed draft read must name the exact bytes acknowledged by the
+	// version handler. Stat alone is not a condition on the subsequent GET.
+	pinned := auth.NativeUploadFromContext(ctx) != nil && requestData.VersionId != ""
+	if pinned {
+		if sObject.Err != nil {
+			return nil, sObject.Err
+		}
+		if node.Etag == "" || node.Size < 0 || sObject.ETag != node.Etag || sObject.Size != node.Size {
+			return nil, errors.WithMessage(errors.VersionNotFound, "draft object differs from its frozen revision")
+		}
+		headers["If-Match"] = "\"" + node.Etag + "\""
+	}
+	var got models.ObjectInfo
+	reader, got, err = writer.GetObject(newCtx, info.ObjectsBucket, s3Path, headers)
+	if pinned {
+		if err == nil && got.Err != nil {
+			err = got.Err
+		}
+		if err == nil && (reader == nil || got.Key != s3Path || got.ETag != node.Etag) {
+			err = errors.WithMessage(errors.VersionNotFound, "draft GET differs from its frozen revision")
+		}
+		if err != nil && reader != nil {
+			_ = reader.Close()
+			reader = nil
+		}
+	}
 	logger.Debug("[handler exec] Get Object", zap.String("bucket", info.ObjectsBucket), zap.String("s3path", s3Path), zap.Any("request", requestData), zap.Any("resultObject", reader))
 	if err != nil {
 		logger.Error("Get Object", zap.Error(err))
