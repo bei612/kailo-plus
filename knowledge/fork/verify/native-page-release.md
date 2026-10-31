@@ -1,5 +1,27 @@
 # 知识库原生页面 release 版本（DD-127、DD-133(5)）
 
+## 1.8.0-native-page（2026-10-30，DD-167 组件页产品化，V-SCN-300–304）
+
+分支 `feat/component-frontend-overhaul-weknora`（基线 f88c2fff8）。`manifest.native-page.json` 升到 `1.8.0-native-page`，
+`frontendPresentationContract.preferences` 新增与云盘、数据建模逐字相同的 `appearance.listDensity`（舒适 40 / 紧凑 32）。
+`kailo-embed-features` 增加 `prompt`；`<title>` 与白标产品名改为“知识工程 / Knowledge Engineering”，“知识库”继续指单个对象。
+
+| 页面或能力 | 改动（Kailo 壳内；非 Kailo 原生视图不变） |
+|---|---|
+| 页头标签 | 只剩 知识库 · 对话（`src/kailo/page.ts`），产物/Agent 不再是标签 |
+| 知识库列表 | `src/kailo/ui/KailoKbBrowser.vue`：范围分段 全部/我创建的/共享给我/收藏（带计数）、300 ms 去抖检索、排序（最近更新/名称/创建时间）、卡片网格或表格；卡片含名称、两行说明、类型徽标（文档/问答/Wiki/待完成设置）、文档数、相对更新时间（悬停绝对时间）、所有者；更多菜单 打开→置顶→收藏→副本→设置｜删除；客户端分页（网格 24/48/96、表格 20/50/100）；`scope/q/sort/view/page/size` 写入路由 query |
+| 知识库详情 | 页头面包屑“知识库 › 名称 › 文件夹”；文件夹树为 264 列表窗格；默认表格视图，行高随列表密度；服务端分页替换无限滚动（`page/size/view` 入 query，筛选/检索/换目录回第 1 页，越界回末页）；翻页保留旧行 60% + 2 px 进度条 |
+| FAQ | 同样服务端分页、内联错误、筛选空态；原生面包屑与副标题在壳内隐藏 |
+| 对话 | `src/kailo/ui/KailoChatPane.vue` 替换原生侧栏：窗格头“对话 + 总数 + 新建”、按时间分组、紧凑分页“‹ x / y ›”、置顶/重命名（`KailoEmbed.prompt`，宿主不支持时 `KailoPromptHost.vue` 自绘）/删除（Kailo 确认 + Toast）；新对话空态“向知识库提问” + 推荐问题 |
+| 状态 | `KailoStateView.vue`：首次空/筛选空/只读空/读取错误（原因类别 + 重试，不弹 Toast、不跳回列表）/权限不足（403、`KAILO_MANAGED`、`KAILO_ADMIN_REQUIRED`，锁形插画，无重试）/未配置；`src/kailo/loadState.ts` 分类，`utils/request.ts` 为网络/超时错误附 `kind` |
+| 主题/语言/字号 | `bridge.ts` 改用 `onChange`（旧运行时回落 theme/locale 监听）；TDesign `--td-font-size-*` 与 `--app-text-*` 指向 `--kailo-text-*`；覆盖层写死的字号换成令牌；Kailo 模式下 `html { zoom: var(--kailo-zoom) }`，原生字号 zoom 关闭（`useFont.ts`） |
+| 列表密度 | `src/kailo/preferences.ts` 读 `getPreferences/onPreferencesChange`，写 `data-kailo-list-density` 与 `--kailo-list-row` |
+| DD-165 额度 | 拒绝文案改“知识工程问答额度”；错误 `details.kailo_usage` 带决策，前端在输入框上方原位提示，文案取当前 Kailo 语言（切换即重排） |
+
+**有界集合说明**：知识库列表在客户端分页，依据是同一空间的知识库全量本就由页面（对话的知识库选择器）一次取回；服务端未强制 ≤1000 上限，记为后续项。
+
+**测试**（CI 节点，归档树，容器内）：见下方“结果”。
+
 ## 1.7.0-native-page（2026-10-30，DD-138(6) 管理面）
 
 `fork/release/manifest.native-page.json` 从 `1.6.0-native-page` 升到 `1.7.0-native-page`：
