@@ -392,6 +392,41 @@ CI worker 每次 fetch、检查、构建与发布都在 `<sources>/<commit>` 留
 - **不做的事**：不创建实例 env、不改仓库与其他键、不替代组件安装与 adapter（`--adapter` 与一致性候选、release、binding 仍按 RB-11）；
   发布树保持只读，`component-deploy.sh` 自身的 `node.py normalize` 也只调整权限。仓库外的 `~/kailo-deploy/component-deploy.sh` 不再使用。
 
+### 13. CI 服务入库与 Kailo 专用 dockerd（2026-11-07 增补）
+
+背景：CI 节点重装后，原先只存在于节点 `/volumes/kailo/ci` 的 CI 服务（worker、client、config）全部丢失；同一节点上还运行着
+另一个项目（IntelligenceStation），它使用系统默认 dockerd。用户裁定两个项目互不影响、各自独立运作。
+
+决策：
+
+1. **CI 服务入库**：`tools/ci/service/` 是 CI 服务的唯一来源，包括 `kci.py`（队列模型）、`client.py`（`kailo-ci` 命令）、
+   `worker.py`（宿主执行器）、`control.compose.yaml`（`kailo-ci-control`）、`config.template.json` 和幂等的 `install.sh`。
+   节点上的 `/volumes/kailo/ci/service` 只是安装出来的副本，节点重装后执行一次 `install.sh` 即可恢复。
+   - 接口与原服务兼容：`submit`/`status`/`wait`（0/1/124）/`logs`/`check-step`/`gen`/`artifact`/`list`/`cancel`/`retry`/`clean`/`handoff`；
+     job ID 为 32 位十六进制，支持 8 位以上的唯一前缀；分 release 与 feedback 两条 lane，每条一个并发；worker 重启时，
+     运行中的任务记为 UNKNOWN，不重放。
+   - **feedback lane 接受分支 commit**：docs、check-step、gen 只要求 commit 能从 origin 上任一分支到达；build、check、fetch
+     仍要求能从 origin/main 到达。代理不再需要在节点上自行跑检查。
+   - CI 队列不再承担 deploy，部署只经 §1–§12 的发布入口执行。
+   - 源码只从 GitHub 取：`source_repository` 为 `/var/lib/kailo-ci/repo`，origin 指向 GitHub。节点访问 GitHub 时，经 WG 走
+     开发机的依赖下载代理（`10.203.194.1:3128` CONNECT 到 `ssh.github.com:443`）。
+2. **Kailo 专用 dockerd**（`tools/ci/kailo-docker/`）：与系统默认 dockerd 并存，互不干扰。
+   - 独立的 data-root（`/var/lib/kailo-docker`）、exec-root、pidfile 和 socket（`/run/kailo-docker/docker.sock`）。
+   - 与宿主共用 containerd，但使用独立 namespace（`kailo`、`kailo-plugins`）。
+   - 独立的 bridge `kailo0`（10.239.0.1/16）和地址池（10.240.0.0/15）。
+   - `iptables=false`：不改动默认 dockerd 的链；出网 NAT 用 nft 表 `kailo_nat`；转发只在 Docker 留给用户的 `DOCKER-USER`
+     链里放行 Kailo 网段；端口发布走 userland-proxy。
+   - 经 WG 以 mTLS 监听 `<wg 地址>:2376`，证书由 `tls.sh` 生成，客户端证书装进开发机的 docker context `kailo-ci`。
+   - 运行在 `kailo.slice`（MemoryMax 36G，不用 swap），CI worker 运行在 `kailo-ci.slice`（24G）。一个项目耗尽内存，
+     不会拖垮另一个项目或节点本身，这正是 2026-10-30 宕机的根因。
+   - Kailo 的生产、组件实例、CI、registry（`127.0.0.1:55000`，数据在 NVMe 上的 `/var/lib/kailo-ci/registry`）和 buildx 构建器
+     `kailo-builder`（docker-container，带 CPU 与内存限额）都只使用这一个 dockerd；节点侧脚本通过
+     `DOCKER_HOST=unix:///run/kailo-docker/docker.sock` 选中它。
+3. **存储**：热数据放 NVMe 的 `/var/lib/kailo-ci`；冷数据放 `/volumes/data`（数据盘按 UUID 挂载，原有数据保留）。
+
+后果：重装节点只需按顺序执行 `kailo-docker/tls.sh`、`kailo-docker/install.sh`、`service/install.sh`，不再依赖节点上的手工状态。
+两套 dockerd 的镜像、网络和卷互不可见，各自缓存各自的镜像，节点上的镜像存储量会相应增加。
+
 ## 后果
 
 正面：一条命令覆盖从规划到回读的全部步骤，所有输入由登记数据推出，改错位置或漏改会在 pin 阶段以残留 digest 断言当场失败；
