@@ -48,7 +48,10 @@ class Job:
     def run(self, argv, cwd=None, env=None, check=True, label=None):
         """Run a child in its own process group, streaming output to the job log; honour cancel requests."""
         self.say(f"RUN {label or os.path.basename(argv[0])}")
-        full_env = dict(os.environ, **self.w.env, TMPDIR=self.tmp_job, **(env or {}))
+        full_env = dict(os.environ)
+        full_env.update(self.w.env)
+        full_env["TMPDIR"] = self.tmp_job
+        full_env.update(env or {})
         proc = subprocess.Popen(argv, cwd=cwd, env=full_env, stdout=self.log, stderr=subprocess.STDOUT,
                                 start_new_session=True)
         while proc.poll() is None:
@@ -67,7 +70,9 @@ class Job:
         return proc.returncode
 
     def output(self, argv, cwd=None):
-        return subprocess.run(argv, cwd=cwd, env=dict(os.environ, **self.w.env), capture_output=True, text=True,
+        merged = dict(os.environ)
+        merged.update(self.w.env)
+        return subprocess.run(argv, cwd=cwd, env=merged, capture_output=True, text=True,
                               check=True).stdout
 
 
