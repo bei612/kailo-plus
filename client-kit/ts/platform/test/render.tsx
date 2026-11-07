@@ -8,11 +8,15 @@ import { afterEach } from "vitest";
 
 const mounted: { root: Root; host: HTMLElement }[] = [];
 
-afterEach(() => {
+afterEach(async () => {
   for (const { root, host } of mounted.splice(0)) {
     act(() => root.unmount());
     host.remove();
   }
+  // Radix FocusScope (popover/dialog) schedules its unmount focus event with setTimeout(0). Let that macrotask run
+  // while this file's jsdom is still alive; otherwise it fires after environment teardown and dispatches an Event
+  // from a dead realm ("parameter 1 is not of type 'Event'"), which Vitest reports as an unhandled error.
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
 });
 
 export async function render(ui: ReactNode): Promise<HTMLElement> {
