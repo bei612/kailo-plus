@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Kailo 专用的第二套 dockerd（ADR-20 §13）：与节点上其他项目使用的系统默认 dockerd 完全隔离。
 #   - 独立 data-root /var/lib/kailo-docker、exec-root、pidfile、unix socket /run/kailo-docker/docker.sock
-#   - 独立 bridge kailo0（10.239.0.1/24）与地址池 10.240.0.0/16、10.241.0.0/16（不与默认 dockerd 的 172.16/12 冲突）
+#   - 独立 bridge kailo0（10.239.0.1/16）与地址池 10.240.0.0/16、10.241.0.0/16（不与默认 dockerd 的 172.16/12 冲突）
 #   - 共用宿主 containerd，但用独立 namespace（kailo / kailo-plugins），互不可见
 #   - iptables=false：不改默认 dockerd 的 DOCKER 链；出网 NAT 由本脚本装的 nft 表 kailo_nat 负责，端口发布走 userland-proxy
 #   - 经 WG 以 mTLS 监听 tcp://<wg 地址>:2376
@@ -69,24 +69,27 @@ cat > /usr/local/sbin/kailo-docker-net <<'NET'
 # kailo0 bridge + outbound NAT for the Kailo dockerd (which runs with iptables=false).
 set -e
 ip link show kailo0 >/dev/null 2>&1 || ip link add kailo0 type bridge
-ip addr show kailo0 | grep -q 10.239.0.1/24 || ip addr add 10.239.0.1/24 dev kailo0
+ip addr show kailo0 | grep -q 10.239.0.1/16 || ip addr add 10.239.0.1/16 dev kailo0
 ip link set kailo0 up
 sysctl -qw net.ipv4.ip_forward=1
 nft -f - <<'NFT'
 table ip kailo_nat
 delete table ip kailo_nat
 table ip kailo_nat {
-  chain post {
+  chain kailo_postrouting {
     type nat hook postrouting priority srcnat; policy accept;
-    ip saddr { 10.239.0.0/24, 10.240.0.0/16, 10.241.0.0/16 } ip daddr != { 10.239.0.0/24, 10.240.0.0/16, 10.241.0.0/16 } masquerade
-  }
-  chain fwd {
-    type filter hook forward priority -10; policy accept;
-    ip saddr { 10.239.0.0/24, 10.240.0.0/16, 10.241.0.0/16 } accept
-    ip daddr { 10.239.0.0/24, 10.240.0.0/16, 10.241.0.0/16 } ct state established,related accept
+    ip saddr { 10.239.0.0/16, 10.240.0.0/15 } ip daddr != { 10.239.0.0/16, 10.240.0.0/15 } masquerade
   }
 }
 NFT
+# Forwarding: when the system dockerd is present its FORWARD policy is DROP and an accept in another nft base chain
+# cannot override it, so Kailo subnets are allowed in DOCKER-USER (Docker's chain reserved for user rules; it never
+# flushes it). Only Kailo source/destination subnets match, so other projects' traffic is untouched.
+CHAIN=DOCKER-USER; iptables -n -L DOCKER-USER >/dev/null 2>&1 || CHAIN=FORWARD
+for net in 10.239.0.0/16 10.240.0.0/15; do
+  iptables -C $CHAIN -s $net -j ACCEPT 2>/dev/null || iptables -I $CHAIN -s $net -j ACCEPT
+  iptables -C $CHAIN -d $net -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || iptables -I $CHAIN -d $net -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+done
 NET
 chmod 755 /usr/local/sbin/kailo-docker-net
 deps=""; for a in "${ADDRS[@]}"; do case $a in 10.203.193.*) deps="$deps wg-quick@wg-game.service";; 10.203.194.*) deps="$deps wg-quick@wg-game2.service";; esac; done
