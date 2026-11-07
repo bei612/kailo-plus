@@ -425,7 +425,7 @@ CI worker 每次 fetch、检查、构建与发布都在 `<sources>/<commit>` 留
 3. **存储**：热数据放 NVMe 的 `/var/lib/kailo-ci`；冷数据放 `/volumes/data`（数据盘按 UUID 挂载，原有数据保留）。
    生产运行目录 `/volumes/kailo/apps/deploy/local` 在 NVMe 根分区上；运行目录之外需要的本地路径（发布 journal
    `node.journal`，它也是 CI 配置的 `retention.journal`；组件实例 env 与数据）统一放在 NVMe 的 `/var/lib/kailo-runtime` 下；
-   发布前备份仍在 `/volumes/data`。
+   发布前备份与组件备份放在冷盘的 `/volumes/data/kailo-backups`（不与数据盘上历史遗留的 `/volumes/data/kailo` 混用）。
 4. **选中 Kailo dockerd 的方式**（2026-11-07 生产部署时补齐）：
    - `node.py` 读取 CI 配置时把 `environment.DOCKER_HOST` 导出到自身环境，之后的 docker/compose 调用和子进程
      （`start-core.sh`、`bootstrap.sh`、组件入口）都使用它；调用方已设置不同的 `DOCKER_HOST`，或设置了 `DOCKER_CONTEXT`

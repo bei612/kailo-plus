@@ -29,7 +29,7 @@
 # 各组件声明的公共键（Wren：OIDC_ISSUER、PLATFORM_EDGE_NETWORK、PLATFORM_DISPLAY_NAME，--adapter 另取两份公钥路径）。
 # Wren 原生 config.yaml 每次由 native-config.py 以 data-query/docker/config.template.yaml + 部署事实
 # （组件 env 的 WREN_MODEL_*、平台 .env 的 AGENTGATEWAY_MODEL_BASE_URL）渲染，缺事实即拒绝。
-# 环境：COMPONENT_ENV_FILE 覆盖默认受控 env；COMPONENT_BACKUP_ROOT（默认 /volumes/data/kailo/backups/components）。
+# 环境：COMPONENT_ENV_FILE 覆盖默认受控 env；COMPONENT_BACKUP_ROOT（默认 /volumes/data/kailo-backups/components）。
 # 平台运行目录（.env、secrets/、data/，ADR-20 §3）只取 CI 配置的 runtime，经固定发布树内的
 # node.py 读取并导出为 KAILO_RUNTIME_DIR；发布树保持只读，不在其中建任何软链接。在节点上续跑
 # deploy/local 的手工步骤（如 bootstrap.sh --native-model-delivery）时同样显式给出该变量。
@@ -76,7 +76,7 @@ if [ -n "$conformance_close" ]; then
 fi
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 converge=$S/deploy/components/adapter-converge.py
-backup_root=${COMPONENT_BACKUP_ROOT:-/volumes/data/kailo/backups/components}
+backup_root=${COMPONENT_BACKUP_ROOT:-/volumes/data/kailo-backups/components}
 before=$("${D[@]}" ps --format '{{.ID}} {{.Names}} {{.Image}} {{.Status}}' | sort -k2)
 # DD-165(5)、.design/07 §4.8.9：组件部署的前置条件是已完成计量对齐并通过只读回读的平台 Core。
 # 组件准入与上报依赖 Core 的组件用量合同与已登记的额度项；未满足即拒绝部署并说明原因（--check 不受限）。
