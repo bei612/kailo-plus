@@ -181,8 +181,18 @@ class Worker:
     def checkout(self, job, dest):
         commit = job.status["commit"]
         job.run(["git", "clone", "--quiet", "--shared", "--no-checkout", self.repo, dest], label="git clone")
+        # The source repository is a blob-less partial clone of GitHub. Point the copy's origin at GitHub as a
+        # promisor too, so blobs not yet in the shared store (branch-only files, design tree) are fetched on demand
+        # instead of silently producing an incomplete tree.
+        upstream = job.output(["git", "-C", self.repo, "remote", "get-url", "origin"]).strip()
+        for key, value in (("remote.origin.url", upstream), ("remote.origin.promisor", "true"),
+                           ("remote.origin.partialclonefilter", "blob:none")):
+            job.run(["git", "-C", dest, "config", key, value], label="git config")
         job.run(["git", "-C", dest, "-c", "advice.detachedHead=false", "checkout", "--quiet", commit],
                 label="git checkout")
+        missing = job.output(["git", "-C", dest, "status", "--porcelain"]).strip()
+        if missing or not os.path.exists(os.path.join(dest, "tools", "check.sh")):
+            raise CIError(f"检出不完整（{commit[:12]}）：源码对象缺失，GitHub 补取失败")
         # The copy keeps origin/* refs so check.sh can archive DESIGN_COMMIT (design-authority) and pinned refs.
         job.run(["git", "-C", dest, "fetch", "--quiet", self.repo, "+refs/remotes/origin/*:refs/remotes/origin/*"],
                 label="git refs")
