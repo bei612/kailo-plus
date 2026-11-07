@@ -53,7 +53,13 @@ beforeEach(() => {
   host = document.createElement("div"); document.body.append(host);
   root = createRoot(host);
 });
-afterEach(() => { if (root) act(() => root!.unmount()); root = null; host.remove(); vi.unstubAllGlobals(); });
+afterEach(async () => {
+  if (root) act(() => root!.unmount()); root = null; host.remove(); vi.unstubAllGlobals();
+  // The real Composer (Tiptap useEditor) destroys its editor in a setTimeout after unmount. Let that macrotask run
+  // while this file's jsdom is alive; otherwise it fires after environment teardown ("window is not defined"),
+  // which Vitest reports as an unhandled error and fails the run.
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+});
 async function mount(principal: string, open: (conversation: ConversationView) => void | Promise<void>) {
   await act(async () => { root!.render(<TooltipProvider><NewMessagePage currentPrincipalId={principal} onConversationOpened={open} /></TooltipProvider>); });
 }

@@ -26,5 +26,5 @@ export KAILO_RUNTIME_DIR
 unset runtime_dir_input runtime_dir_name
 # 本拓扑的 Compose：配置取自本目录的 compose.yaml，.env 与运行投递取自运行目录。
 runtime_compose() {
-  sudo -n --preserve-env=KAILO_RUNTIME_DIR docker compose --env-file "$KAILO_RUNTIME_DIR/.env" -f compose.yaml "$@"
+  sudo -n --preserve-env=KAILO_RUNTIME_DIR,DOCKER_HOST docker compose --env-file "$KAILO_RUNTIME_DIR/.env" -f compose.yaml "$@"
 }

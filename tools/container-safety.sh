@@ -61,7 +61,7 @@ container_safety_init() {
   CONTAINER_DOCKER=(docker)
   CONTAINER_PRIVILEGE=()
   if ! docker info >/dev/null 2>&1; then
-    CONTAINER_DOCKER=(sudo -n -H docker)
+    CONTAINER_DOCKER=(sudo -n -H --preserve-env=DOCKER_HOST docker)
     CONTAINER_PRIVILEGE=(sudo -n -H)
     "${CONTAINER_DOCKER[@]}" info >/dev/null 2>&1 || {
       container_safety_error '当前身份与 sudo 均不能读取 Docker daemon'; return 2;

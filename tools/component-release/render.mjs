@@ -11,7 +11,7 @@
 //
 // Usage (Node >= 20, stdlib only, run from the apps repository root):
 //   node tools/component-release/render.mjs --component file-storage \
-//     --source-commit <40-hex> --native-page-origin http://192.168.0.193:58092 \
+//     --source-commit <40-hex> --native-page-origin http://192.168.0.149:58092 \
 //     [--material full|native-page] \
 //     [--adapter-digest sha256:<64-hex>|<64-hex>] [--receipt <file.json>] --out <dir>
 //

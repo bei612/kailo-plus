@@ -43,7 +43,7 @@ print(re.search(r"image: (authzed/zed@sha256:[0-9a-f]+)", t).group(1))')
 config=$(DC config --format json)
 spicedb_endpoint=$(printf '%s' "$config" | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["worker"]["environment"]["SPICEDB_ENDPOINT"])')
 component_net=$(printf '%s' "$config" | python3 -c 'import json,sys; print(json.load(sys.stdin)["networks"]["component"]["name"])')
-sudo -n docker run --rm --network "$component_net" --env-file "$KAILO_RUNTIME_DIR/secrets/zed.env" \
+sudo -n --preserve-env=DOCKER_HOST docker run --rm --network "$component_net" --env-file "$KAILO_RUNTIME_DIR/secrets/zed.env" \
   -e "ZED_ENDPOINT=$spicedb_endpoint" -e ZED_INSECURE=true "$zed_image" backup create - > "$out/spicedb.zedbackup"
 [ -s "$out/spicedb.zedbackup" ] || { echo "SpiceDB 备份为空" >&2; exit 2; }
 
@@ -55,7 +55,7 @@ DC start buzz-objects >/dev/null 2>&1
 step "IdP：停写后复制数据目录"
 DC stop keycloak >/dev/null 2>&1
 kc=$(DC ps -a -q keycloak)
-sudo -n docker cp "$kc:/opt/keycloak/data/h2" - > "$out/keycloak-h2.tar"
+sudo -n --preserve-env=DOCKER_HOST docker cp "$kc:/opt/keycloak/data/h2" - > "$out/keycloak-h2.tar"
 DC start keycloak >/dev/null 2>&1
 
 sha256sum "$out"/* > "$out/SHA256SUMS"

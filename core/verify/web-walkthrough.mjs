@@ -38,7 +38,7 @@ const browser = await chromium.launch({
     `--host-resolver-rules=${map(gateway, a["gateway-port"])}, ${map(idp, a["keycloak-port"])}`,
   ],
 });
-const docker = (args, options) => execFileSync("sudo", ["-n", "docker", ...args], options);
+const docker = (args, options) => execFileSync("sudo", ["-n", "--preserve-env=DOCKER_HOST", "docker", ...args], options);
 const page = await browser.newPage();
 const origins = new Set();
 const consoleErrors = [];

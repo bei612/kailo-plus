@@ -274,11 +274,14 @@ def upstream_build_values(name, diff, unit, artifact):
     """Validate original CI metadata write-back against the planned source and public configuration."""
     added = re.findall(r"^\+\s+(source_digest|artifact_digest|build_config_digest):\s*(sha256:[0-9a-f]{64})\s*$", diff, re.M)
     values = dict(added)
-    expected = {"source_digest", "artifact_digest"}
-    if "build_config_digest" in unit and "build_config_digest" in values:
-        expected.add("build_config_digest")
-    if len(added) != len(expected) or set(values) != expected:
+    allowed = {"source_digest", "artifact_digest"} | ({"build_config_digest"} if "build_config_digest" in unit else set())
+    required = {"artifact_digest"}
+    # 源码摘要与记录相同的重建（registry 缺少已固定产物，见 registry_missing）没有新增的 source_digest 行
+    if unit.get("recorded_source") != unit["key"]:
+        required.add("source_digest")
+    if len(added) != len(values) or not required <= set(values) <= allowed:
         raise ReleaseError(f"{name}: generated_metadata_diff 不是单个产物的摘要写回")
+    values.setdefault("source_digest", unit["key"])
     if values["source_digest"] != unit["key"]:
         raise ReleaseError(f"{name}: 构建所用源码摘要与规划不一致")
     if "build_config_digest" in unit:
@@ -331,7 +334,11 @@ def compute_plan(root, node, decl, source):
     idp_files, idp_env = model.idp_inputs(decl)
     public_args = sorted({name for unit in units.values() if unit.upstream and "optional_build_args" in unit.artifact
                           for name in (unit.artifact.get("build_args") or []) + unit.artifact["optional_build_args"]})
+    # 已固定产物是否仍在 registry（ADR-20 §13）：新节点或 registry 重建后，compose 固定的 digest 不复存在，
+    # 源码未变也必须按同一源码重建并重新 pin，否则 deploy 拉不到镜像。
+    registry_refs = {image: digest for image, digest in sorted(pinned.items()) if image in by_name}
     facts = node.inspect(dict(commit=source, public_build_args=public_args, services=sorted(set(managed) | set(operated)), proofs=proofs,
+                              registry_refs=registry_refs,
                               delivery_journal=str(decl["node"]["journal"]),
                               env_set={k: model.env_value_digest(v) for k, v in env_set.items()},
                               env_unset=env_unset, required_env=model.required_env(text), migrations=migrations,
@@ -341,6 +348,8 @@ def compute_plan(root, node, decl, source):
 
     plan = dict(source=source, head=model.head(), compose_project=model.project_name(text), units={},
                 sources=facts["sources"])
+    registry = facts.get("registry") or {}
+    plan["registry"] = registry
     targets = set(facts.get("build_targets") or [])
     for u in units.values():
         if u.upstream:
@@ -368,6 +377,13 @@ def compute_plan(root, node, decl, source):
             entry.update(built_from=base, changed=changed if changed is not None else ["<产物源 commit 不在本仓库>"])
             entry["state"] = "current" if changed == [] else "stale"
         plan["units"][u.name] = entry
+    for name, entry in plan["units"].items():
+        absent = [i for i in pin_names(units[name]) if i in registry_refs and registry.get(i) is False]
+        if absent:
+            entry["registry_missing"] = absent
+            # 二开产物只有 CI 登记了同名构建目标才能重建；自建单元总由 tools/release.sh 构建
+            if entry["state"] != "stale" and (entry["type"] == "self" or name in targets):
+                entry["state"] = "stale"
     rebuild = [n for n, x in sorted(plan["units"].items()) if x["state"] == "stale"]
     # 03 §7：自建单元（Core/Worker）先于其余产物
     plan["rebuild"] = sorted(rebuild, key=lambda n: plan["units"][n]["type"] != "self")
@@ -531,7 +547,11 @@ def render_plan(plan, note=None):
             detail = ("记录为 none，CI 已登记构建目标：首次构建" if u.get("first_build") else
                       {"stale": f"source_digest 记录 {u['recorded_source'][7:19]} ≠ 当前 {u['key'][7:19]}",
                        "current": "源码摘要与记录一致", "unbuilt": "记录为 none，CI 未登记构建目标（不在门禁范围）",
-                       "blocked": "登记为阻断，记录为 none，CI 未登记构建目标"}[u["state"]])
+                       "blocked": "登记为阻断，记录为 none，CI 未登记构建目标"}[
+                          "current" if u.get("recorded_source") == u["key"] else u["state"]])
+        if u.get("registry_missing"):
+            detail += f"；registry 中没有已固定的 {', '.join(u['registry_missing'])}" + (
+                "，按当前源码重建并重新 pin" if u["state"] == "stale" else "，CI 未登记构建目标，无法重建")
         say(f"  {'重建' if u['state'] == 'stale' else '保持'}  {name:27} {u['kind']:6} {detail}")
         if u["type"] == "self" and u["state"] == "stale":
             for path in (u.get("changed") or [])[:10]:

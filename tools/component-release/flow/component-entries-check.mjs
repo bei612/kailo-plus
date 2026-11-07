@@ -48,7 +48,7 @@ async function checkAccount(name, expected, workspaceId) {
   result.apiVisible = visible.map((b) => ({ bindingId: b.bindingId, componentTypeKey: b.componentTypeKey, categories: b.capabilityCategories.map((c) => c.category) }));
   if (missing.length) result.apiMissing = missing;
   const page = session.page;
-  await page.goto(`${process.env.KAILO_WEB ?? 'http://192.168.0.193:58090'}/app/`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${process.env.KAILO_WEB ?? 'http://192.168.0.149:58090'}/app/`, { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
   const group = page.locator('[data-testid="native-application-entries"]').first();
   await group.waitFor({ timeout: 30000 }).catch(() => {});
@@ -115,7 +115,7 @@ await main(async () => {
     let descriptor;
     for (let i = 0; i < 40 && !gone; i++) {
       descriptor = await api(probe, 'GET', `/api/v1/application-bindings/${binding.bindingId}/native-page`);
-      await probe.page.goto(`${process.env.KAILO_WEB ?? 'http://192.168.0.193:58090'}/app/`, { waitUntil: 'domcontentloaded' });
+      await probe.page.goto(`${process.env.KAILO_WEB ?? 'http://192.168.0.149:58090'}/app/`, { waitUntil: 'domcontentloaded' });
       await probe.page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
       // The revoked binding's own entry, not its category: a replacement binding of the same
       // category (e.g. a model-route binding superseding a page-only one) keeps that label.

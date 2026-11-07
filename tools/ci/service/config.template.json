@@ -31,7 +31,7 @@
     "knowledge-adapter": {}, "knowledge-service": {}, "knowledge-native-ui": {}, "knowledge-document-reader": {}
   },
   "retention": {
-    "journal": "/var/lib/kailo-ci/retention/journal",
+    "journal": "/var/lib/kailo-runtime/releases",
     "receipts": "/var/lib/kailo-ci/retention/receipts",
     "scratch": ["/home/ubuntu/scratch"]
   }

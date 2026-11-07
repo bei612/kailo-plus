@@ -30,7 +30,7 @@ ws2=""
 cleanup() {
   # 第二个 Workspace 的 SpiceDB 归属关系不在夹具的拆除清单里，先删掉
   if [ -n "$ws2" ]; then
-    sudo -n docker run --rm --network "$VERIFY_DOCKER_NETWORK" --env-file "$VERIFY_ZED_ENV_FILE" \
+    sudo -n --preserve-env=DOCKER_HOST docker run --rm --network "$VERIFY_DOCKER_NETWORK" --env-file "$VERIFY_ZED_ENV_FILE" \
       -e "ZED_ENDPOINT=$VERIFY_SPICEDB_ENDPOINT" -e ZED_INSECURE=true "$VERIFY_ZED_IMAGE" \
       relationship delete "workspace:$ws2" tenant "tenant:$tenant" >/dev/null 2>&1 || true
   fi

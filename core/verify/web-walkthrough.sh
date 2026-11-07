@@ -19,7 +19,7 @@ mkdir -p "$out"
 
 # 浏览器的取消场景会短暂停止本地 Worker。入口要求它原本运行；任何退出
 # 路径先恢复它，再拆夹具，不能让失败走查留下停止的任务处理器。
-worker_container="$(sudo -n docker compose -f "$local_dir/compose.yaml" ps --status running -q worker)"
+worker_container="$(sudo -n --preserve-env=DOCKER_HOST docker compose -f "$local_dir/compose.yaml" ps --status running -q worker)"
 [ -n "$worker_container" ] || {
   echo "本地 Worker 未运行，不能开始浏览器取消走查" >&2
   exit 1
@@ -40,13 +40,13 @@ cleanup() {
   worker_restore_failed=0
   relay_restore_failed=0
   core_restore_failed=0
-  if [ -z "$(sudo -n docker compose -f "$local_dir/compose.yaml" ps --status running -q buzz-relay)" ]; then
-    sudo -n docker compose -f "$local_dir/compose.yaml" start buzz-relay >/dev/null || relay_restore_failed=1
+  if [ -z "$(sudo -n --preserve-env=DOCKER_HOST docker compose -f "$local_dir/compose.yaml" ps --status running -q buzz-relay)" ]; then
+    sudo -n --preserve-env=DOCKER_HOST docker compose -f "$local_dir/compose.yaml" start buzz-relay >/dev/null || relay_restore_failed=1
   fi
-  if [ -z "$(sudo -n docker compose -f "$local_dir/compose.yaml" ps --status running -q core-bff)" ]; then
+  if [ -z "$(sudo -n --preserve-env=DOCKER_HOST docker compose -f "$local_dir/compose.yaml" ps --status running -q core-bff)" ]; then
     bash "$local_dir/start-core.sh" >/dev/null || core_restore_failed=1
   fi
-  sudo -n docker start "$worker_container" >/dev/null || worker_restore_failed=1
+  sudo -n --preserve-env=DOCKER_HOST docker start "$worker_container" >/dev/null || worker_restore_failed=1
   exec 3>&-
   rm -f "$fifo"
   # 拆除失败必须让整次走查失败：留下的 Tenant 是脏数据，而「走查通过」会把它藏起来
@@ -94,7 +94,7 @@ fixture_tenant_absent() {
 }
 
 bao_tenant_parent() {
-  printf '%s\n' "$root_token" | sudo -n docker compose --env-file "$local_dir/.env" \
+  printf '%s\n' "$root_token" | sudo -n --preserve-env=DOCKER_HOST docker compose --env-file "$local_dir/.env" \
     -f "$local_dir/compose.yaml" exec -T \
     -e BAO_NAMESPACE="$OPENBAO_TENANT_PARENT_NAMESPACE" openbao \
     sh -c 'IFS= read -r BAO_TOKEN; export BAO_TOKEN; exec bao "$@"' bao "$@"
@@ -114,9 +114,9 @@ cleanup_fixture_namespace() {
       echo "测试 Tenant $tenant 的 OpenBao 路径不符，拒绝删除" >&2
       return 1
     }
-  sudo -n docker compose -f "$local_dir/compose.yaml" stop core-bff >/dev/null || return 1
+  sudo -n --preserve-env=DOCKER_HOST docker compose -f "$local_dir/compose.yaml" stop core-bff >/dev/null || return 1
   core_stopped_for_cleanup=1
-  [ -z "$(sudo -n docker compose -f "$local_dir/compose.yaml" ps --status running -q core-bff)" ] || return 1
+  [ -z "$(sudo -n --preserve-env=DOCKER_HOST docker compose -f "$local_dir/compose.yaml" ps --status running -q core-bff)" ] || return 1
   fixture_tenant_absent "$tenant" || return 1
   lookup="$(bao_tenant_parent namespace lookup -format=json "$tenant")" || return 1
   printf '%s\n' "$lookup" | jq -e --arg path "${OPENBAO_TENANT_PARENT_NAMESPACE%/}/$tenant/" \

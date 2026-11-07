@@ -124,7 +124,7 @@ need CONFORMANCE_SOURCE CONFORMANCE_RUN_DIR CONFORMANCE_NODE_IMAGE
   || { echo 'RUN_DIR must be an existing 0700 directory under /var/lib/kailo-ci or /volumes/data' >&2; exit 2; }
 src=$CONFORMANCE_SOURCE
 run=$CONFORMANCE_RUN_DIR
-read -r -a docker <<<"${CONFORMANCE_DOCKER:-sudo -n docker}"
+read -r -a docker <<<"${CONFORMANCE_DOCKER:-sudo -n --preserve-env=DOCKER_HOST docker}"
 start=$src/file-storage/deploy/start.sh
 
 # Stage bookkeeping: one marker per completed stage, written only after the

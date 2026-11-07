@@ -25,11 +25,11 @@
 #                交付目录条目，binding 存在后声明其 adapter IdP client；不创建 binding、不写 binding secret。
 # 受控 env 默认：Cells cells/deploy.env、WeKnora knowledge/native.env、Wren
 # data-query/native.env、DocumentServer document-editor/native.env（均在
-# /volumes/data/kailo/components 下，0600）；平台 .env 只读取
+# /var/lib/kailo-runtime/components 下，0600）；平台 .env 只读取
 # 各组件声明的公共键（Wren：OIDC_ISSUER、PLATFORM_EDGE_NETWORK、PLATFORM_DISPLAY_NAME，--adapter 另取两份公钥路径）。
 # Wren 原生 config.yaml 每次由 native-config.py 以 data-query/docker/config.template.yaml + 部署事实
 # （组件 env 的 WREN_MODEL_*、平台 .env 的 AGENTGATEWAY_MODEL_BASE_URL）渲染，缺事实即拒绝。
-# 环境：COMPONENT_ENV_FILE 覆盖默认受控 env；COMPONENT_BACKUP_ROOT（默认 /volumes/data/kailo/backups/components）。
+# 环境：COMPONENT_ENV_FILE 覆盖默认受控 env；COMPONENT_BACKUP_ROOT（默认 /volumes/data/kailo-backups/components）。
 # 平台运行目录（.env、secrets/、data/，ADR-20 §3）只取 CI 配置的 runtime，经固定发布树内的
 # node.py 读取并导出为 KAILO_RUNTIME_DIR；发布树保持只读，不在其中建任何软链接。在节点上续跑
 # deploy/local 的手工步骤（如 bootstrap.sh --native-model-delivery）时同样显式给出该变量。
@@ -66,7 +66,7 @@ KAILO_RUNTIME_DIR=$(python3 -I -B "$S/tools/release/node.py" runtime --commit "$
   | python3 -I -c 'import json, sys; value = json.load(sys.stdin); print(value.get("runtime") or sys.exit(value.get("error", "运行目录未知")))')
 . "$S/deploy/local/runtime-dir.sh"
 R=$KAILO_RUNTIME_DIR
-D=(sudo -n --preserve-env=KAILO_RUNTIME_DIR docker)
+D=(sudo -n --preserve-env=KAILO_RUNTIME_DIR,DOCKER_HOST docker)
 # DD-136(5)：隔离一致性运行与登记窗口（不触碰生产 Core 状态、数据库、OpenBao 或 binding）。
 if "$conformance"; then
   exec python3 -I -B "$S/tools/component-release/conformance-auto.py" run "$component" --source "$S" --commit "$commit" --runtime "$R"
@@ -76,7 +76,7 @@ if [ -n "$conformance_close" ]; then
 fi
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 converge=$S/deploy/components/adapter-converge.py
-backup_root=${COMPONENT_BACKUP_ROOT:-/volumes/data/kailo/backups/components}
+backup_root=${COMPONENT_BACKUP_ROOT:-/volumes/data/kailo-backups/components}
 before=$("${D[@]}" ps --format '{{.ID}} {{.Names}} {{.Image}} {{.Status}}' | sort -k2)
 # DD-165(5)、.design/07 §4.8.9：组件部署的前置条件是已完成计量对齐并通过只读回读的平台 Core。
 # 组件准入与上报依赖 Core 的组件用量合同与已登记的额度项；未满足即拒绝部署并说明原因（--check 不受限）。
@@ -157,14 +157,14 @@ frame_headers() {  # <url>：只打印嵌入相关响应头
   local url=$1 headers
   headers=$(curl -sS -m 15 -D - -o /dev/null "$url" | tr -d '\r' | grep -iE '^(content-security-policy|x-frame-options|location):' || true)
   echo "$url"; printf '%s\n' "${headers:-（无 CSP/XFO 头）}" | sed 's/^/  /'
-  if grep -qi 'frame-ancestors' <<<"$headers" && ! grep -qi "frame-ancestors[^;]*http://192.168.0.193:58090" <<<"$headers"; then
-    echo "  注意：frame-ancestors 不含 http://192.168.0.193:58090" >&2
+  if grep -qi 'frame-ancestors' <<<"$headers" && ! grep -qi "frame-ancestors[^;]*http://192.168.0.149:58090" <<<"$headers"; then
+    echo "  注意：frame-ancestors 不含 http://192.168.0.149:58090" >&2
   fi
 }
 
 case "$component" in
   file-storage)
-    ENV=${COMPONENT_ENV_FILE:-/volumes/data/kailo/components/cells/deploy.env}
+    ENV=${COMPONENT_ENV_FILE:-/var/lib/kailo-runtime/components/cells/deploy.env}
     private_env "$ENV"
     here=$S/file-storage/deploy
     project=$(env_value "$ENV" CELLS_COMPOSE_PROJECT)
@@ -206,7 +206,7 @@ case "$component" in
     frame_headers "$(env_value "$ENV" CELLS_EXTERNAL)/"
     ;;
   knowledge)
-    ENV=${COMPONENT_ENV_FILE:-/volumes/data/kailo/components/knowledge/native.env}
+    ENV=${COMPONENT_ENV_FILE:-/var/lib/kailo-runtime/components/knowledge/native.env}
     private_env "$ENV"
     here=$S/knowledge/fork/deploy
     # DD-128(5): the native page entry model key lives only in its own 0600 env.
@@ -255,7 +255,7 @@ case "$component" in
   data-query)
     # DD-127(7)：Wren 原生组件 env 是唯一 Wren 部署输入（与 WeKnora native.env 同形）。
     # 平台 .env 只提供 issuer 与 edge 网络两个公共键，由进程环境传入，覆盖组件 env 中的同名键。
-    ENV=${COMPONENT_ENV_FILE:-/volumes/data/kailo/components/data-query/native.env}
+    ENV=${COMPONENT_ENV_FILE:-/var/lib/kailo-runtime/components/data-query/native.env}
     private_env "$ENV"
     # 子 shell 求值单个键，不回显整份 env。
     wren_value() { (set -a; . "$ENV" >/dev/null 2>&1; set +a; printf '%s' "${!1:-}"); }
@@ -454,7 +454,7 @@ PYWREN
     # document-editor/deploy/local.template.json + 部署事实渲染，先只读核对：缺事实或不满足
     # DD-132(3) 不变式即拒绝，此时尚未备份、启动或改写任何文件。
     "$adapter" && { echo "document-editor 没有 adapter（DD-132(2)）" >&2; exit 2; }
-    ENV=${COMPONENT_ENV_FILE:-/volumes/data/kailo/components/document-editor/native.env}
+    ENV=${COMPONENT_ENV_FILE:-/var/lib/kailo-runtime/components/document-editor/native.env}
     private_env "$ENV"
     here=$S/document-editor/deploy
     render=(python3 -I -B "$S/deploy/components/native-config.py")

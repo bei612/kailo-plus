@@ -133,7 +133,7 @@ def compose(env, *args):
     """deploy/local/runtime-dir.sh runtime_compose: configuration from this tree's
     compose.yaml, .env and ${KAILO_RUNTIME_DIR} interpolation from the runtime directory."""
     runtime = runtime_dir(env)
-    return ["sudo", "-n", "--preserve-env=KAILO_RUNTIME_DIR", "docker", "compose",
+    return ["sudo", "-n", "--preserve-env=KAILO_RUNTIME_DIR,DOCKER_HOST", "docker", "compose",
             "--env-file", str(runtime / ".env"), "-f", "compose.yaml", *args]
 
 

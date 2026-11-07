@@ -4,18 +4,24 @@
 # --isolated-receiver=<kailo-receiver-*>：DD-124(4)/07 §8A 的隔离接收方部署，只在
 # tools/component-release/receiver-run.sh 暂存的副本（compose 项目名已改写）中使用：
 # 不构建任何镜像，Core/Worker 取与生产同一固定 digest，密钥、数据与端口均为本副本自有。
+# --pinned：CI 节点生产运行目录的首次初始化（ADR-20 §13）。镜像一律是 compose.yaml 按 digest 固定、
+# 已由 kailo-ci build 推入 registry 的产物，本入口不构建、只按 digest 拉取；其余步骤与无参数相同。
 set -euo pipefail
 cd "$(dirname "$0")"
 
 usage() {
-  echo '用法：./init-local.sh [--fresh --confirm-delete=platform-local | --isolated-receiver=<kailo-receiver-*>]' >&2
+  echo '用法：./init-local.sh [--fresh --confirm-delete=platform-local | --pinned | --isolated-receiver=<kailo-receiver-*>]' >&2
   exit 2
 }
 
 fresh=false
+pinned=false
 isolated=
 case "${1:-}" in
   '') [ "$#" -eq 0 ] || usage ;;
+  --pinned)
+    [ "$#" -eq 1 ] || usage
+    pinned=true ;;
   --fresh)
     [ "$#" -eq 2 ] && [ "$2" = '--confirm-delete=platform-local' ] || usage
     fresh=true ;;
@@ -25,9 +31,10 @@ case "${1:-}" in
     [[ "$isolated" =~ ^kailo-receiver-[a-z0-9-]+$ ]] || usage ;;
   *) usage ;;
 esac
-# 隔离模式只启动已固定的镜像；生产模式保持原构建路径。
+# 隔离模式只启动已固定的镜像；--pinned 只按 digest 从 registry 拉取；无参数保持原构建路径。
 no_build=()
 if [ -n "$isolated" ]; then no_build=(--no-build --pull never); fi
+if "$pinned"; then no_build=(--no-build); fi
 
 # 运行投递（.env、secrets/、data/）经 runtime-dir.sh 解析（ADR-20 §3）。本入口会清空 secrets/ 与
 # data/，只服务本地拓扑与隔离接收方副本：运行目录必须就是本目录，不接受指向别处（例如生产
@@ -55,7 +62,7 @@ set +a
 : "${VERIFY_BOOTSTRAP_WAIT_SECONDS:?缺少 VERIFY_BOOTSTRAP_WAIT_SECONDS}"
 : "${CORE_DB_PORT:?缺少 CORE_DB_PORT}"
 : "${BUILDX_BUILDER:=}"
-[ -n "$isolated" ] || [ -n "$BUILDX_BUILDER" ] || {
+[ -n "$isolated" ] || "$pinned" || [ -n "$BUILDX_BUILDER" ] || {
   echo '必须选择有 cgroup CPU/内存限额的 BuildKit builder' >&2; exit 2;
 }
 [[ "$VERIFY_BOOTSTRAP_WAIT_SECONDS" =~ ^[1-9][0-9]*$ ]] || {
@@ -78,7 +85,7 @@ fi
 
 # 构建前检查现有编译任务与主机压力。真正的编译限额由 builder 容器 cgroup 执行；
 # 只在宿主包一层 scope 不能约束 Docker daemon 中的构建进程。
-if [ -z "$isolated" ] && { ps -eo comm= | grep -Eq '^(cargo|rustc|go|compile|link|buildx)$' \
+if [ -z "$isolated" ] && ! "$pinned" && { ps -eo comm= | grep -Eq '^(cargo|rustc|go|compile|link|buildx)$' \
   || ps -eo args= | grep -Eq '[d]ocker (compose|buildx) .*build'; }; then
   echo '已有编译或 Docker 构建任务，拒绝并行构建；稍后重试' >&2
   exit 2
@@ -86,10 +93,10 @@ fi
 . ../../tools/container-safety.sh
 container_safety_init
 # 初始化的其他现有入口同样使用 sudo Docker；共享检查必须核验同一 daemon。
-CONTAINER_DOCKER=(sudo -n --preserve-env=BUILDX_BUILDER,KAILO_RUNTIME_DIR docker)
+CONTAINER_DOCKER=(sudo -n --preserve-env=BUILDX_BUILDER,KAILO_RUNTIME_DIR,DOCKER_HOST docker)
 CONTAINER_PRIVILEGE=(sudo -n)
 container_resource_preflight
-if [ -z "$isolated" ]; then
+if [ -z "$isolated" ] && ! "$pinned"; then
   builder_receipt=$(container_require_limited_builder)
   printf '%s\n' "$builder_receipt"
   # 直接使用共享检查已核验的各节点预算，保留可用内存须大于 builder 限额的前提。
@@ -193,7 +200,7 @@ migrate_core_database() (
 # subject，Core 却仍保留旧 ExternalIdentity；拒绝把这种环境伪装成无损升级。
 if ! "$fresh"; then
   keycloak_container=$(compose ps -q keycloak)
-  if [ -n "$keycloak_container" ] && ! sudo -n docker inspect "$keycloak_container" \
+  if [ -n "$keycloak_container" ] && ! "${CONTAINER_DOCKER[@]}" inspect "$keycloak_container" \
       --format '{{range .Mounts}}{{.Destination}}{{println}}{{end}}' \
       | grep -Fxq '/opt/keycloak/data'; then
     echo '旧 Keycloak 容器没有持久数据卷；保留现有数据并停止，确认可删除后显式 --fresh 重建' >&2
@@ -248,8 +255,8 @@ platform_subject=$(../../core/verify/idp-subject.sh "$PLATFORM_ADMIN_USER") || {
 compose run --rm --no-deps temporal-namespace
 compose run --rm --no-deps spicedb-schema
 
-if [ -n "$isolated" ]; then
-  # 与生产同一固定 Core/Worker 构建（DD-124(4)）；隔离部署绝不另行构建。
+if [ -n "$isolated" ] || "$pinned"; then
+  # 与生产同一固定 Core/Worker 构建（DD-124(4)）；隔离部署与 --pinned 绝不另行构建。
   ./start-core.sh --no-build
 else
 # 生产初始化顺序由 tools/check.sh 第 9 步按字面行断言，这一行保持顶格。

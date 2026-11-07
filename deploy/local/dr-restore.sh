@@ -30,7 +30,7 @@ print("sealed" if d.get("sealed", True) else ("standby" if d.get("ha_mode")=="st
 wait_bao() { for _ in $(seq 1 60); do [ "$(bao_status)" = "$1" ] && return 0; sleep 2; done; echo "OpenBao 未到 $1" >&2; exit 2; }
 wait_healthy() {
   for _ in $(seq 1 90); do
-    [ "$(sudo -n docker inspect -f '{{.State.Health.Status}}' "$(DC ps -q "$1")" 2>/dev/null)" = healthy ] && return 0
+    [ "$(sudo -n --preserve-env=DOCKER_HOST docker inspect -f '{{.State.Health.Status}}' "$(DC ps -q "$1")" 2>/dev/null)" = healthy ] && return 0
     sleep 2
   done
   echo "$1 未就绪" >&2; exit 2
@@ -105,7 +105,7 @@ print(re.search(r"image: (authzed/zed@sha256:[0-9a-f]+)", t).group(1))')
 config=$(DC config --format json)
 spicedb_endpoint=$(printf '%s' "$config" | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["worker"]["environment"]["SPICEDB_ENDPOINT"])')
 component_net=$(printf '%s' "$config" | python3 -c 'import json,sys; print(json.load(sys.stdin)["networks"]["component"]["name"])')
-sudo -n docker run --rm -u "$(id -u)" --network "$component_net" --env-file "$KAILO_RUNTIME_DIR/secrets/zed.env" \
+sudo -n --preserve-env=DOCKER_HOST docker run --rm -u "$(id -u)" --network "$component_net" --env-file "$KAILO_RUNTIME_DIR/secrets/zed.env" \
   -e "ZED_ENDPOINT=$spicedb_endpoint" -e ZED_INSECURE=true \
   -v "$(realpath "$in/spicedb.zedbackup"):/backup/spicedb.zedbackup:ro" \
   "$zed_image" backup restore /backup/spicedb.zedbackup
@@ -116,7 +116,7 @@ sudo -n tar -C "$KAILO_RUNTIME_DIR/data" --transform 's#^buzz-objects#collab-obj
 step "IdP"
 DC create keycloak >/dev/null 2>&1
 kc=$(DC ps -a -q keycloak)
-sudo -n docker cp - "$kc:/opt/keycloak/data/" < "$in/keycloak-h2.tar"
+sudo -n --preserve-env=DOCKER_HOST docker cp - "$kc:/opt/keycloak/data/" < "$in/keycloak-h2.tar"
 
 step "4. 启动其余服务（公开入口除外）"
 services=$(DC config --services | grep -vx -e agentgateway -e core-bff | tr '\n' ' ')

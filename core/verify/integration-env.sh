@@ -16,7 +16,7 @@ set +a
 # 现签的、与 Core 同策略（platform-core）的令牌：它证明的仍是「那条策略给出的能力」，
 # 有效期取部署登记的令牌周期。root token 经 stdin 进入容器，不上命令行。
 OPENBAO_VERIFY_TOKEN="$(python3 -c 'import json;print(json.load(open("'"$local_dir"'/secrets/openbao_init.json"))["root_token"])' \
-  | sudo -n docker compose --env-file "$local_dir/.env" -f "$local_dir/compose.yaml" exec -T \
+  | sudo -n --preserve-env=DOCKER_HOST docker compose --env-file "$local_dir/.env" -f "$local_dir/compose.yaml" exec -T \
       -e BAO_ADDR=http://127.0.0.1:8200 -e BAO_NAMESPACE="$OPENBAO_PLATFORM_NAMESPACE" openbao \
       sh -c 'IFS= read -r BAO_TOKEN; export BAO_TOKEN; exec bao "$@"' bao \
       token create -policy=platform-core -ttl="$OPENBAO_TOKEN_PERIOD" -format=json \
@@ -45,7 +45,7 @@ export WORKER_CLIENT_SECRET="$(cat "$local_dir/secrets/worker_client_secret")"
 export RELAY_OPERATOR_PRIVATE_KEY="$(cat "$local_dir/secrets/relay_operator_private_key")"
 export VERIFY_SECRET_LOCATOR="${OPENBAO_PLATFORM_NAMESPACE}/${OPENBAO_KV_MOUNT}/verify/secret-ref"
 project=$(python3 -c 'import re,io;print(re.search(r"^name: (\S+)", io.open("deploy/local/compose.yaml",encoding="utf-8").read(), re.M).group(1))')
-export OPENBAO_TENANT_CORE_BOUND_CIDRS="$(sudo -n docker network inspect "${project}_app" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')"
+export OPENBAO_TENANT_CORE_BOUND_CIDRS="$(sudo -n --preserve-env=DOCKER_HOST docker network inspect "${project}_app" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')"
 [ -n "$OPENBAO_TENANT_CORE_BOUND_CIDRS" ] || { echo "取不到 app 网络子网，拒绝核验 Tenant AppRole" >&2; return 2; }
 # 本地拓扑的 Compose 项目名只在 compose.yaml 的 name 里写一次，容器与网络名都由它派生
 export VERIFY_COMPOSE_PROJECT="$project"
@@ -71,7 +71,7 @@ print("export VERIFY_TEMPORAL_ADMIN_IMAGE=" + re.search(r"image: (\S+)", svc).gr
 print("export VERIFY_TEMPORAL_INTERNAL_ADDRESS=" + re.search(r"TEMPORAL_ADDRESS: (\S+)", svc).group(1))')"
 # 邀请链接基址只在 compose 里由 PUBLIC_ORIGIN 派生一次；核验取 compose 解析后
 # 投递给 core-bff 的同一个值，不在这里重复派生规则
-export TENANT_INVITATION_LINK_BASE="$(sudo -n docker compose --env-file "$local_dir/.env" \
+export TENANT_INVITATION_LINK_BASE="$(sudo -n --preserve-env=DOCKER_HOST docker compose --env-file "$local_dir/.env" \
   -f "$local_dir/compose.yaml" config --format json \
   | jq -er '.services["core-bff"].environment.TENANT_INVITATION_LINK_BASE')"
 # 原生端（DD-78）：经网关原生入口、以 PKCE 取得的 Bearer 调用。核验像原生应用

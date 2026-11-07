@@ -98,5 +98,39 @@ class ComponentPlan(unittest.TestCase):
         self.assertIn("1 个组件实例与 pin 一致", out.getvalue())
 
 
+SRC, ART, ART2 = "sha256:" + "a" * 64, "sha256:" + "b" * 64, "sha256:" + "c" * 64
+
+
+class UpstreamBuildValues(unittest.TestCase):
+    """record 阶段对 CI 写回 diff 的核对（ADR-20 §13：registry 缺产物时按同一源码重建）。"""
+
+    def test_changed_source_needs_both_lines(self):
+        unit = dict(key=SRC, recorded_source="sha256:" + "9" * 64)
+        diff = f"+    source_digest: {SRC}\n+    artifact_digest: {ART2}\n"
+        self.assertEqual(orch.upstream_build_values("x", diff, unit, {}),
+                         {"source_digest": SRC, "artifact_digest": ART2})
+        with self.assertRaises(orch.ReleaseError):
+            orch.upstream_build_values("x", f"+    artifact_digest: {ART2}\n", unit, {})
+
+    def test_unchanged_source_rebuild_only_writes_the_artifact(self):
+        unit = dict(key=SRC, recorded_source=SRC)
+        self.assertEqual(orch.upstream_build_values("x", f"+    artifact_digest: {ART2}\n", unit, {}),
+                         {"source_digest": SRC, "artifact_digest": ART2})
+
+    def test_unexpected_or_duplicate_lines_are_refused(self):
+        unit = dict(key=SRC, recorded_source=SRC)
+        for diff in ("", f"+    artifact_digest: {ART}\n+    artifact_digest: {ART2}\n",
+                     f"+    artifact_digest: {ART2}\n+    build_config_digest: {ART}\n"):
+            with self.assertRaises(orch.ReleaseError):
+                orch.upstream_build_values("x", diff, unit, {})
+
+    def test_a_different_source_than_planned_is_refused(self):
+        unit = dict(key=SRC, recorded_source="sha256:" + "9" * 64)
+        diff = f"+    source_digest: {ART}\n+    artifact_digest: {ART2}\n"
+        with self.assertRaises(orch.ReleaseError):
+            orch.upstream_build_values("x", diff, unit, {})
+
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -423,6 +423,17 @@ CI worker 每次 fetch、检查、构建与发布都在 `<sources>/<commit>` 留
      `kailo-builder`（docker-container，带 CPU 与内存限额）都只使用这一个 dockerd；节点侧脚本通过
      `DOCKER_HOST=unix:///run/kailo-docker/docker.sock` 选中它。
 3. **存储**：热数据放 NVMe 的 `/var/lib/kailo-ci`；冷数据放 `/volumes/data`（数据盘按 UUID 挂载，原有数据保留）。
+   生产运行目录 `/volumes/kailo/apps/deploy/local` 在 NVMe 根分区上；运行目录之外需要的本地路径（发布 journal
+   `node.journal`，它也是 CI 配置的 `retention.journal`；组件实例 env 与数据）统一放在 NVMe 的 `/var/lib/kailo-runtime` 下；
+   发布前备份与组件备份放在冷盘的 `/volumes/data/kailo-backups`（不与数据盘上历史遗留的 `/volumes/data/kailo` 混用）。
+4. **选中 Kailo dockerd 的方式**（2026-11-07 生产部署时补齐）：
+   - `node.py` 读取 CI 配置时把 `environment.DOCKER_HOST` 导出到自身环境，之后的 docker/compose 调用和子进程
+     （`start-core.sh`、`bootstrap.sh`、组件入口）都使用它；调用方已设置不同的 `DOCKER_HOST`，或设置了 `DOCKER_CONTEXT`
+     时拒绝。配置里没有该键时保持调用方环境（单 dockerd 的节点不受影响）。
+   - sudo 默认清理环境，所以仓库内的 `sudo docker` 调用一律带 `--preserve-env=DOCKER_HOST`。`DOCKER_CONFIG` 不随生产调用
+     保留，以免把构建用的出网代理注入生产容器。
+   - 生产运行目录的首次初始化用 `init-local.sh --pinned`：只按 compose 的 digest 从 registry 拉取，不构建镜像；镜像一律由
+     `kailo-ci submit <main> build <target>` 产出。其余步骤与无参数初始化相同。
 
 后果：重装节点只需按顺序执行 `kailo-docker/tls.sh`、`kailo-docker/install.sh`、`service/install.sh`，不再依赖节点上的手工状态。
 两套 dockerd 的镜像、网络和卷互不可见，各自缓存各自的镜像，节点上的镜像存储量会相应增加。

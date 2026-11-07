@@ -27,7 +27,7 @@ bao_tenant_parent() {
   local root_token
   root_token="$(jq -er '.root_token | select(type == "string" and length > 0)' \
     "$local_dir/secrets/openbao_init.json")" || return 1
-  printf '%s\n' "$root_token" | sudo -n docker compose --env-file "$local_dir/.env" \
+  printf '%s\n' "$root_token" | sudo -n --preserve-env=DOCKER_HOST docker compose --env-file "$local_dir/.env" \
     -f "$local_dir/compose.yaml" exec -T \
     -e BAO_NAMESPACE="$OPENBAO_TENANT_PARENT_NAMESPACE" openbao \
     sh -c 'IFS= read -r BAO_TOKEN; export BAO_TOKEN; exec bao "$@"' bao "$@"
@@ -87,8 +87,8 @@ cleanup_fixture_namespaces() {
   fi
 
   core_stopped_for_cleanup=1
-  sudo -n docker compose -f "$local_dir/compose.yaml" stop core-bff >/dev/null || return 1
-  [ -z "$(sudo -n docker compose -f "$local_dir/compose.yaml" ps --status running -q core-bff)" ] || return 1
+  sudo -n --preserve-env=DOCKER_HOST docker compose -f "$local_dir/compose.yaml" stop core-bff >/dev/null || return 1
+  [ -z "$(sudo -n --preserve-env=DOCKER_HOST docker compose -f "$local_dir/compose.yaml" ps --status running -q core-bff)" ] || return 1
   for tenant in "${targets[@]}"; do
     fixture_tenant_absent "$tenant" || return 1
     namespace_path_matches "$tenant" || return 1

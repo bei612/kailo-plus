@@ -2,10 +2,10 @@
   "$comment": "DD-136(5)(6), ADR-20 §10: deployment declarations of the built-in REMOTE_ADAPTER candidates, versioned with the source. tools/component-release/conformance-auto.py (component-deploy.sh --conformance) renders each candidate release with nativePageOrigin and pulls digest-pinned images from registry; component-deploy.sh --adapter derives the production binding plan from the same entry. No credential, binding secret or run fact is declared here.",
   "file-storage": {
     "registry": "127.0.0.1:55000",
-    "nativePageOrigin": "http://192.168.0.193:58092",
+    "nativePageOrigin": "http://192.168.0.149:58092",
     "adapter": {
-      "componentEnv": "/volumes/data/kailo/components/cells/deploy.env",
-      "stateDir": "/volumes/data/kailo/components/cells/binding",
+      "componentEnv": "/var/lib/kailo-runtime/components/cells/deploy.env",
+      "stateDir": "/var/lib/kailo-runtime/components/cells/binding",
       "tenantId": "6179e160-6055-4e9a-ae63-1793509c230c",
       "attempt": 1,
       "nativeInstanceRef": "kailo-cells-native",
@@ -39,7 +39,7 @@
   },
   "knowledge": {
     "registry": "127.0.0.1:55000",
-    "nativePageOrigin": "http://192.168.0.193:58094",
+    "nativePageOrigin": "http://192.168.0.149:58094",
     "conformanceModels": {
       "$comment": "DD-136(5): the isolated receiver deployment's AgentGateway routes the PLATFORM_LLM_ROUTE receiver binding and WeKnora's parsing to these actually discovered, keyless upstreams (the same ones production AgentGateway model sources serve); no production provider credential, Gateway key or platform key is delivered",
       "chat": {
@@ -68,7 +68,7 @@
   },
   "data-query": {
     "registry": "127.0.0.1:55000",
-    "nativePageOrigin": "http://192.168.0.193:58095",
+    "nativePageOrigin": "http://192.168.0.149:58095",
     "conformanceModels": {
       "$comment": "07 §8A/§8.3: the isolated Wren AI service uses these actually discovered, keyless upstream model services (the same upstreams the platform AgentGateway model sources serve); no platform key is delivered to the isolated instance",
       "chat": {
@@ -83,8 +83,8 @@
       }
     },
     "adapter": {
-      "componentEnv": "/volumes/data/kailo/components/data-query/native.env",
-      "stateDir": "/volumes/data/kailo/components/data-query/binding",
+      "componentEnv": "/var/lib/kailo-runtime/components/data-query/native.env",
+      "stateDir": "/var/lib/kailo-runtime/components/data-query/binding",
       "tenantId": "6179e160-6055-4e9a-ae63-1793509c230c",
       "$comment": "workspaceId: the business Tenant's default Workspace 'kailo' (Wren bindings are Workspace bindings, data_query_delivery)",
       "workspaceId": "ad9a6443-f0a2-47d2-895d-f11b8fef9e38",

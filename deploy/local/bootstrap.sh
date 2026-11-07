@@ -1009,7 +1009,7 @@ if len(images) != 1:
     raise SystemExit("Compose 未提供唯一的 Buzz Relay 定版镜像")
 print(next(iter(images)))')
   runtime_compose up -d registry >/dev/null
-  kp=$(sudo -n docker run --rm --entrypoint /usr/local/bin/buzz-admin \
+  kp=$(sudo -n --preserve-env=DOCKER_HOST docker run --rm --entrypoint /usr/local/bin/buzz-admin \
         "$relay_image" generate-key 2>/dev/null | grep -E "^(Public|Secret) key:")
   printf '%s' "$kp" | awk '/Public/{print $3}' | tr -d '\n' > "$KAILO_RUNTIME_DIR/secrets/relay_operator_pubkey"
   printf '%s' "$kp" | awk '/Secret/{print $3}' | tr -d '\n' > "$KAILO_RUNTIME_DIR/secrets/relay_operator_private_key"

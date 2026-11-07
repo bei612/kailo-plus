@@ -118,7 +118,7 @@ def platform_env(h, r, project):
         "PUBLIC_HOST": "127.0.0.1", "PUBLIC_BIND_ADDR": "127.0.0.1", "OIDC_HOST": OIDC_HOST,
         "PLATFORM_EDGE_NETWORK": f"{project}-edge",
         # Origins of the candidate releases (strings Core compares; nothing is served there).
-        "NATIVE_PAGE_ORIGINS": '"http://192.168.0.193:58092 http://192.168.0.193:58094 '
+        "NATIVE_PAGE_ORIGINS": '"http://192.168.0.149:58092 http://192.168.0.149:58094 '
                                + r.state["knowledgeNative"]["origin"] + '"',
         # The receiver bootstrap refuses a database with the production name,
         # even when it is hosted by a different isolated PostgreSQL instance.
