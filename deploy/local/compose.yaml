@@ -2,7 +2,7 @@
 # 07-运行与运维基线.md §2 明写「本地可以简化副本数与持久化，不可以简化边界」。
 #
 # 四层 network 的可达关系在此显式声明，默认不可达。任何服务加入新 network
-# 视同边界变更，按 AGENTS.md 评审。本文件只含 Stage 0 已接入的服务；
+# 视同边界变更，按 AGENTS.md 评审。本文件只含已实际接入的服务；
 # 上游组件随各自 Stage 加入，届时一并声明其 network 归属。
 
 name: platform-local
@@ -523,9 +523,9 @@ services:
     networks: [app, core-data]
     depends_on:
       core-db: { condition: service_healthy }
-      openmeter: { condition: service_healthy }
       temporal: { condition: service_healthy }
       keycloak: { condition: service_healthy }
+      openmeter: { condition: service_healthy }
     environment:
       BFF_LISTEN: ${BFF_BIND_ADDR:?必须显式提供，禁止硬编码}:${BFF_CONTAINER_PORT:?必须显式提供，禁止硬编码}
       # PlatformSession 有效期。部署事实：不同部署对「多久重新过一次 OIDC」
@@ -540,10 +540,13 @@ services:
       BFF_STREAM_BUFFER: ${BFF_STREAM_BUFFER:?必须显式提供，禁止硬编码}
       # 连上 Relay 后等 NIP-42 challenge 的上界；超时即以可处理的失败结束该流
       BFF_STREAM_AUTH_TIMEOUT_SECONDS: ${BFF_STREAM_AUTH_TIMEOUT_SECONDS:?必须显式提供，禁止硬编码}
-      # Core 的已接入 Relay 预算和 NIP-11 观察上界，来自唯一部署配置。
+      # BFF 侧先行设界（07 §5）：每个 (Community, pubkey) 在窗口内调用 Relay /events、/query、/count 的
+      # 预算；预算 × BFF 副本数不得超过 Relay 的每身份额度，窗口不短于 Relay 的 60 秒固定窗口
       BFF_RELAY_API_BUDGET: ${BFF_RELAY_API_BUDGET:?必须显式提供，禁止硬编码}
       BFF_RELAY_API_BUDGET_WINDOW_SECONDS: ${BFF_RELAY_API_BUDGET_WINDOW_SECONDS:?必须显式提供，禁止硬编码}
+      # 运行期重读 Relay NIP-11 上界的缓存时长：Relay 改了上界后 Core 最迟多久察觉（.design/03 §2、09）
       BFF_RELAY_NIP11_TTL_SECONDS: ${BFF_RELAY_NIP11_TTL_SECONDS:?必须显式提供，禁止硬编码}
+      # 单条消息正文上界（字节，UTF-8，含附件行）；不得超过 Relay 的 MAX_EVENT_CONTENT_BYTES（.design/09）
       BFF_MESSAGE_MAX_CONTENT_BYTES: ${BFF_MESSAGE_MAX_CONTENT_BYTES:?必须显式提供，禁止硬编码}
       # 撤权对已建立流生效的上界。请求路径上撤权立刻生效，长连接靠这个周期
       # 回头看——它是一个必须被说出来的时间窗（07 §1）。
@@ -793,7 +796,7 @@ services:
   agentgateway:
     # digest 与 model-gateway/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验——两处不等说明镜像与 manifest 脱节。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:b7696827f5cd0f904a10ac483ee93d7e4882b237cca27eec4e09c4a29f322087
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:accd2243c94c3f72c150c70f8bc397e1e791735f87ca87b2bc13de4ddcdaa3fe
     # edge 是唯一对外可达层；它同时进 app 以到达 BFF。
     # 不接入 mgmt——admin router 不得与公开入口同面（SS-AGW-ADMIN）。admin 端口
     # （配置里的 adminAddr）不在下方 ports 中发布到宿主；Core 经 app 网络访问，且每个

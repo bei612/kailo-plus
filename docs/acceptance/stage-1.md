@@ -1,8 +1,8 @@
 # Stage 1 验收报告：身份、Tenant/Workspace 与三端协作
 
-- 历史报告日期：2026-09-29
+- 历史报告日期：2026-09-30
 - 最新事实核对日期：2026-10-02 11:30 UTC（源码、产物、检查与运行版本核对，不是新增业务验收）
-- 历史核对基线：提交 `9566ac0`（目录重构 `076681d` 之后的 release 登记）
+- 历史核对基线：历史发布登记包括 `9566ac0` 与其后的 `a7df56f4`；当时接手复核为 `0ec5e552` 之后的未提交工作树，历史登记不混作当时发布产物
 - 依据：`02-纵向交付路线.md` §3 的验收映射与退出门禁、§1.1 端交付规则；`03-验证发布与验收门禁.md` §9
 - 证据口径：只引用核验记录、追溯记录与提交说明中写明的实际执行结果；路径相对 `apps/`。核验记录中早于目录重构的测试路径仍写作 `core/crates/kailo-core/…`，现对应 `core/crates/platform-core/…`
 
@@ -34,9 +34,25 @@
 
 ## 历史结论与验证记录
 
-下文是该历史报告的原条件；最新缺口以上方摘要为准，不把旧措辞中的“当前”作为新版本事实。
+2026-10-01 04:52 UTC 追加发布事实核对：本批新 Web、AgentGateway 镜像已入
+本地 registry，Linux Desktop 安装包字节摘要已核对；当前 Web/Gateway 运行容器
+仍使用旧 digest，新 Desktop 未安装验收。新产物基于完整未提交工作树，
+不等于选定源码提交的发布证明，也不承接本报告的历史业务 PASS。
+核对时 HEAD 与本地 `origin/main` 同为 `ee4c7968…`，本轮尚无新源码提交；
+registry push 不是 Git push、部署或验收。完整摘要及追溯登记错配见
+`core/verify/release-artifacts.md`「二开产物登记与当前运行边界」。本 Stage 仍不能关闭。
 
-**不能关闭。** 退出门禁「七个接缝各有接缝成立的可复核证据」对 `SS-WEB-PRESENTATION` 不成立，`SS-AGW-OIDC`、`SS-BUZ-SERVER-CLIENT` 各有一部分要求没有证据；「登录、logout、断线恢复端到端通过」按 §1.1「每个端各自成立」的硬规则在 Desktop 与 Mobile 上没有 logout 与断线恢复证据；`V-SCN-70` 在核验记录中被明确登记为生产阻断。关闭条件见「关闭前必须补齐」。
+### 2026-09-30 业务验收记录（原条件保留）
+
+以下保留当日业务证据及其限制，不以本轮新构建替代原执行条件。
+
+当前环境已按用户授权在 2026-09-30 重新从零初始化。修正后的初始化入口无需手动
+补齐网关数据库，日志与范围见 `07-运行与运维基线.md` §3。消息与线程用户状态的
+Web 托管身份路径已取得当前真实服务 11/11 证据，见
+`core/verify/functional-layout-regression.md`「全新环境与消息线程用户状态收口」；
+不据此关闭原生 CLIENT 身份路径、其他专门边界或本 Stage。
+
+**不能关闭。** `SS-WEB-PRESENTATION` 的共享主题与文案基础已有实现，但原生协作界面仍有可达的未翻译文案、独立日期格式及写死显示名，不能只补证据关闭；`SS-AGW-OIDC` 指定业务入口的 CSRF 负向实测、`SS-BUZ-SERVER-CLIENT` 的 NIP-42 会话复用证据尚不完整。按 §1.1「每个端各自成立」的规则，Desktop/Mobile 的 logout 与断线恢复没有当前安装包证据。`V-SCN-70` 已取得真实服务终态证据，不能再写作「没有孤儿销毁入口」；本增量的破坏核验和发布产物登记仍未完成。关闭条件见「关闭前必须补齐」。
 
 追溯记录中 Stage 1 的七条能力记录已是 `status: shipped`（`platform.session`、`platform.pages`、`collab.channel.message`、`collab.channel.media`、`collab.user_state`、`identity.client_keys`、`lifecycle.tenant_workspace_membership`）。它们是能力级登记，本报告不据此认定 Stage 关闭，也不提出新的 status 变更。
 
@@ -50,15 +66,56 @@
 
 | 接缝 | 状态 | 证据 | 缺口 |
 |---|---|---|---|
-| `SS-AGW-OIDC` | 部分成立 | `model-gateway/fork/verify/oidc-header-projection.md` L31–48（无会话 302、伪造 header 到达后端 0 次、有会话只穿过 issuer/subject）；`core/verify/identity-chain.md` L6–17（直连 BFF 缺 header 403 `IDENTITY_HEADER_MISSING`、伪造 403 `IDENTITY_UNKNOWN`）、L84–102（logout 200、SSE `closed: session-revoked`）；`core/verify/native-identity.md` L13–22 | cookie 与 CORS 由 `core/verify/oidc-edge.md`（2026-09-29）核验：前缀、HttpOnly、`SameSite=Lax`、值 1764 字节、TTL 受 ID token 约束、预检无 `Access-Control-Allow-*` 均符合；超过 3800 字节只有源码证据；该核验发现不读 JSON 的 POST 可被同站跨源页面触发，据此新增 `DD-112`/`V-SCN-85`，网关 `csrf` 尚未配置 |
+| `SS-AGW-OIDC` | 部分成立 | `model-gateway/fork/verify/oidc-header-projection.md` L31–48（无会话 302、伪造 header 到达后端 0 次、有会话只穿过 issuer/subject）；`core/verify/identity-chain.md` L6–17（直连 BFF 缺 header 403 `IDENTITY_HEADER_MISSING`、伪造 403 `IDENTITY_UNKNOWN`）、L84–102（logout 200、SSE `closed: session-revoked`）；`core/verify/native-identity.md` L13–22；`oidc-edge.md`「接手复验」logout 三类来源均拒绝且原 session 不变 | cookie 与 CORS 的前缀、HttpOnly、SameSite、1764 字节实测值及 TTL 约束见 `oidc-edge.md`；csrf 策略、通用 POST 与 logout 拒绝已有实测，审批撤回与媒体上传仍缺有效对象的负向证据；超过 3800 字节只有源码证据 |
 | `SS-WEB-RELAY` | 成立 | `collaboration/fork/verify/web-relay-core.md` L25–32、L96–103、L148–149（2026-09-23）；`web-client/fork/verify/web-surface.md` L23–24（构建产物中 `wss://`、`ws://`、`nsec1`、`relayUrl` 0 次）、L60（走查只有网关与 IdP 两个 origin、CSP 违规 0） | — |
-| `SS-BUZ-SERVER-CLIENT` | 部分成立 | `collaboration/fork/verify/server-client.md` L15–21（CLIENT 身份不代签、roster 外 pubkey 被拒、roster 内返回 event id）、L41–53（roster 投影重复收敛） | 「按 (principal, active session) 复用 NIP-42 会话」与「固定 NIP-11 上界与限流预算」没有核验记录 |
+| `SS-BUZ-SERVER-CLIENT` | 部分成立 | `collaboration/fork/verify/server-client.md` L15–21（CLIENT 身份不代签、roster 外 pubkey 被拒、roster 内返回 event id）、L41–53（roster 投影重复收敛）；本次 `tests/web_transport.rs` 11/11，含上界、预算与 NIP-11 漂移 | 「按 (principal, active session) 复用 NIP-42 会话」仍无完整核验记录；上界与预算回归不代表生产容量 |
 | `SS-WEB-01` | 成立 | `web-client/fork/verify/web-surface.md` 走查 L16、L51–52；Desktop `collaboration/fork/verify/desktop-client.md` L8、L127–129；Mobile（只读）`collaboration/fork/verify/mobile-client.md` L143–147、L248–249 | — |
-| `SS-WEB-PRESENTATION` | **未闭合** | 只有增量：`web-surface.md` L147–175（Web 聊天时间接入共用目录，Vitest 14 项、24 步走查）；`mobile-client.md` L184–214（共享文案） | `web-surface.md` L155–156 明写「本增量不声称三端整体同源」，`mobile-client.md` L200 明写「主题与日期/复数语义的全端统一尚未闭合」；没有 ThemeProvider/CSS variables 复用的核验；该接缝不在任何追溯记录的 `seams` 中 |
+| `SS-WEB-PRESENTATION` | **未闭合** | Web 与 Desktop 已用宿主 ThemeProvider；TS 目录由既有生成器投影 Dart。后续本批 Web 复用共享主题模式，Desktop 搜索/草稿时间与九条侧栏文案改读已有 kit；Web 14、Desktop 37 与 typecheck 通过，新 Web 真实主题走查 5/5，见 `functional-layout-regression.md`「共享主题与协作界面呈现增量」 | 其他原生文案、Mobile/部分 Desktop 写死显示名及三端整体呈现仍未闭合；新 Desktop 包只有构建证明，无安装验收。接缝尚未登记到追溯 YAML，不能以本批局部核验或历史 Mobile 行号关闭整体接缝 |
 | `SS-BUZ-OPERATOR` | 成立 | `collaboration/fork/verify/operator-provisioning.md` L16–22；RB-02 步骤 F 于 2026-09-24、2026-09-26 演练 | 核验产生的 Community 无法删除（同文 L40–45），随 Stage 3 的删除引擎处理 |
 | `SS-BUZ-GOVERNANCE`（含 `DD-106`） | 成立，运行期证据有一项不足 | `collaboration/fork/verify/governance.md` L61–78（`members_cannot_govern_the_community` 12 项）、L83–91（五个单元测试，含启动自检）、L105–113（门禁破坏六处）；提交 `c4a597f` 说明「relay self-check passed in the local topology」 | 「成员消息不触发 workflow run」只有单元级证据（kind:9 放行到后续检查），没有运行期观察；记录本身未写实测日期；L115–122 登记仍按 Tenant 隔离的读面（kind 13534、按 hash 读媒体） |
 
 GAP：`GAP-BUZ-01` 仍存在，入口拒绝行为已由测试断言；`GAP-IDN-01` 已由 `DD-83` 闭合（Stage 2 的邀请链交付）。
+
+### 2026-09-30 修复前独立源码复核的范围
+
+修复前 `NativeBootstrap.tsx` 的 `loadFailed/connectFailed/signIn.failed` 仍把原始异常正文
+上屏；Desktop `TopbarSearch.tsx::formatRelativeTime` 与
+`DraftsPanel.tsx::formatDraftCreatedAt` 仍独立定义英文时间语义；
+`SettingsPanels.tsx` 的主题选项、侧栏连接状态和 Mobile compose 的读屏文案仍有
+硬编码英文。Mobile `app.dart` 的标题与启动读屏、Desktop 主题说明仍写死 Buzz。
+这些是 `REQ-08/21`、`DD-36/53/111` 范围内的实现缺口，不新增功能或另一套字典。
+
+随后已有合同修复：Desktop 主题选项与 Mobile 主题标签复用共享主题模式/key；
+原生引导页四处错误不再渲染原始异常；既有 TS 三条文案由现有生成器同步至 Dart。
+platform/ Desktop typecheck、client-kit Dart analyze 与 i18n 同步检查通过，
+platform 既有测试首次有 2 条失败；两条原始异常上屏断言按既有本地化合同纠正后，
+7 个文件的 88 条检查均通过，负向破坏核验尚未执行。Mobile 分析门禁未通过。
+上述修复在该轮尚未重新构建安装包；后续 Linux Desktop 包已重建，摘要为
+`d4b4de04…`，仅有构建证明、没有新安装验收，
+也未关闭其余搜索/草稿时间、侧栏/compose 文案、显示名缺口，接缝保持未闭合。
+Core 的列表、Relay transport、用户状态的 Workspace 资格与 stream 再准入已复用
+同一 guard；事件级用户状态可见性仍有未闭合项。后续已修正首写 CAS、暂停恢复的
+generation 及明确撤权后 Web 重连，源码与现有正向走查通过，专门边界验证未完成，
+见下节的当前镜像复验记录。
+初次 Clippy 检查未通过，匿名查询投影改为命名类型后，本轮全量门禁的
+Core Clippy 已实际通过；四语言基础测试也通过，但 `PLATFORM_INTEGRATION`
+未启用，不能据此补记真实服务运行证明。
+manage-only 官方会话与 Relay 连接未取得本轮运行证明；
+不能用源码修复或历史集成结果关闭 Stage。
+
+后续共享主题与协作界面呈现批次已完成上节历史缺口中的 Desktop 搜索/草稿时间、
+九条侧栏 Relay 文案及 Web 共享主题模式。新 Web `a830bba5…` 已部署、真实主题
+走查 5/5；新 Desktop `b90bd372…` 仅构建通过。两份产物基于完整当前工作树，
+不视为选定源码提交的发布证明，亦不代替三端安装验收。其余可达文案、显示名与
+整体呈现证明仍保留缺口，不把已修复的这三处继续列为当前未开发内容。
+
+CSRF 审查核对 AgentGateway 固定 commit
+`1f7ebbf87cbdbe9517f6f181221879d04dc50692` 的 `Csrf::apply` 和转发顺序，
+当前浏览器的两条 route 均有单来源 CSRF 策略，未发现三条指定入口的代码漏防护。
+已有当前 Web 走查证明媒体上传、本人撤回和两阶段注销的正向链路；本轮又取得
+BFF logout 三类错误来源拒绝及原会话不变的证明。仍缺媒体与撤回的有效对象负向
+证据，不是三条链路均无运行证据。直连 BFF 的集成测试和网关自己的 `/logout`
+不能替代这项证据。
 
 ## 3. 设计/代码/验证/artifact 追溯
 
@@ -75,16 +132,34 @@ GAP：`GAP-BUZ-01` 仍存在，入口拒绝行为已由测试断言；`GAP-IDN-0
 | `V-SCN-43` | `governance.audit_evidence`（S2） | `core/verify/audit.md` L44–68（pre-Tenant 认证边界） | Web | 认证审计边界通过；EvidenceRef 部分归 Stage 2 |
 | `V-SCN-63` | `identity.client_keys` | `native-identity.md` L42–57；`desktop-client.md` L61、L126；`mobile-client.md` L174、L247 | Desktop、Mobile | 通过 |
 | `V-SCN-64` | `identity.client_keys` | `native-identity.md` L54–55；2026-09-25 源码树 `native-e2e.sh desktop`/`mobile` 各 1 passed（含撤销后被拒） | Desktop、Mobile | 源码树通过；安装包层未观察到 Relay 拒绝（§6） |
-| `V-SCN-70` | 无 | 迁移 `20260928130000_server_key_provision_fence`；`native-identity.md` L151–154 明写不证明写入期间撤权、暂停与竞争，L168–178 登记「没有经过治理且经 OpenBao metadata 查证的孤儿版本销毁入口」为**生产阻断** | — | **未闭合** |
-| `V-SCN-85` | 无 | `oidc-edge.md` §3 实测跨源 `POST /api/v1/logout` 返回 200 并撤销会话，即缺口本身 | Web | **未闭合**：浏览器 route 尚未配置 `csrf`（`DD-112`） |
+| `V-SCN-70` | `identity.client_keys` 的核验记录；该场景尚未登记到追溯 YAML | `native-identity.md`「接手复验」（2026-09-30）：`tests/server_keys.rs` 7/7，孤儿暂停、撤权、CAS 竞争、binding 胜出及不销毁反例通过 | Core/Relay/OpenBao | 真实服务正向通过；本增量破坏核验与发布登记未完成，不整体关闭 |
+| `V-SCN-85` | 无独立场景登记 | `oidc-edge.md`「DD-112 落地」及「接手复验」：通用 POST 与 BFF logout 的同站跨源、跨站、错误 Origin 均 403；logout 三次拒绝后原会话保持 ACTIVE；本源正向见当前 Web 走查 | Web | logout 正反向已有证据；审批撤回、媒体上传仍缺有效对象的负向实测，未新增夹具，不整体关闭 |
 | `V-SCN-84` | 无独立记录，证据挂在 `lifecycle.tenant_workspace_membership` 的 `governance.md` | 见 §2 `SS-BUZ-GOVERNANCE` | Relay | 通过，运行期一项证据不足 |
 
-代码与 artifact：七条 S1 追溯记录的 `release.artifacts` 登记 `core` `sha256:7e9b800d…`、`web-client` `sha256:b9a953fa…`、`model-gateway` `sha256:174afd82…`、`collaboration-relay` `sha256:e4c34134…`（提交 `9566ac0` 登记；core 的构建与 SBOM/provenance 见 `core/verify/release-artifacts.md`「2026-09-29」段，二开产物由重构后的树重建，摘要与来源记录一致由 `seam` 核对）。Desktop 安装包 `desktop-client` `sha256:14e4cc9c…` 登记在 S2 记录中；Mobile 发布产物登记为阻断（见 §8）。
+历史代码与 artifact：提交 `9566ac0` 时，七条 S1 追溯记录的 `release.artifacts` 登记 `core` `sha256:7e9b800d…`、`web-client` `sha256:b9a953fa…`、`model-gateway` `sha256:174afd82…`、`collaboration-relay` `sha256:e4c34134…`（core 的构建与 SBOM/provenance 见 `core/verify/release-artifacts.md`「功能目录重构后的发布单元」，二开产物由重构后的树重建，摘要与来源记录一致由 `seam` 核对）。Desktop 安装包 `desktop-client` `sha256:14e4cc9c…` 当时登记在 S2 记录中；Mobile 发布产物登记为阻断（见 §8）。
+
+以上是 `9566ac0` 的历史登记，不是当前运行产物。2026-09-30 首轮 Web 走查使用
+`web-client sha256:3159cff1…`；该轮 Desktop 包为 `sha256:e2720d13…`，只核对
+了文件摘要、未运行安装包。追溯 YAML 已同步两者现有来源记录，能力状态没有提高。
+本次 Core 仍是未提交源码的本地镜像，没有新发布 provenance。
+
+随后提交 `a7df56f4` 已登记 Core `sha256:a52669b…`、Worker `sha256:8a05f23…`。
+现存对应 SBOM/provenance 的只读补核见 `release-artifacts.md`「ADR-17 后的历史发布登记」：
+两份 provenance 的源提交均为 `b592e353…`。这解释当前追溯 YAML 中的历史服务端摘要，
+不把它们算作本次未提交增量或恢复镜像的发布证明；本次未重新构建或运行发布门禁。
 
 ## 4. 实际执行的验证命令和结果
 
 | 时间与出处 | 命令 | 结果 |
 |---|---|---|
+| `core/verify/functional-layout-regression.md`「全新环境与消息线程用户状态收口」（2026-09-30）；日志 `codex-thread-final-full-rustpath-20260930.log` | `./tools/check.sh --full`（受限 cgroup、专用演练库） | 退出 0，全部通过；四侧生成、迁移回退一步/再前进、35 约束、14 追溯及实际产物匹配。演练库清理计数 0。真实 Web 11/11 另有日志，不把基础验证当作三端或生产发布验收；保留前两次包装/摘要失败记录 |
+| `core/verify/functional-layout-regression.md`「当前产物匹配后的全量门禁与独立复核」（2026-09-30）；日志 `/volumes/data/kailo/tmp/codex-cas-stream-full-20260930.log` | `./tools/check.sh --full`（受限 cgroup、独立一次性 Postgres） | 退出 0、3 分 18.804 秒，十项实际运行；四侧生成、90 schema 兼容及当前 Web/Desktop 来源摘要匹配通过。未启用真实服务集成；不证明旧 Core 写入兼容、operator 退役失败重驱动或本轮专门边界。Mobile release 签名仍阻断 |
+| `web-client/fork/verify/web-surface.md`「CAS 与订阅修复后的当前镜像复验」（2026-09-30） | `core/verify/web-walkthrough.sh`；Web 当前 digest `9f5e4b48…`，Core 当前未提交工作树 | 退出 0、1 分 46.072 秒；20 个计时场景、30 条记录通过，意外 origin/CSP 违规 0；会话 REVOKED、审批 CANCELLED/CONSUMED；临时 Tenant 与 namespace 清理、服务恢复及独立健康 200。不证明并发首写、manage-only 撤权再授权、暂停恢复旧 generation 或终端帧后重连次数 |
+| `web-client/fork/verify/web-surface.md`「完整源码树上的接手浏览器复验」（2026-09-30） | `core/verify/web-walkthrough.sh`（受限 cgroup，当前 Web 镜像） | 退出 0，20 个计时场景、30 条记录，意外 origin/CSP 违规均为 0；注销/审批终态查证通过，本轮 Tenant 与 namespace 已清理；Core/Relay/Worker 恢复，BFF 健康探测 200。故障注入的 503 与拒绝响应如实保留 |
+| `core/verify/functional-layout-regression.md`「接手全量门禁复核」（2026-09-30） | `tools/check.sh --full`（独立一次性 Postgres） | 首次退出 1：Web/Desktop 构建摘要已更新而 13 份能力追溯 YAML 未同步；其他门禁通过。该失败不被浏览器或集成通过抵消 |
+| 同上，摘要同步后的两次复跑 | `tools/check.sh --full`（独立一次性 Postgres） | 第二次退出 1：预检继承包装层导出的 `PLATFORM_ADMIN_USER`，缺字段检查未拒绝；隔离该配置继承后第三次退出 0，十项全部实际运行，含 35 个命名约束与 14 条追溯。检查的父环境继承限制仍记录，不据此关闭本 Stage |
+| `core/verify/functional-layout-regression.md`「源码纠偏后的全量门禁」（2026-09-30）；完整日志 `/volumes/data/kailo/tmp/codex-source-corrections-full-20260930.log` | 在 `/volumes/kailo/apps` 执行 `./tools/check.sh --full`（受限 cgroup、新建隔离 Postgres；`PLATFORM_INTEGRATION` 未启用） | 6 分 30.968 秒，退出 1。1/10 含 Core Clippy、2/10 四语言基础测试、4/10 迁移及 sqlx/35 约束、5/6/7/9/10 通过；3/10 四侧生成被共享 npm 缓存 EACCES/EEXIST 阻断，90 schema 兼容检查通过；8/10 当前 Web/Desktop 源码 digest 与产物不一致。Mobile release 签名仍阻断；不替代真实服务、本增量负向核验或发布证明 |
+| `native-identity.md`「接手复验」（2026-09-30，未提交工作树） | `core/verify/run-integration.sh`；`tools/check.sh verify`；`tools/check-docs.sh` | 真实集成退出 0，私钥 7/7、归位 6/6、Web transport 11/11；35 个本轮 namespace 清理且前后集合相等；Core 恢复后独立 HTTP 200；四语言基础检查退出 0，文档 0 issues。本次未重跑安装包或浏览器走查，不登记新发布产物 |
 | `core/verify/functional-layout-regression.md`（目录重构 `076681d` 之后） | `core/verify/run-integration.sh`；`core/verify/web-walkthrough.sh`；`tools/check.sh --full`（隔离库） | 31 批全绿（修正夹具中的旧二进制名后重跑）；走查 20/20；`check.sh --full` 退出 0；派发记录的破坏核验失败于预期断言；seam 门禁拦下误改的 model-gateway UI 文件并已恢复 |
 | `core/verify/release-artifacts.md`「2026-09-29」段；提交 `9566ac0` | `tools/release.sh`（`076681d` 的 `apps/` 树）；`tools/check.sh trace`、`seam`、`supply` | core `7e9b800d…`、worker `9e7d3a6d…`，`dist/` 下有 SBOM 与 provenance；三步通过 |
 | `identity-chain.md` L172–184（2026-09-29） | `run-integration.sh` | 31 批 ok；两项破坏核验失败于预期断言，还原后 31 批通过 |
@@ -113,7 +188,7 @@ GAP：`GAP-BUZ-01` 仍存在，入口拒绝行为已由测试断言；`GAP-IDN-0
 
 ## 7. 性能与容量边界
 
-没有容量实测。NIP-11 上界、BFF 限流预算与并发连接数没有核验记录（`07-运行与运维基线.md` 只登记要求）。已登记的收敛上界是配置项：`BUZZ_NIP43_RECONCILE_INTERVAL_SECS`（默认 60 秒）、`BFF_STREAM_READMIT_SECONDS`、`BFF_STREAM_RETRY_MILLIS`。走查计时：登录 270 ms，BFF 重启恢复 134661 ms，发布结果不明 19214 ms（`walkthrough/summary.json`）。
+没有容量实测。2026-09-30 `tests/web_transport.rs` 11/11 包含 `relay_bounds_and_budget_are_enforced_before_relay`、`nip11_drift_is_reconciled_by_governance_reconciler` 与 `withdrawal_converges_while_binding_reconciling`，证明用例所覆盖的上界、预算与漂移行为，不代表生产并发容量或完整 NIP-42 会话复用。已登记的收敛上界是配置项：`BUZZ_NIP43_RECONCILE_INTERVAL_SECS`、`BFF_STREAM_READMIT_SECONDS`、`BFF_STREAM_RETRY_MILLIS`。历史走查计时：登录 270 ms，BFF 重启恢复 134661 ms，发布结果不明 19214 ms（`walkthrough/summary.json`）。
 
 ## 8. 已知限制及其 UI 表达
 
@@ -123,22 +198,23 @@ GAP：`GAP-BUZ-01` 仍存在，入口拒绝行为已由测试断言；`GAP-IDN-0
 - Mobile release 签名缺 upload keystore：`collaboration/fork/upstream.yaml` 的 `mobile-client` 产物登记为 `blocked`；现有 APK 为 Debug 证书的 profile 构建，不是发布产物。
 - iOS、macOS 与 Windows 安装包无构建环境，未构建；Desktop 只有 Linux `.deb`，未做代码签名。
 - 产品显示名按 `DD-111` 的下发链已接入（BFF `GET /api/v1/platform-info`、Web 静态入口注入、原生端登录后读取并按服务器缓存、安装包显示名由 `build_args` 注入，见 `07-运行与运维基线.md`）。2026-09-30 另修正 Mobile 窗口标题/启动读屏与 Desktop 两条外观说明的四处硬编码，复用既有名称与共享目录；Mobile 单文件分析/三项回归、Desktop 整体 typecheck/单文件格式、TS 88 与 Dart 7 项均通过，见 `functional-layout-regression.md`「原生显示名与外观说明收口」。这些检查不证明真机名称刷新、换服或安装包运行；当前 Web 常规走查未逐个更换部署名称，不据此声称三端显示名完整验收。
-- 内部标识去掉产品名的迁移（ADR-17）尚在进行，不影响本 Stage 的行为证据，但其落地会改动 workflow ID 前缀与 Search Attribute，届时需重跑 replay 与集成。
-- 失败保留的四个夹具 Tenant（`53941c2e…`、`c8652adc…`、`060e8796…`、`b5ca5ffa…`，出处 `core/verify/secret-ref-rehome.md` L517、L538–540 与 `identity-chain.md` L182–184）仍在本地 Core 与 OpenBao 中，待 Stage 3 的 `tenant.delete` 删除。
+- ADR-17 的本地迁移与重验已有 `core/verify/neutral-identifiers-migration.md` 记录；新旧 Workflow ID/SA 的一次性兼容窗口仍按 ADR 的退出条件关闭，不把保留旧 history 的 replay 解释为窗口已关闭。
+- 历史失败保留的四个测试 Tenant（`53941c2e…`、`c8652adc…`、`060e8796…`、`b5ca5ffa…`，出处 `core/verify/secret-ref-rehome.md` L517、L538–540 与 `identity-chain.md` L182–184）已随获准的全新环境重建删除，不再作为 Stage 3 的清理任务；历史日志不作为当前数据现场。
 
 ## 9. 发布、回滚和数据保留结论
 
-- 发布：服务端产物按 digest 登记（§3），`core`/`worker` 的构建输入、SBOM 与 provenance 见 `core/verify/release-artifacts.md`「2026-09-29」段；本地镜像未推送共享 registry，未签名（ADR-06 在出现共享 registry 时启用）。
+- 发布：历史服务端产物按 digest 登记（§3），较新的登记为 Core `a52669b…`、Worker `8a05f23…`，来源与现存 SBOM/provenance 见 `core/verify/release-artifacts.md`「ADR-17 后的历史发布登记」；它们不覆盖本次未提交增量。本地镜像未推送共享 registry，未签名（ADR-06 在出现共享 registry 时启用）。
 - 回滚：服务端按 digest 回退（RB-09、RB-04 演练 2026-09-23）；原生端回退是发布新版本（ADR-06），尚无发布链。
-- 数据保留：本 Stage 不删除 Tenant 数据；RB-10 灾备演练恢复通过。夹具 Tenant 见 §8。
+- 数据保留：产品生命周期的保留规则不变，RB-10 的历史灾备演练记录保留；本次开发环境另经用户明确授权从零重建，历史测试 Tenant 不再存在，见 §8。
 
 ## 关闭前必须补齐
 
-1. `SS-WEB-PRESENTATION`：三端主题语义、locale 与 message key 同源的接缝证据（含 ThemeProvider/CSS variables 复用），并登记进追溯记录的 `seams`。
-2. `SS-AGW-OIDC` 与 `V-SCN-85`：按 `DD-112` 在浏览器 listener 每条 route 配置 `csrf`，并实测同站跨源的 logout、审批撤回与媒体上传被 403 拒绝、本源照常；cookie 与 CORS 已有 `oidc-edge.md`。
-3. `SS-BUZ-SERVER-CLIENT`：NIP-42 会话复用与 NIP-11 上界、限流预算的核验记录。
+1. `SS-WEB-PRESENTATION`：修正上节所列现存文案、时间、异常呈现与显示名缺口，复用已有 kit 目录及宿主主题；再补三端主题语义、locale 与 message key 同源的接缝证据，并登记进追溯记录的 `seams`。
+2. `SS-AGW-OIDC` 与 `V-SCN-85`：已有 route 策略、通用 POST 与 logout 三类错误来源拒绝，原会话未被撤销；本源正向见当前 Web 走查。补齐审批撤回、媒体上传的有效对象负向证据，并登记场景追溯，不用不存在对象或改头未生效的请求替代。
+3. `SS-BUZ-SERVER-CLIENT`：补齐 NIP-42 会话复用核验；现有上界、预算与漂移真实回归不能替代完整连接模型和生产容量观察。
 4. Desktop 与 Mobile 各自的 logout 与断线恢复端到端证据；安装包上撤权后发布被 Relay 拒绝的观察。
-5. `V-SCN-70`：受治理的孤儿版本销毁/终结入口，以及写入期间撤权、暂停、竞争的故障注入演练。
+5. `V-SCN-70`：真实服务正向收敛已有证据；补齐本增量破坏核验、场景追溯与发布产物登记。
 6. `V-SCN-84`：运行期「成员消息不触发 workflow run」的观察，并为该场景建立追溯记录。
+7. `DD-40/41/46` 的本轮修复：Web 托管身份的消息/线程当前可见性、真实 thread root、GET 隐藏但保留历史与版本、撤权后的拒绝已经现有 `web_transport` 真实服务 11/11 查证。原生 CLIENT-only 事件的同等证据、首写并发 CAS、生命周期 generation 和终端拒绝的专门边界仍须各自查证，不以历史 shipped 登记或 Web 身份结果替代。
 
-以下不阻断关闭，但须在一期收口前解决：Mobile release 签名、iOS 与 macOS/Windows 安装包、四个夹具 Tenant 的删除、ADR-17 迁移后的重验、重构后安装包端到端的复跑。
+以下不阻断关闭，但须在一期收口前解决：Mobile release 签名、iOS 与 macOS/Windows 安装包、ADR-17 兼容窗口退出及对应重验、重构后安装包端到端的复跑。

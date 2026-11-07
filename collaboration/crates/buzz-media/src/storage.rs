@@ -116,7 +116,11 @@ fn parse_list_version_entry(
             Event::Empty(child) => match local_name(child.local_name().as_ref()) {
                 b"Key" => fields.key = Some(String::new()),
                 b"VersionId" => fields.version_id = Some(String::new()),
-                b"Size" => fields.size = Some(0),
+                b"Size" => {
+                    return Err(MediaError::StorageError(
+                        "ListObjectVersions entry has empty Size".to_string(),
+                    ));
+                }
                 _ => {}
             },
             Event::End(end) if end.name().as_ref() == start.to_end().name().as_ref() => {
@@ -128,12 +132,21 @@ fn parse_list_version_entry(
                         "ListObjectVersions entry missing VersionId".to_string(),
                     )
                 })?;
+                if key.is_empty() || version_id.is_empty() {
+                    return Err(MediaError::StorageError(
+                        "ListObjectVersions entry has an empty identity".to_string(),
+                    ));
+                }
                 return Ok(ObjectVersionEntry {
                     key,
                     version_id,
                     kind,
                     size: if kind == ObjectVersionKind::Object {
-                        fields.size.unwrap_or(0)
+                        fields.size.ok_or_else(|| {
+                            MediaError::StorageError(
+                                "ListObjectVersions object missing Size".to_string(),
+                            )
+                        })?
                     } else {
                         0
                     },
@@ -149,48 +162,149 @@ fn parse_list_version_entry(
     }
 }
 
-fn parse_object_versions_page(xml: &[u8]) -> Result<ObjectVersionsPage, MediaError> {
+fn parse_object_versions_page(
+    xml: &[u8],
+    expected_prefix: &str,
+) -> Result<ObjectVersionsPage, MediaError> {
     let mut reader = Reader::from_reader(xml);
     reader.config_mut().trim_text(true);
     let mut entries = Vec::new();
     let mut next_key_marker = None;
     let mut next_version_id_marker = None;
-    let mut is_truncated = false;
+    let mut is_truncated = None;
+    let mut prefix = None;
+    let mut root = None;
+    let mut closed = false;
 
     loop {
         match reader.read_event().map_err(xml_error)? {
-            Event::Start(start) => match local_name(start.local_name().as_ref()) {
-                b"Version" => entries.push(parse_list_version_entry(
-                    &mut reader,
-                    &start,
-                    ObjectVersionKind::Object,
-                )?),
-                b"DeleteMarker" => entries.push(parse_list_version_entry(
-                    &mut reader,
-                    &start,
-                    ObjectVersionKind::DeleteMarker,
-                )?),
-                b"IsTruncated" => {
-                    let value = read_element_text(&mut reader, &start)?;
-                    is_truncated = value.eq_ignore_ascii_case("true");
+            Event::Start(start) => {
+                if closed {
+                    return Err(xml_error("data after ListVersionsResult"));
                 }
-                b"NextKeyMarker" => {
-                    next_key_marker = Some(read_element_text(&mut reader, &start)?);
+                if root.is_none() {
+                    if local_name(start.local_name().as_ref()) != b"ListVersionsResult" {
+                        return Err(xml_error("missing ListVersionsResult root"));
+                    }
+                    root = Some(start.name().as_ref().to_vec());
+                    continue;
                 }
-                b"NextVersionIdMarker" => {
-                    next_version_id_marker = Some(read_element_text(&mut reader, &start)?);
+                match local_name(start.local_name().as_ref()) {
+                    b"Version" => entries.push(parse_list_version_entry(
+                        &mut reader,
+                        &start,
+                        ObjectVersionKind::Object,
+                    )?),
+                    b"DeleteMarker" => entries.push(parse_list_version_entry(
+                        &mut reader,
+                        &start,
+                        ObjectVersionKind::DeleteMarker,
+                    )?),
+                    b"IsTruncated" => {
+                        let value = read_element_text(&mut reader, &start)?;
+                        let value = match value.as_str() {
+                            "true" => true,
+                            "false" => false,
+                            _ => return Err(xml_error("invalid ListObjectVersions IsTruncated")),
+                        };
+                        if is_truncated.replace(value).is_some() {
+                            return Err(xml_error("duplicate ListObjectVersions IsTruncated"));
+                        }
+                    }
+                    b"Prefix" => {
+                        if prefix
+                            .replace(read_element_text(&mut reader, &start)?)
+                            .is_some()
+                        {
+                            return Err(xml_error("duplicate ListObjectVersions Prefix"));
+                        }
+                    }
+                    b"NextKeyMarker" => {
+                        if next_key_marker
+                            .replace(read_element_text(&mut reader, &start)?)
+                            .is_some()
+                        {
+                            return Err(xml_error("duplicate ListObjectVersions NextKeyMarker"));
+                        }
+                    }
+                    b"NextVersionIdMarker" => {
+                        if next_version_id_marker
+                            .replace(read_element_text(&mut reader, &start)?)
+                            .is_some()
+                        {
+                            return Err(xml_error(
+                                "duplicate ListObjectVersions NextVersionIdMarker",
+                            ));
+                        }
+                    }
+                    b"Name" | b"KeyMarker" | b"VersionIdMarker" | b"MaxKeys" | b"EncodingType" => {
+                        skip_element(&mut reader, &start)?;
+                    }
+                    _ => return Err(xml_error("unknown ListObjectVersions field")),
                 }
-                b"ListVersionsResult" => {}
-                _ => skip_element(&mut reader, &start)?,
-            },
-            Event::Empty(start) => match local_name(start.local_name().as_ref()) {
-                b"NextKeyMarker" => next_key_marker = Some(String::new()),
-                b"NextVersionIdMarker" => next_version_id_marker = Some(String::new()),
-                _ => {}
-            },
-            Event::Eof => break,
+            }
+            Event::Empty(start) => {
+                if root.is_none() || closed {
+                    return Err(xml_error("missing complete ListVersionsResult root"));
+                }
+                match local_name(start.local_name().as_ref()) {
+                    b"NextKeyMarker" => {
+                        if next_key_marker.replace(String::new()).is_some() {
+                            return Err(xml_error("duplicate ListObjectVersions NextKeyMarker"));
+                        }
+                    }
+                    b"NextVersionIdMarker" => {
+                        if next_version_id_marker.replace(String::new()).is_some() {
+                            return Err(xml_error(
+                                "duplicate ListObjectVersions NextVersionIdMarker",
+                            ));
+                        }
+                    }
+                    b"Prefix" => {
+                        if prefix.replace(String::new()).is_some() {
+                            return Err(xml_error("duplicate ListObjectVersions Prefix"));
+                        }
+                    }
+                    b"Version" | b"DeleteMarker" | b"IsTruncated" => {
+                        return Err(xml_error("empty required ListObjectVersions field"));
+                    }
+                    b"Name" | b"KeyMarker" | b"VersionIdMarker" | b"MaxKeys" | b"EncodingType" => {}
+                    _ => return Err(xml_error("unknown ListObjectVersions field")),
+                }
+            }
+            Event::End(end) => {
+                if closed || root.as_deref() != Some(end.name().as_ref()) {
+                    return Err(xml_error("unexpected ListVersionsResult closing element"));
+                }
+                closed = true;
+            }
+            Event::Eof if closed => break,
+            Event::Eof => return Err(xml_error("incomplete ListVersionsResult")),
+            Event::Text(text) if !text.as_ref().iter().all(u8::is_ascii_whitespace) => {
+                return Err(xml_error("unexpected ListVersionsResult text"));
+            }
             _ => {}
         }
+    }
+
+    if prefix.as_deref() != Some(expected_prefix) {
+        return Err(xml_error(
+            "ListObjectVersions Prefix differs from requested scope",
+        ));
+    }
+    let is_truncated =
+        is_truncated.ok_or_else(|| xml_error("ListObjectVersions missing IsTruncated"))?;
+    if is_truncated {
+        if entries.is_empty()
+            || next_key_marker.as_deref().is_none_or(str::is_empty)
+            || next_version_id_marker.as_deref().is_none_or(str::is_empty)
+        {
+            return Err(xml_error("incomplete ListObjectVersions pagination"));
+        }
+    } else if next_key_marker.is_some() || next_version_id_marker.is_some() {
+        return Err(xml_error(
+            "terminal ListObjectVersions page has next markers",
+        ));
     }
 
     Ok(ObjectVersionsPage {
@@ -620,7 +734,7 @@ impl MediaStorage {
                 response.as_str().unwrap_or("")
             )));
         }
-        parse_object_versions_page(response.as_slice())
+        parse_object_versions_page(response.as_slice(), prefix)
     }
 }
 
@@ -825,8 +939,7 @@ mod tests {
 
     #[test]
     fn parse_object_versions_page_includes_objects_delete_markers_and_dual_markers() {
-        let page = parse_object_versions_page(
-            br#"<?xml version="1.0" encoding="UTF-8"?>
+        let xml = br#"<?xml version="1.0" encoding="UTF-8"?>
 <ListVersionsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Name>buzz-media</Name>
   <Prefix>_meta/tenant/</Prefix>
@@ -847,9 +960,8 @@ mod tests {
     <IsLatest>false</IsLatest>
     <Size>42</Size>
   </Version>
-</ListVersionsResult>"#,
-        )
-        .expect("parse versions page");
+</ListVersionsResult>"#;
+        let page = parse_object_versions_page(xml, "_meta/tenant/").expect("parse versions page");
 
         assert!(page.is_truncated);
         assert_eq!(page.next_key_marker.as_deref(), Some("_meta/tenant/a.json"));
@@ -871,18 +983,72 @@ mod tests {
                 },
             ]
         );
+
+        let xml = std::str::from_utf8(xml).expect("existing XML is UTF-8");
+        for (before, after) in [
+            ("<IsTruncated>true</IsTruncated>", ""),
+            (
+                "<IsTruncated>true</IsTruncated>",
+                "<IsTruncated>unknown</IsTruncated>",
+            ),
+            ("<Size>42</Size>", ""),
+            ("<Size>42</Size>", "<Size/>"),
+            ("<NextKeyMarker>_meta/tenant/a.json</NextKeyMarker>", ""),
+            ("<NextVersionIdMarker>v-new</NextVersionIdMarker>", ""),
+            ("<Prefix>_meta/tenant/</Prefix>", ""),
+            ("</ListVersionsResult>", ""),
+        ] {
+            let invalid = xml.replace(before, after);
+            assert!(
+                parse_object_versions_page(invalid.as_bytes(), "_meta/tenant/").is_err(),
+                "missing or unknown native evidence was accepted: {before}",
+            );
+        }
+        assert!(parse_object_versions_page(xml.as_bytes(), "other/").is_err());
+        assert!(parse_object_versions_page(b"", "_meta/tenant/").is_err());
+
+        let mut empty = xml.to_string();
+        for name in ["DeleteMarker", "Version"] {
+            let start_tag = format!("<{name}>");
+            let end_tag = format!("</{name}>");
+            let start = empty.find(&start_tag).expect("existing entry start");
+            let end = empty.find(&end_tag).expect("existing entry end") + end_tag.len();
+            empty.replace_range(start..end, "");
+        }
+        assert!(parse_object_versions_page(empty.as_bytes(), "_meta/tenant/").is_err());
+        let empty = empty
+            .replace(
+                "<IsTruncated>true</IsTruncated>",
+                "<IsTruncated>false</IsTruncated>",
+            )
+            .replace("<NextKeyMarker>_meta/tenant/a.json</NextKeyMarker>", "")
+            .replace("<NextVersionIdMarker>v-new</NextVersionIdMarker>", "");
+        let page = parse_object_versions_page(empty.as_bytes(), "_meta/tenant/")
+            .expect("explicit terminal empty page");
+        assert!(page.entries.is_empty());
+        assert!(!page.is_truncated);
+        let missing_terminal = empty.replace("<IsTruncated>false</IsTruncated>", "");
+        assert!(parse_object_versions_page(missing_terminal.as_bytes(), "_meta/tenant/").is_err());
+        let unknown_terminal = empty.replace(
+            "<IsTruncated>false</IsTruncated>",
+            "<IsTruncated>unknown</IsTruncated>",
+        );
+        assert!(parse_object_versions_page(unknown_terminal.as_bytes(), "_meta/tenant/").is_err());
     }
 
     #[test]
     fn parse_object_versions_page_preserves_repeated_interleaved_aws_ordering() {
         let page = parse_object_versions_page(
             br#"<ListVersionsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Prefix>k-</Prefix>
+  <IsTruncated>false</IsTruncated>
   <Version><Key>k-a</Key><VersionId>v3</VersionId><Size>3</Size></Version>
   <DeleteMarker><Key>k-a</Key><VersionId>v2</VersionId></DeleteMarker>
   <Version><Key>k-a</Key><VersionId>v1</VersionId><Size>1</Size></Version>
   <DeleteMarker><Key>k-b</Key><VersionId>m2</VersionId></DeleteMarker>
   <Version><Key>k-b</Key><VersionId>m1</VersionId><Size>10</Size></Version>
 </ListVersionsResult>"#,
+            "k-",
         )
         .expect("parse interleaved versions page");
 
@@ -927,11 +1093,14 @@ mod tests {
     fn parse_object_versions_page_handles_marker_only_key_before_versioned_key() {
         let page = parse_object_versions_page(
             br#"<ListVersionsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Prefix>k-</Prefix>
+  <IsTruncated>false</IsTruncated>
   <DeleteMarker><Key>k-marker-only</Key><VersionId>d-only</VersionId></DeleteMarker>
   <Version><Key>k-versioned</Key><VersionId>v2</VersionId><Size>20</Size></Version>
   <DeleteMarker><Key>k-versioned</Key><VersionId>d1</VersionId></DeleteMarker>
   <Version><Key>k-versioned</Key><VersionId>v1</VersionId><Size>10</Size></Version>
 </ListVersionsResult>"#,
+            "k-",
         )
         .expect("parse marker-only and versioned keys");
 

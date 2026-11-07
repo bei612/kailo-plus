@@ -169,6 +169,8 @@ const EVENTS_INVENTORY: &[(&str, usize, usize)] = &[
     ("src/native_websocket.rs", 0, 2), // boundary 2 (WS frames; no events URL)
     // Test-only fixtures — no production egress, no guard:
     ("src/relay_admission.rs", 1, 0),
+    // 测试用的假 Relay 路由；生产提交仍经 boundary 1（relay/submit.rs）
+    ("src/commands/messages/unconfirmed.rs", 1, 0),
 ];
 
 // Needles are assembled at runtime so this scan file itself contains no

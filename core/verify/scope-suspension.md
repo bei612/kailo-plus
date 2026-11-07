@@ -69,3 +69,23 @@
 破坏核验（均已还原并复验）：Worker 暂停分支去掉归档步骤，用例在「Relay 上的 Channel 应已归档」失败；去掉清空 roster 步骤，用例在「暂停后 Channel roster 应只剩 CONTROL」失败（roster 中多出成员）。暂停与恢复各录制一份真实终态 history（`worker/replay-tests/testdata/component_task_workspace_suspend_history.json`、`…_restore_history.json`）并加入 `TestComponentTaskReplay`；再次去掉清空步骤时暂停 history 重放报 `TMPRL1100`，还原后通过。建立链的两份既有录制照常重放，说明新分支未改变建立路径。
 
 未覆盖：Tenant 暂停与恢复（DD-96）不在本能力内；`ERROR` 路径与派发 `ABORTED` 置 `ERROR` 只有 Worker 与 Core 单元覆盖，未在真实环境注入 Relay 故障；原生设备在暂停期间的登记与撤出（投入推迟、撤出按缺席查证）由代码路径与单元覆盖，未以真实原生端演练。
+
+## 归档回读的证据校验（2026-10-01 UTC）
+
+本次按 `SF-BUZ-15`、`DD-46`、`DD-97` 修正既有 `IdentityClient::channel_archived`：原实现对非事件数组返回 `None`，对数组内事件缺失或损坏的 `tags`、未知 `archived` 值返回 `Some(false)`，没有区分正常省略标签与损坏或未知证据。`converge_channel_archived(false)` 因而能在未取得确定证据时直接报收敛成功。没有新建动作、状态、接口、依赖、检查脚本或核验夹具。
+
+权威与原生形状已亲核 Buzz 固定提交 `779af8886caae1317b4de962082429867ab61503`：`.references/buzz/crates/buzz-relay/src/handlers/side_effects.rs::emit_group_discovery_events` 为 kind 39000 放入 `d=Channel UUID`，只在已归档时放入 `archived=true`；正常未归档时省略该标签。`emit_addressable_discovery_event` 以 Relay keypair 签名。`.references/buzz/crates/buzz-relay/src/api/bridge.rs::query_events_authed` 返回事件数组并应用 kind 与 `#d` filter。`.references/buzz/crates/buzz-core/src/verification.rs::verify_event` 验证事件 ID 摘要与 Schnorr 签名；Core 复用已经使用的 `nostr::Event::verify`，不另造验签器。
+
+实现以有效 `Vec<Event>` 接收回读，按既有请求的 `limit=1` 核对数量、kind 39000、事件 ID 与签名、唯一且等于请求 Channel 的 `d` 标签，以及唯一且取值为 `true` 或 `false` 的 `archived` 标签。合法空数组仍返回 `None`，合法事件省略 `archived` 仍返回 `Some(false)`；损坏、重复、错 scope 或未知状态返回既有 `OperatorError::NotConverged`。此错误沿现有调用链传播：首次回读失败不发 9002，Core service 回 503，Worker 按结果不明重试；只有归档和 roster 两步均收敛后才跃迁到 `ACTIVE`。未变更数据库、API 或 Workflow history；旧版本可读取的数据形状未变。
+
+写入前置影响面在 `kailo-plus`、HEAD `ee4c79683453b0cdc45ca5a0668338b6f977c17c`、索引时间 `2026-10-01T03:27:39.697Z` 上核对：`channel_archived` 为 `LOW`，直接调用方为 `converge_channel_archived`；后者与 File 的图谱调用关系为 `UNKNOWN`，不是安全零。实际源码补核了 Core `converge_workspace_channel_archive` 与既有 `tests/workspace_suspension.rs` 的两处回读。原始 context/impact 日志位于 `/volumes/data/kailo/tmp/codex-workspace-archive-{context,impact}-{read,converge,file}-20261001.log`；写入后不将此前图谱声称为当前 fresh。
+
+已运行的窄检查使用 Rust `1.95.0`、`CARGO_HOME=/home/ubuntu/.cargo`、`CARGO_TARGET_DIR=/volumes/data/kailo/core-target-debug`、`SQLX_OFFLINE=true`，检查前核对现有编译进程和 CPU/RAM；两次编译均在 `MemoryMax=8G`、`CPUQuota=400%`、`TasksMax=8192` 的 cgroup 中运行，未降低 Cargo 并行度：
+
+| 命令 | 实际结果与原始日志 |
+|---|---|
+| `rustfmt --edition 2021 core/crates/collab-bridge/src/bridge.rs` | 退出 0，无输出 |
+| `cargo check --manifest-path core/Cargo.toml -p collab-bridge --all-targets` | 退出 0，`Finished dev ... in 4.91s`；`/volumes/data/kailo/tmp/codex-workspace-archive-check-20261001.log` |
+| `cargo clippy --manifest-path core/Cargo.toml -p collab-bridge --all-targets -- -D warnings` | 退出 0，`Finished dev ... in 4.01s`；`/volumes/data/kailo/tmp/codex-workspace-archive-clippy-20261001.log` |
+
+本次未重跑真实 Relay/DB 的 Workspace 集成用例，未注入损坏 discovery 做运行核验；上述编译与静态检查不等于业务验收。当前校验也没有把事件 signer 钉到 `TenantBuzzBinding.relay_self_pubkey`：`control_client` 没有向 `IdentityClient` 投递该既有 binding 字段；本次只验证事件自身的 ID 与签名，不能声称已经验证指定 Relay signer，也不能用 CONTROL 公钥替代它。

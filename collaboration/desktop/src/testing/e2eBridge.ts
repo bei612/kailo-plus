@@ -77,6 +77,13 @@ type E2eConfig = {
     closeChannelLiveSubscriptionOnce?: boolean;
     /** Reject successive kind-9 sends with these messages, then resume. */
     sendMessageErrors?: string[];
+    /**
+     * Store this many kind-9 WebSocket sends but never answer their `OK`
+     * (the relay wrote the event, the acknowledgement was lost). Together with
+     * `__BUZZ_E2E_DISCONNECT_MOCK_WEBSOCKETS__` this is the "outcome unknown"
+     * case: a disconnect before the OK arrived.
+     */
+    dropSendMessageAcks?: number;
     /** Delay (ms) after snapshotting a thread-replies page so E2E tests can
      *  deliver live reply/aux events while an older response is in flight. */
     threadRepliesDelayMs?: number;
@@ -3987,7 +3994,14 @@ async function handleSendChannelMessage(
   // surfaces to callers as a thrown error carrying the relay reason.
   const sendMessageError = config?.mock?.sendMessageErrors?.shift();
   if (sendMessageError) {
-    throw new Error(sendMessageError);
+    // 与 src-tauri 的错误串一致：Relay 的写入拒绝经 `POST /events` 回 400，
+    // 限流回 429（`relay.rs::relay_error_message`）
+    const retry = /retry in (\d+)s/i.exec(sendMessageError);
+    throw sendMessageError.startsWith("rate-limited:")
+      ? retry
+        ? `relay rate-limited: retry in ${retry[1]}s`
+        : "relay rate-limited: quota exceeded"
+      : `relay returned 400 Bad Request: ${sendMessageError}`;
   }
 
   // NIP-92 imeta attachments. The real relay echoes these back on the stored
@@ -4482,6 +4496,23 @@ function sendToMockSocket(args: {
       event.kind === 9 ? getConfig()?.mock?.sendMessageErrors?.shift() : null;
     if (sendMessageError) {
       sendWsText(socket.handler, ["OK", event.id, false, sendMessageError]);
+      return;
+    }
+
+    // 与 Relay 一样按事件 id 去重：同一个已签名事件再来一次只回 duplicate:，
+    // 不再存、不再广播（buzz-db ON CONFLICT DO NOTHING）
+    if (
+      getMockMessageStore(channelId).some((stored) => stored.id === event.id)
+    ) {
+      sendWsText(socket.handler, ["OK", event.id, true, "duplicate:"]);
+      return;
+    }
+
+    const mockOptions = getConfig()?.mock;
+    const dropAcks = mockOptions?.dropSendMessageAcks ?? 0;
+    if (mockOptions && event.kind === 9 && dropAcks > 0) {
+      mockOptions.dropSendMessageAcks = dropAcks - 1;
+      recordMockMessage(channelId, event);
       return;
     }
 

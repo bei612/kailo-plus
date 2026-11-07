@@ -338,33 +338,43 @@ Core/Temporal，也不能自造 Relay 正文路径。NONE 管理结果不向浏�
   未运行迁移、业务库写入、模型调用、full、产品构建或部署；没有
   四侧契约变动，文档快检查交主线合批。
 
-## 2026-10-07：ActionDefinition 生成列与退役状态的原触发器修复
+## 2026-10-06：创建 Workspace 同时恢复创建者的协作成员身份
 
-- 权威与根因：DD-88 保留版本正文不可变、状态可退役。原
-  `20261005014000_application_catalog.up.sql::catalog.guard_version` 比较
-  `to_jsonb(NEW)-'status'` 全部字段；`platform_action_key` 是存储生成列，
-  BEFORE UPDATE 时尚未计算，因此仅更新状态也被错误判成正文变更。
-  原函数、DDL 以及隔离库的实际生成列/触发器均已核对，不是权限拒绝。
-- 影响面：新 up 仅把 action_definition 的 UPDATE 守卫移到 AFTER UPDATE，
-  DELETE 保持 BEFORE 及同一个 guard_version；没有排除生成列或任何正文
-  字段，没有改变 API、四侧合同、目录权威或 ActionExecution 引用。
-  AFTER 抛错仍回滚整条语句/事务；旧正文、历史引用与所有调用者格式不变。
-- 边界与副作用：ACTIVE→RETIRED→ACTIVE 不改正文；正文修改仍为 SQLSTATE
-  23001，已引用删除仍为原 23001/ActionExecution 错误，不变成 FK 错误或
-  fail-open。未引入新状态、自动重放或清理服务。down 恢复原触发器时序，
-  也恢复退役缺陷，回滚后不得声称目录退役恢复可用。
-- 实现后原 `platform_views::member_action_tests` 增加一个隔离 SQL 用例。
-  通过既有 SDK 的 `AGENT_INVOKE_TEST_DATABASE_URL` 使用一次性测试实例
-  `component_runtime_lcivus`，全部 DDL、Tenant/Principal/ActionExecution
-  夹具都在外层事务回滚；不改业务库、迁移账本或已有目录内容。
-  用例实际执行 up/down/up、两次状态更新和全行比对、正文变更失败后的
-  savepoint 全部回滚、真实冻结 ActionExecution 引用的删除拒绝。
-- 受限原 SDK（4 CPU、8 GiB memory/swap）中执行
-  `cargo test --offline --locked -j16 -p platform-core --bin platform-core generated_catalog_guard_roundtrip -- --ignored --test-threads=1`
-  实际 1 passed，退出 0。SDK-only 将 up 的 AFTER UPDATE 改为 BEFORE
-  UPDATE，原用例在首次状态更新以 23001 失败，退出 101；原字节还原 cmp 0
-  后重新编译同一输入，1 passed，退出 0。正式文件未保留变异。
-  日志在既有 `projects-directory.wiWDv3` 目录：
-  `catalog-generated-guard.log`、`catalog-generated-guard-mutation.log`、
-  `catalog-generated-guard-restored.log`。rustfmt 已执行；未运行 full、
-  产品构建、部署或生产迁移，发布时仍须由原迁移入口应用这两个迁移文件。
+- 权威与原生事实：REQ-24 保留创建频道后可直接使用的体验；DD-41/45/77
+  仍要求 Core 成员事实、SpiceDB 和全部 HUMAN 设备 roster 查证一致。
+  固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+  `.references/buzz/crates/buzz-db/src/store/channel.rs::create_channel`
+  会把 `created_by` 插入 `channel_members`。Kailo 用 CONTROL 代签，
+  此前只创建了 CONTROL 成员，遗漏业务创建者；不是上游缺少创建能力。
+- 实际修复：`governance.rs` 的 `WorkspaceCreate` 同事务写入原始 HUMAN
+  发起者的 `PROVISIONING` WorkspaceMembership；原 `WORKSPACE_LIFECYCLE`
+  冻结该成员，复用 `convergeMembership` 的 SpiceDB member、Buzz 全设备
+  roster 和成员终态三步，然后才把 Workspace 置 `ACTIVE`。不增表、
+  新工作流权威、客户端旁路或权限角色；Web/Desktop 共用同一创建动作。
+- 影响面与兼容：仅内部 Rust/Go Workflow 输入增加可省略的 `creator`；
+  旧已录制输入不增加命令。重跑从原创建动作读取成员，不采用重跑者身份；
+  成员已经 `ACTIVE` 时只收尾 Workspace，已撤权/错误状态拒绝重新投入。
+  现有部署引导的 SERVICE 发起者不被错误写成 HUMAN 成员。
+- 副作用与边界：成员终态仅允许匹配同 Tenant、Workspace/version、
+  原创建者和原准入动作的 scope Workflow，并锁定 Tenant/Principal/
+  TenantMembership/WorkspaceMembership；撤权、暂停、版本冲突不转 ACTIVE。
+  取消仍保留已发生的投影事实，由原任务的受治理重跑或原撤权链收敛；
+  未增加状态或重试权威。Relay/SpiceDB 不可用沿原 Temporal 定时重试，
+  roster/成员拒绝时不宣布 Workspace 就绪。
+- 后置证据入口：`TestWorkspaceCreationProjectsCreatorBeforeReady` 覆盖
+  新创建者、旧冻结输入、roster 拒绝和成员撤权；现有 `governed_action`
+  真服务场景增加 Workspace ACTIVE 时创建者 membership 必须 ACTIVE 的断言。
+  这些入口的执行结果单独记录，源码存在不等于部署已验收。
+- 实际窄验：受限 SDK `kailo-installation-scope-sdk-e4agxd`（4 CPU、
+  8 GiB memory/swap，Data 盘源码与 Go/Cargo 缓存）中执行
+  `go test ./workflows -run 'TestWorkspaceCreationProjectsCreatorBeforeReady|TestComponentTaskCancel|TestTenantRevocation|TestWorkspaceRevocation' -count=1`
+  返回 `ok apps/worker/workflows 0.045s`，退出 0。隔离副本把 creator
+  分支改成永不执行，新增场景中 creator/roster_rejected/membership_revoked
+  三项失败、退出 1；恢复后同命令 `ok apps/worker/workflows 0.044s`、退出 0。
+  正式树没有写入破坏。还原副本与正式 worker 的差异仅为并行 DM 的注册两处。
+- Core `cargo check --offline --locked -j 16 -p platform-core --bin platform-core`
+  尚未通过：验证副本最初缺 Buzz workspace/proto 依赖，补齐后仍缺 registry
+  include，且复制期间并行 DM 已写入 `web_transport` 对 `conversations` 的调用、
+  尚无模块注册，报 E0433。保留失败，不删队友实现；完整 Core 合批验收归主线。
+  真 Relay/SpiceDB 的 `governed_action` 场景未运行，full、提交、部署均未执行；
+  上述 Go 活动替身验证只证明编排与拒绝顺序，不是线上多人频道验收。

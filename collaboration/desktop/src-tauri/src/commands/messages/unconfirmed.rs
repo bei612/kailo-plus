@@ -92,11 +92,7 @@ pub(super) fn fingerprint(relay_base: &str, event: &nostr::Event) -> String {
 }
 
 fn intent_tags(event: &nostr::Event) -> Vec<&nostr::Tag> {
-    event
-        .tags
-        .iter()
-        .filter(|tag| tag.as_slice().first().map(String::as_str) != Some("emoji"))
-        .collect()
+    event.tags.iter().filter(|tag| tag.as_slice().first().map(String::as_str) != Some("emoji")).collect()
 }
 
 /// 先前结果不明的同一条消息；没有就用刚签好的这一条。
@@ -187,22 +183,13 @@ mod tests {
     #[test]
     fn palette_changes_keep_unknown_messages_and_edits_bound_to_original_event() {
         let keys = Keys::generate();
-        let make = |url| {
-            EventBuilder::new(Kind::Custom(9), ":joy:")
-                .tags([
-                    Tag::parse(["h", "channel"]).unwrap(),
-                    Tag::parse(["emoji", "joy", url]).unwrap(),
-                ])
-                .sign_with_keys(&keys)
-                .unwrap()
-        };
+        let make = |url| EventBuilder::new(Kind::Custom(9), ":joy:")
+            .tags([Tag::parse(["h", "channel"]).unwrap(), Tag::parse(["emoji", "joy", url]).unwrap()])
+            .sign_with_keys(&keys).unwrap();
         let original = make("https://a.example/emoji");
         let changed = make("https://b.example/emoji");
         assert_ne!(original.id, changed.id);
-        assert_eq!(
-            fingerprint("community", &original),
-            fingerprint("community", &changed)
-        );
+        assert_eq!(fingerprint("community", &original), fingerprint("community", &changed));
         let key = format!("emoji-edit:{}", keys.public_key());
         assert!(claim_mutation(&key, original.clone()).unwrap().1);
         let (reused, first) = claim_mutation(&key, changed).unwrap();

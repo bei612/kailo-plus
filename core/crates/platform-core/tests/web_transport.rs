@@ -382,6 +382,125 @@ async fn run_user_state(
         "偏好的 updatedAt 必须由库时钟补上（.design/03），实际 {body}"
     );
 
+    // 复用本次真实 Workspace 发布的事件，不把「有任意 Workspace」当成消息权限。
+    let (status, published) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::POST,
+        &format!("/api/v1/workspaces/{}/messages", fx.workspace),
+        Some(serde_json::json!({"content": Uuid::new_v4().to_string()})),
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::OK, "发布可读事件：{published}");
+    let event_id = published["eventId"].as_str().expect("eventId");
+    let message_context = format!("msg:{event_id}");
+    let thread_context = format!("thread:{event_id}");
+    let read_at = body["readContexts"][channel.to_string()].clone();
+    let mut marked_version = body["version"].as_i64().expect("version");
+    for context in [&message_context, &thread_context] {
+        let (status, marked) = bff(
+            http,
+            e,
+            &fx.subject,
+            reqwest::Method::PUT,
+            "/api/v1/user-state/read",
+            Some(serde_json::json!({
+                "contextKey": context,
+                "lastReadAt": read_at,
+                "version": marked_version,
+            })),
+        )
+        .await;
+        assert_eq!(status, reqwest::StatusCode::OK, "可读事件标记：{marked}");
+        marked_version = marked["version"].as_i64().expect("version");
+    }
+    let (status, body) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::GET,
+        "/api/v1/user-state",
+        None,
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::OK, "读消息标记：{body}");
+    assert_eq!(body["readContexts"][&message_context], read_at);
+    assert_eq!(body["readContexts"][&thread_context], read_at);
+    assert_eq!(body["version"], marked_version);
+
+    // 用同一真实身份向 Relay 发布回复；回复可作为 msg，不能冒充 thread 根。
+    let (host, channel_id) = common::live_scope(pool, fx).await;
+    let (locator, secret_version): (String, i32) = sqlx::query_as(
+        "select private_key_secret_ref, private_key_secret_version
+         from identity.buzz_identity_binding
+         where principal_id = $1 and kind = 'HUMAN' and custody = 'SERVER' and state = 'ACTIVE'",
+    )
+    .bind(fx.principal)
+    .fetch_one(pool)
+    .await
+    .expect("当前 HUMAN 的 SecretRef");
+    let secret = common::read_secret_version(http, e, fx.tenant, &locator, secret_version).await;
+    let client = collab_bridge::bridge::IdentityClient::new(
+        collab_bridge::bridge::Custody::Server,
+        &secret,
+        &e.relay_origin,
+        &host,
+    )
+    .expect("本人 Relay 客户端");
+    let reply = client
+        .publish(
+            http,
+            9,
+            &Uuid::new_v4().to_string(),
+            &[
+                vec!["h".into(), channel_id],
+                vec!["e".into(), event_id.into(), String::new(), "reply".into()],
+            ],
+        )
+        .await
+        .expect("发布真实回复");
+    assert_eq!(reply["accepted"], true, "Relay 必须接受回复");
+    let reply_id = reply["event_id"].as_str().expect("reply event_id");
+    let (status, _) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::PUT,
+        "/api/v1/user-state/read",
+        Some(serde_json::json!({
+            "contextKey": format!("thread:{reply_id}"),
+            "lastReadAt": read_at,
+            "version": marked_version,
+        })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        reqwest::StatusCode::FORBIDDEN,
+        "可读回复不是 Thread 根"
+    );
+    for prefix in ["msg", "thread"] {
+        let (status, _) = bff(
+            http,
+            e,
+            &fx.subject,
+            reqwest::Method::PUT,
+            "/api/v1/user-state/read",
+            Some(serde_json::json!({
+                "contextKey": format!("{prefix}:{}", nostr::EventId::all_zeros()),
+                "lastReadAt": read_at,
+                "version": marked_version,
+            })),
+        )
+        .await;
+        assert_eq!(
+            status,
+            reqwest::StatusCode::FORBIDDEN,
+            "不存在的事件不能标记"
+        );
+    }
+
     // 可见 Channel、但已读时间不是 RFC 3339：拒绝，而不是存一个别的端解析不了的串
     let (status, _) = bff(
         http,
@@ -418,7 +537,7 @@ async fn run_user_state(
         "不可见的 Workspace 必须拒绝"
     );
 
-    // 既不是 UUID 也不是 msg: 形式的键：拒绝。放开键空间等于开了任意写入面
+    // 不是 Channel UUID、msg: 或 thread: 的键：拒绝，不放开任意键空间。
     let (status, _) = bff(
         http,
         e,
@@ -456,6 +575,48 @@ async fn run_user_state(
         reqwest::StatusCode::FORBIDDEN,
         "撤权后写同一个键必须拒绝"
     );
+    for context in [&message_context, &thread_context] {
+        let (status, _) = bff(
+            http,
+            e,
+            &fx.subject,
+            reqwest::Method::PUT,
+            "/api/v1/user-state/read",
+            Some(serde_json::json!({
+                "contextKey": context,
+                "lastReadAt": read_at,
+                "version": marked_version,
+            })),
+        )
+        .await;
+        assert_eq!(
+            status,
+            reqwest::StatusCode::FORBIDDEN,
+            "撤权后事件标记也拒绝"
+        );
+    }
+    let (status, body) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::GET,
+        "/api/v1/user-state",
+        None,
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::OK, "撤权后过滤状态：{body}");
+    assert_eq!(body["workspacePreferences"], serde_json::json!({}));
+    assert_eq!(body["readContexts"], serde_json::json!({}));
+    assert_eq!(body["version"], marked_version, "过滤不能推进版本");
+    let retained: serde_json::Value = sqlx::query_scalar(
+        "select read_contexts from identity.collaboration_user_state where tenant_principal_id = $1",
+    )
+    .bind(fx.principal)
+    .fetch_one(pool)
+    .await
+    .expect("读保留的状态历史");
+    assert_eq!(retained[&message_context], read_at, "撤权不能删除历史");
+    assert_eq!(retained[&thread_context], read_at, "撤权不能删除线程历史");
 }
 
 /// BFF stream 的 snapshot + generation 恢复（`apps/02` Stage 1）。
@@ -1315,4 +1476,750 @@ async fn run_resend(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common:
     .await
     .expect("读审计");
     assert_eq!(dispatches, 1, "只发出过一次");
+}
+
+/// 读部署登记的整数配置（集成核验 source 了 `deploy/local/.env`）。缺失即该上界
+/// 未登记，直接失败而不是猜一个默认值。
+fn registered(name: &str) -> u64 {
+    std::env::var(name)
+        .unwrap_or_else(|_| panic!("缺少部署登记值 {name}"))
+        .parse()
+        .unwrap_or_else(|_| panic!("{name} 必须是非负整数"))
+}
+
+/// 该 Workspace 已落账的发布 DISPATCH 数。超限请求必须在落账之前被拒。
+async fn dispatch_count(pool: &PgPool, workspace: Uuid) -> i64 {
+    sqlx::query_scalar(
+        "select count(*) from audit.audit_event
+         where workspace_id = $1 and action_key = 'workspace.message.publish'
+           and event_type = 'DISPATCH'",
+    )
+    .bind(workspace)
+    .fetch_one(pool)
+    .await
+    .expect("读 DISPATCH 审计")
+}
+
+/// 打开一条 SSE 流并读到 `live`，返回余下的字节流供继续读。
+async fn open_live(
+    http: &reqwest::Client,
+    e: &Env,
+    subject: &str,
+    path: &str,
+) -> std::pin::Pin<Box<dyn futures_util::Stream<Item = reqwest::Result<axum::body::Bytes>> + Send>>
+{
+    use futures_util::StreamExt;
+    let resp = http
+        .get(format!("{}{path}", e.bff_url))
+        .header("x-platform-oidc-issuer", &e.oidc_issuer)
+        .header("x-platform-oidc-subject", subject)
+        .send()
+        .await
+        .expect("打开 stream");
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    let mut body = resp.bytes_stream().boxed();
+    let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(15);
+    let mut buf = String::new();
+    loop {
+        let Ok(Some(Ok(chunk))) = tokio::time::timeout_at(deadline, body.next()).await else {
+            panic!("流未在上界内追平");
+        };
+        buf.push_str(&String::from_utf8_lossy(&chunk));
+        assert!(!buf.contains("event: closed"), "流在追平前关闭：{buf}");
+        if buf.contains("event: live") {
+            return body;
+        }
+    }
+}
+
+/// 在已追平的流上等到含 `needle` 的 `event` 帧。
+async fn until_event(
+    body: &mut std::pin::Pin<
+        Box<dyn futures_util::Stream<Item = reqwest::Result<axum::body::Bytes>> + Send>,
+    >,
+    needle: &str,
+    what: &str,
+) {
+    use futures_util::StreamExt;
+    let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(15);
+    let mut buf = String::new();
+    loop {
+        let Ok(Some(Ok(chunk))) = tokio::time::timeout_at(deadline, body.next()).await else {
+            panic!("{what} 未收到刚发布的事件：{buf}");
+        };
+        buf.push_str(&String::from_utf8_lossy(&chunk));
+        assert!(!buf.contains("event: closed"), "{what} 被关闭：{buf}");
+        if buf.contains(needle) {
+            return;
+        }
+    }
+}
+
+/// `SS-BUZ-SERVER-CLIENT` 的上界与预算（`relay-server-client.md` 的四项不符）。
+///
+/// 验四件事：超过登记正文上界的发布在落账与发往 Relay 之前以 LIMIT 拒绝，恰好在上界
+/// 的正文被 Relay 接受（登记值不高于 Relay 的实际上界）；同一会话的两条流都追平并
+/// 收到同一条新事件（共用连接上按订阅分发）；Core 预算用完后查询、发布与开流都是
+/// LIMIT，且拒绝来自 Core 预算（带 `Retry-After`）而不是 Relay。
+#[tokio::test]
+async fn relay_bounds_and_budget_are_enforced_before_relay() {
+    let Some(e) = common::env() else { return };
+    let http = reqwest::Client::new();
+    let pool = PgPool::connect(&e.database_url).await.expect("连 Core 库");
+    let token = common::worker_token(&http, &e).await;
+
+    let fx = match common::provision_live_workspace(&http, &e, &pool, &token).await {
+        Ok(f) => f,
+        Err(msg) => panic!("准备真实 Workspace 失败: {msg}"),
+    };
+    let outcome = std::panic::AssertUnwindSafe(run_bounds(&http, &e, &pool, &fx))
+        .catch_unwind()
+        .await;
+    common::teardown_live_workspace(&e, &pool, &fx).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+async fn run_bounds(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::LiveWorkspace) {
+    let msg_path = format!("/api/v1/workspaces/{}/messages", fx.workspace);
+    let stream_path = format!("/api/v1/workspaces/{}/stream", fx.workspace);
+    let max = registered("BFF_MESSAGE_MAX_CONTENT_BYTES") as usize;
+
+    // 超过登记上界：413 LIMIT PAYLOAD_TOO_LARGE，且没有落 DISPATCH——没签名、没发出
+    let before = dispatch_count(pool, fx.workspace).await;
+    let (status, body) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::POST,
+        &msg_path,
+        Some(serde_json::json!({ "content": "x".repeat(max + 1) })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        reqwest::StatusCode::PAYLOAD_TOO_LARGE,
+        "超过正文上界必须 413：{body}"
+    );
+    assert_eq!(body["class"], "LIMIT", "大小上界属于 LIMIT：{body}");
+    assert_eq!(body["reason"], "PAYLOAD_TOO_LARGE", "{body}");
+    assert_eq!(
+        dispatch_count(pool, fx.workspace).await,
+        before,
+        "超限请求不得落 DISPATCH"
+    );
+
+    // 恰好在上界：Relay 接受。登记值高于 Relay 实际上界时这里会被 Relay 拒绝
+    let (status, body) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::POST,
+        &msg_path,
+        Some(serde_json::json!({ "content": "y".repeat(max) })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        reqwest::StatusCode::OK,
+        "上界内的正文应被接受：{body}"
+    );
+
+    // 同一会话的两条流：都追平，并都收到同一条新事件
+    let mut first = open_live(http, e, &fx.subject, &stream_path).await;
+    let mut second = open_live(http, e, &fx.subject, &stream_path).await;
+    let marker = format!("shared-{}", Uuid::new_v4());
+    let (status, body) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::POST,
+        &msg_path,
+        Some(serde_json::json!({ "content": marker })),
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::OK, "发布应成功：{body}");
+    until_event(&mut first, &marker, "第一条流").await;
+    until_event(&mut second, &marker, "第二条流").await;
+    drop(first);
+    drop(second);
+
+    // 预算：连续查询直到第一次非 200。它必须是 Core 预算给出的 LIMIT——带 Retry-After；
+    // Relay 的 429 不带它，出现就说明压力被透传给了 Relay（登记值高于 Relay 额度）
+    let budget = registered("BFF_RELAY_API_BUDGET");
+    let mut ok = 0u64;
+    let limited = loop {
+        let resp = http
+            .get(format!("{}{msg_path}", e.bff_url))
+            .header("x-platform-oidc-issuer", &e.oidc_issuer)
+            .header("x-platform-oidc-subject", &fx.subject)
+            .send()
+            .await
+            .expect("调 BFF");
+        if resp.status() != reqwest::StatusCode::OK {
+            break resp;
+        }
+        ok += 1;
+        assert!(ok <= budget, "成功查询次数超过了 Core 预算 {budget}");
+    };
+    assert_eq!(
+        limited.status(),
+        reqwest::StatusCode::TOO_MANY_REQUESTS,
+        "预算用完必须 429"
+    );
+    let retry_after: u64 = limited
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse().ok())
+        .expect("Core 预算的拒绝必须带 Retry-After");
+    assert!(
+        retry_after > 0 && retry_after <= registered("BFF_RELAY_API_BUDGET_WINDOW_SECONDS"),
+        "Retry-After 必须落在预算窗口内，得到 {retry_after}"
+    );
+    let body: serde_json::Value = limited.json().await.expect("错误体");
+    assert_eq!(body["class"], "LIMIT", "限流属于 LIMIT：{body}");
+    assert_eq!(body["reason"], "RATE_LIMITED", "{body}");
+
+    // 预算用完时发布也是 LIMIT，且在落 DISPATCH 之前被拦下——不打到 Relay
+    let before = dispatch_count(pool, fx.workspace).await;
+    let (status, body) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::POST,
+        &msg_path,
+        Some(serde_json::json!({ "content": "over budget" })),
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::TOO_MANY_REQUESTS, "{body}");
+    assert_eq!(body["class"], "LIMIT", "{body}");
+    assert_eq!(body["reason"], "RATE_LIMITED", "{body}");
+    assert_ne!(body["class"], "DENIED", "限流不得渲染为权限拒绝");
+    assert_eq!(
+        dispatch_count(pool, fx.workspace).await,
+        before,
+        "预算拦下的发布不得落 DISPATCH"
+    );
+
+    // 开流：snapshot 被预算拦下，带内以 rate-limited 关闭，而不是 upstream-unavailable
+    let frames = read_sse(http, e, &fx.subject, &stream_path, None)
+        .await
+        .expect("准入已过，流以 200 打开");
+    let closed = frames
+        .iter()
+        .find(|f| f.name == "closed")
+        .unwrap_or_else(|| panic!("预算用完时流应带内关闭，实际 {frames:?}"));
+    assert_eq!(
+        closed.data, "rate-limited",
+        "关闭原因必须是 LIMIT：{frames:?}"
+    );
+}
+
+/// 一个 binding 的 NIP-11 事实：(state, version, digest, relay_self)。
+async fn binding_nip11(pool: &PgPool, tenant: Uuid) -> (String, i32, String, Option<String>) {
+    sqlx::query_as(
+        "select state, version, nip11_snapshot_digest, relay_self_pubkey
+         from projection.tenant_buzz_binding where tenant_id = $1",
+    )
+    .bind(tenant)
+    .fetch_one(pool)
+    .await
+    .expect("读 TenantBuzzBinding")
+}
+
+/// 等 binding 满足条件，上界取治理对账间隔的若干倍（对账器每轮都检查）。
+async fn until_binding<F>(pool: &PgPool, tenant: Uuid, what: &str, ok: F)
+where
+    F: Fn(&(String, i32, String, Option<String>)) -> bool,
+{
+    let deadline = std::time::Instant::now()
+        + std::time::Duration::from_secs(registered("GOVERNANCE_RECONCILE_INTERVAL_SECONDS") * 3);
+    loop {
+        let b = binding_nip11(pool, tenant).await;
+        if ok(&b) {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{what}：binding 停在 {b:?}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+}
+
+/// V-SCN-87 / DD-114：NIP-11 在 binding ACTIVE 之后改变。
+///
+/// Relay 的文档在核验中不能改（不动运行环境），因此改的是另一侧：把快照换成一份
+/// 「旧文档」的摘要，对 Core 而言这与 Relay 文档变了是同一个不一致。验五件事：
+/// 建立时登记了 `self`；verify 步不改写已 ACTIVE 的快照；BFF 请求路径只拒绝、不写
+/// binding；对账器以条件更新进出 RECONCILING 并在同一 operation 下写两条审计；`self`
+/// 与登记值不符时保持 RECONCILING、不改写登记值，恢复后才回到 ACTIVE。
+#[tokio::test]
+async fn nip11_drift_is_reconciled_by_governance_reconciler() {
+    let Some(e) = common::env() else { return };
+    let http = reqwest::Client::new();
+    let pool = PgPool::connect(&e.database_url).await.expect("连 Core 库");
+    let token = common::worker_token(&http, &e).await;
+
+    let fx = match common::provision_live_workspace(&http, &e, &pool, &token).await {
+        Ok(f) => f,
+        Err(msg) => panic!("准备真实 Workspace 失败: {msg}"),
+    };
+    let outcome = std::panic::AssertUnwindSafe(run_drift(&http, &e, &pool, &token, &fx))
+        .catch_unwind()
+        .await;
+    common::teardown_live_workspace(&e, &pool, &fx).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+async fn run_drift(
+    http: &reqwest::Client,
+    e: &Env,
+    pool: &PgPool,
+    token: &str,
+    fx: &common::LiveWorkspace,
+) {
+    let msg_path = format!("/api/v1/workspaces/{}/messages", fx.workspace);
+    let (state, v0, d0, relay_self) = binding_nip11(pool, fx.tenant).await;
+    assert_eq!(state, "ACTIVE");
+    let relay_self = relay_self.expect("建立路径必须登记 relay_self_pubkey（DD-114(5)）");
+    assert!(
+        relay_self.len() == 64 && relay_self.chars().all(|c| c.is_ascii_hexdigit()),
+        "relay_self_pubkey 应为 64 位十六进制：{relay_self}"
+    );
+
+    // verify 步对已 ACTIVE 的 binding 不改写快照：version 与 digest 都不动
+    let tenant_version: i32 =
+        sqlx::query_scalar("select version from identity.tenant where id = $1")
+            .bind(fx.tenant)
+            .fetch_one(pool)
+            .await
+            .expect("读 Tenant version");
+    let status = http
+        .post(format!("{}/service/v1/tenants/buzz-verify", e.service_url))
+        .bearer_auth(token)
+        .json(&serde_json::json!({"tenantId": fx.tenant, "tenantVersion": tenant_version}))
+        .send()
+        .await
+        .expect("调 verify 步")
+        .status();
+    assert_eq!(
+        status,
+        reqwest::StatusCode::OK,
+        "对 ACTIVE binding 重放 verify 应幂等成功"
+    );
+    let (state, v, d, _) = binding_nip11(pool, fx.tenant).await;
+    assert_eq!(
+        (state.as_str(), v, d.as_str()),
+        ("ACTIVE", v0, d0.as_str()),
+        "verify 步不得改写已 ACTIVE binding 的快照"
+    );
+
+    // 快照换成「旧文档」的摘要：BFF 只拒绝该次请求，对账器负责迁移并重新查证
+    let stale = "0".repeat(64);
+    sqlx::query(
+        "update projection.tenant_buzz_binding set nip11_snapshot_digest = $2 where tenant_id = $1",
+    )
+    .bind(fx.tenant)
+    .bind(&stale)
+    .execute(pool)
+    .await
+    .expect("写入旧快照");
+    let (status, body) = bff(http, e, &fx.subject, reqwest::Method::GET, &msg_path, None).await;
+    assert!(
+        (status == reqwest::StatusCode::SERVICE_UNAVAILABLE
+            && body["reason"] == "BINDING_NOT_ACTIVE")
+            || status == reqwest::StatusCode::FORBIDDEN,
+        "快照不一致时请求必须被拒：{status} {body}"
+    );
+    until_binding(
+        pool,
+        fx.tenant,
+        "漂移后应重新查证回到 ACTIVE",
+        |b| b.0 == "ACTIVE" && b.2 == d0,
+    )
+    .await;
+    let (_, v1, _, self1) = binding_nip11(pool, fx.tenant).await;
+    assert_eq!(v1, v0 + 2, "进入与回到 ACTIVE 各推进一次 version");
+    assert_eq!(
+        self1.as_deref(),
+        Some(relay_self.as_str()),
+        "登记的 self 不变"
+    );
+    let audits: Vec<(String, String, Uuid)> = sqlx::query_as(
+        "select result_code, parameter_hash, operation_id from audit.audit_event
+         where tenant_id = $1 and action_key = 'tenant.buzz_binding.nip11_reconcile'
+         order by occurred_at",
+    )
+    .bind(fx.tenant)
+    .fetch_all(pool)
+    .await
+    .expect("读漂移审计");
+    let codes: Vec<&str> = audits.iter().map(|a| a.0.as_str()).collect();
+    assert_eq!(codes, ["NIP11_DRIFT", "NIP11_REVERIFIED"], "进出各一条审计");
+    let pair = format!("{stale}:{d0}");
+    assert!(
+        audits.iter().all(|a| a.1 == pair),
+        "审计记录旧、新 digest：{audits:?}"
+    );
+    assert_eq!(audits[0].2, audits[1].2, "一次漂移归同一个 operation");
+    let (status, body) = bff(http, e, &fx.subject, reqwest::Method::GET, &msg_path, None).await;
+    assert_eq!(
+        status,
+        reqwest::StatusCode::OK,
+        "回到 ACTIVE 后恢复服务：{body}"
+    );
+
+    // self 与登记值不符：进入 RECONCILING 后保持，不改写登记值
+    let other = "1".repeat(64);
+    sqlx::query(
+        "update projection.tenant_buzz_binding
+         set nip11_snapshot_digest = $2, relay_self_pubkey = $3 where tenant_id = $1",
+    )
+    .bind(fx.tenant)
+    .bind(&stale)
+    .bind(&other)
+    .execute(pool)
+    .await
+    .expect("写入旧快照与另一个登记值");
+    until_binding(pool, fx.tenant, "漂移应转 RECONCILING", |b| {
+        b.0 == "RECONCILING"
+    })
+    .await;
+    tokio::time::sleep(std::time::Duration::from_secs(
+        registered("GOVERNANCE_RECONCILE_INTERVAL_SECONDS") * 2,
+    ))
+    .await;
+    let (state, _, d, self2) = binding_nip11(pool, fx.tenant).await;
+    assert_eq!(state, "RECONCILING", "self 不符时必须保持 RECONCILING");
+    assert_eq!(d, stale, "未通过查证不得写新快照");
+    assert_eq!(
+        self2.as_deref(),
+        Some(other.as_str()),
+        "不自动改写 relay_self_pubkey"
+    );
+    let (status, body) = bff(http, e, &fx.subject, reqwest::Method::GET, &msg_path, None).await;
+    assert_ne!(
+        status,
+        reqwest::StatusCode::OK,
+        "RECONCILING 期间经 Relay 的读写必须拒绝：{body}"
+    );
+
+    // self 恢复为登记值后才回到 ACTIVE
+    sqlx::query(
+        "update projection.tenant_buzz_binding set relay_self_pubkey = $2 where tenant_id = $1",
+    )
+    .bind(fx.tenant)
+    .bind(&relay_self)
+    .execute(pool)
+    .await
+    .expect("恢复登记值");
+    until_binding(pool, fx.tenant, "self 恢复后应回到 ACTIVE", |b| {
+        b.0 == "ACTIVE" && b.2 == d0
+    })
+    .await;
+
+    // 迁移前的存量行（ACTIVE、无登记值）：摘要仍等于已查证快照时由对账器登记 self，
+    // 不改变状态与 version
+    let (_, v2, _, _) = binding_nip11(pool, fx.tenant).await;
+    sqlx::query(
+        "update projection.tenant_buzz_binding set relay_self_pubkey = null where tenant_id = $1",
+    )
+    .bind(fx.tenant)
+    .execute(pool)
+    .await
+    .expect("模拟存量行");
+    until_binding(pool, fx.tenant, "存量行应登记 self", |b| {
+        b.3.as_deref() == Some(relay_self.as_str())
+    })
+    .await;
+    let (state, v3, d3, _) = binding_nip11(pool, fx.tenant).await;
+    assert_eq!(
+        (state.as_str(), v3, d3.as_str()),
+        ("ACTIVE", v2, d0.as_str()),
+        "登记 self 不迁移状态"
+    );
+}
+
+/// 调一个 service 端点，返回状态与回应体。
+async fn service(
+    http: &reqwest::Client,
+    e: &Env,
+    token: &str,
+    path: &str,
+    body: serde_json::Value,
+) -> (reqwest::StatusCode, serde_json::Value) {
+    let resp = http
+        .post(format!("{}{path}", e.service_url))
+        .bearer_auth(token)
+        .json(&body)
+        .send()
+        .await
+        .expect("调 service 端点");
+    let status = resp.status();
+    (status, resp.json().await.unwrap_or(serde_json::Value::Null))
+}
+
+/// DD-114(2)：TenantBuzzBinding 因 NIP-11 漂移停在 RECONCILING 时，撤出方向照常收敛，
+/// 投入方向与经 Relay 的读写等待回到 ACTIVE；BFF 的拒绝带 BINDING_NOT_ACTIVE，已建立
+/// 的流以 binding-not-active 关闭。
+///
+/// 撤出路径逐条直接调 Workflow Activity 所用的 service 端点（与 Workflow 同一入口）：
+/// WorkspaceMembership 与 TenantMembership 撤权（membership-projections/buzz ABSENT）、
+/// 设备撤销（identity-projections/buzz 对 REVOKING 的 CLIENT binding）、Workspace 暂停
+/// 的 roster 清空与 Channel 归档。
+#[tokio::test]
+async fn withdrawal_converges_while_binding_reconciling() {
+    let Some(e) = common::env() else { return };
+    let http = reqwest::Client::new();
+    let pool = PgPool::connect(&e.database_url).await.expect("连 Core 库");
+    let token = common::worker_token(&http, &e).await;
+
+    let fx = match common::provision_live_workspace(&http, &e, &pool, &token).await {
+        Ok(f) => f,
+        Err(msg) => panic!("准备真实 Workspace 失败: {msg}"),
+    };
+    let outcome = std::panic::AssertUnwindSafe(run_withdrawal(&http, &e, &pool, &token, &fx))
+        .catch_unwind()
+        .await;
+    common::teardown_live_workspace(&e, &pool, &fx).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+async fn run_withdrawal(
+    http: &reqwest::Client,
+    e: &Env,
+    pool: &PgPool,
+    token: &str,
+    fx: &common::LiveWorkspace,
+) {
+    use futures_util::StreamExt;
+    let msg_path = format!("/api/v1/workspaces/{}/messages", fx.workspace);
+    let stream_path = format!("/api/v1/workspaces/{}/stream", fx.workspace);
+    let (_, _, d0, relay_self) = binding_nip11(pool, fx.tenant).await;
+    let relay_self = relay_self.expect("建立路径登记了 relay_self_pubkey");
+
+    // 漂移前打开一条流，漂移后它必须在再准入时以 binding-not-active 关闭
+    let mut live = open_live(http, e, &fx.subject, &stream_path).await;
+
+    // 让 binding 停在 RECONCILING：快照换成旧摘要、登记值换成另一个 self
+    sqlx::query(
+        "update projection.tenant_buzz_binding
+         set nip11_snapshot_digest = $2, relay_self_pubkey = $3 where tenant_id = $1",
+    )
+    .bind(fx.tenant)
+    .bind("0".repeat(64))
+    .bind("1".repeat(64))
+    .execute(pool)
+    .await
+    .expect("制造不可通过的漂移");
+    until_binding(pool, fx.tenant, "漂移应转 RECONCILING", |b| {
+        b.0 == "RECONCILING"
+    })
+    .await;
+
+    // 已建立的流：关闭原因是 binding-not-active，不是 scope-revoked
+    let deadline = tokio::time::Instant::now()
+        + tokio::time::Duration::from_secs(e.stream_readmit_seconds * 2 + 5);
+    let mut buf = String::new();
+    loop {
+        let Ok(Some(Ok(chunk))) = tokio::time::timeout_at(deadline, live.next()).await else {
+            panic!("RECONCILING 后既有流未在再准入上界内关闭：{buf}");
+        };
+        buf.push_str(&String::from_utf8_lossy(&chunk));
+        if buf.contains("event: closed") {
+            assert!(
+                buf.contains("data: binding-not-active"),
+                "既有流应以 binding-not-active 关闭，而不是撤权：{buf}"
+            );
+            break;
+        }
+    }
+    drop(live);
+
+    // 新请求：带 PRECONDITION 分类的 BINDING_NOT_ACTIVE，不是空正文 403
+    let (status, body) = bff(http, e, &fx.subject, reqwest::Method::GET, &msg_path, None).await;
+    assert_eq!(status, reqwest::StatusCode::SERVICE_UNAVAILABLE, "{body}");
+    assert_eq!(body["class"], "PRECONDITION", "{body}");
+    assert_eq!(body["reason"], "BINDING_NOT_ACTIVE", "{body}");
+    // 新流：带内关闭并按间隔重连，而不是非 200 让浏览器永久停止
+    let frames = read_sse(http, e, &fx.subject, &stream_path, None)
+        .await
+        .expect("binding 暂不可用时流以 200 打开并带内关闭");
+    assert!(
+        frames
+            .iter()
+            .any(|f| f.name == "closed" && f.data == "binding-not-active"),
+        "新流应带内以 binding-not-active 关闭：{frames:?}"
+    );
+
+    // 投入方向仍要求 ACTIVE
+    let ws_membership_version: i32 =
+        sqlx::query_scalar("select version from identity.workspace_membership where id = $1")
+            .bind(fx.workspace_membership)
+            .fetch_one(pool)
+            .await
+            .expect("读 WorkspaceMembership version");
+    let (status, body) = service(
+        http,
+        e,
+        token,
+        "/service/v1/membership-projections/buzz",
+        serde_json::json!({"scope": "WORKSPACE", "membershipId": fx.workspace_membership,
+                           "membershipVersion": ws_membership_version, "presence": "PRESENT"}),
+    )
+    .await;
+    assert!(
+        status.is_client_error(),
+        "RECONCILING 期间投入方向必须被拒：{status} {body}"
+    );
+
+    // 设备撤销：REVOKING 的 CLIENT binding 移出 roster 并置 REVOKED
+    let device = nostr::Keys::generate().public_key().to_hex();
+    sqlx::query(
+        "insert into identity.buzz_identity_binding
+             (tenant_id, principal_id, pubkey, custody, kind, state)
+         values ($1, $2, $3, 'CLIENT', 'HUMAN', 'REVOKING')",
+    )
+    .bind(fx.tenant)
+    .bind(fx.principal)
+    .bind(&device)
+    .execute(pool)
+    .await
+    .expect("建撤销中的 CLIENT binding");
+    let device_version: i32 =
+        sqlx::query_scalar("select version from identity.buzz_identity_binding where pubkey = $1")
+            .bind(&device)
+            .fetch_one(pool)
+            .await
+            .expect("读设备 binding version");
+    let (status, body) = service(
+        http,
+        e,
+        token,
+        "/service/v1/identity-projections/buzz",
+        serde_json::json!({"pubkey": device, "bindingVersion": device_version}),
+    )
+    .await;
+    assert!(
+        status.is_success(),
+        "RECONCILING 期间设备撤销必须收敛：{status} {body}"
+    );
+    let device_state: String =
+        sqlx::query_scalar("select state from identity.buzz_identity_binding where pubkey = $1")
+            .bind(&device)
+            .fetch_one(pool)
+            .await
+            .expect("读设备 binding");
+    assert_eq!(device_state, "REVOKED", "设备撤销应到终态");
+
+    // WorkspaceMembership 撤权：Channel roster 移出，回读收敛
+    let (status, body) = service(
+        http,
+        e,
+        token,
+        "/service/v1/membership-projections/buzz",
+        serde_json::json!({"scope": "WORKSPACE", "membershipId": fx.workspace_membership,
+                           "membershipVersion": ws_membership_version, "presence": "ABSENT"}),
+    )
+    .await;
+    assert!(
+        status.is_success(),
+        "RECONCILING 期间 Workspace 撤权必须收敛：{status} {body}"
+    );
+    assert_eq!(body["converged"], true, "{body}");
+
+    // Workspace 暂停：roster 清空与 Channel 归档
+    let ws_version: i32 = sqlx::query_scalar(
+        "update identity.workspace set state = 'SUSPENDING', version = version + 1
+         where id = $1 returning version",
+    )
+    .bind(fx.workspace)
+    .fetch_one(pool)
+    .await
+    .expect("置 Workspace SUSPENDING");
+    let (status, body) = service(
+        http,
+        e,
+        token,
+        "/service/v1/workspaces/channel-roster",
+        serde_json::json!({"workspaceId": fx.workspace, "workspaceVersion": ws_version,
+                           "mode": "CLEAR"}),
+    )
+    .await;
+    assert!(
+        status.is_success(),
+        "RECONCILING 期间暂停清空 roster 必须收敛：{status} {body}"
+    );
+    let (status, body) = service(
+        http,
+        e,
+        token,
+        "/service/v1/workspaces/channel-archive",
+        serde_json::json!({"workspaceId": fx.workspace, "workspaceVersion": ws_version,
+                           "archived": true}),
+    )
+    .await;
+    assert!(
+        status.is_success(),
+        "RECONCILING 期间暂停归档必须收敛：{status} {body}"
+    );
+
+    // TenantMembership 撤权：relay roster 移出，身份转 REVOKED
+    let t_membership: (Uuid, i32) = sqlx::query_as(
+        "select id, version from identity.tenant_membership
+         where tenant_id = $1 and tenant_principal_id = $2",
+    )
+    .bind(fx.tenant)
+    .bind(fx.principal)
+    .fetch_one(pool)
+    .await
+    .expect("读 TenantMembership");
+    // DD-115 (2)：撤权使 SERVER 私钥到期的 operation 来自该版本的 MEMBERSHIP_REVOCATION。
+    common::seed_membership_revocation_ref(
+        pool,
+        fx.tenant,
+        fx.initiator,
+        t_membership.0,
+        t_membership.1,
+    )
+    .await;
+    let (status, body) = service(
+        http,
+        e,
+        token,
+        "/service/v1/membership-projections/buzz",
+        serde_json::json!({"scope": "TENANT", "membershipId": t_membership.0,
+                           "membershipVersion": t_membership.1, "presence": "ABSENT"}),
+    )
+    .await;
+    assert!(
+        status.is_success(),
+        "RECONCILING 期间 Tenant 撤权必须收敛：{status} {body}"
+    );
+    assert_eq!(body["converged"], true, "{body}");
+
+    // 撤权期间 binding 一直停在 RECONCILING：上面的收敛不是等回到 ACTIVE 才成立的
+    let (state, _, _, _) = binding_nip11(pool, fx.tenant).await;
+    assert_eq!(state, "RECONCILING");
+
+    // 恢复登记值，交给对账器回到 ACTIVE（夹具清理需要）
+    sqlx::query(
+        "update projection.tenant_buzz_binding set relay_self_pubkey = $2 where tenant_id = $1",
+    )
+    .bind(fx.tenant)
+    .bind(&relay_self)
+    .execute(pool)
+    .await
+    .expect("恢复登记值");
+    until_binding(pool, fx.tenant, "恢复后应回到 ACTIVE", |b| {
+        b.0 == "ACTIVE" && b.2 == d0
+    })
+    .await;
 }

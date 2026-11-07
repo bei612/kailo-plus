@@ -12,7 +12,7 @@
   | 设备公钥登记、成员与 scope 状态跃迁 | 与业务状态同一事务 | 不存在：事务要么都成、要么都不成 |
   | 身份解析被拒（AUTHENTICATION） | 被拒之后单独写入，失败只记日志 | 拒绝已生效而没有审计 |
 
-- **Usage**：无适用对象。OpenMeter 与 UsageEvent 属于 Stage 4（`02-纵向交付路线.md` §6），当前拓扑没有任何计量写入。
+- **Usage**：Gateway 原生 durable outbox 是读取源，Core 只持久化同一全局流的 `IngressCheckpoint` 引用与游标，不保存请求正文。`gateway_usage.rs` 已接入治理对账循环；用量归因、UsageEvent 写入与 OpenMeter commit 对账仍未贯通，不将此读取器称为计费交付。只有原生读取成功且确实空页才输出「无适用对象」；认证、超时、非法页或缺归因均不是零用量。
 
 ## 触发信号
 
@@ -20,6 +20,7 @@
 - `platform.publish.reconciled{outcome}` 出现 `QUERY_FAILED`、`CONTROL_UNREADABLE`、`WRITE_FAILED` 或 `EVIDENCE_MISSING`；
 - Core 日志「发布前审计未写入，不发送」（发布因审计不可写而被拒）、「发布结果审计未写入，留给对账」、「认证拒绝审计未写入」「认证拒绝审计未提交」；
 - 用户在界面上看到「发送结果待确认」及操作号。
+- `platform.gateway_usage_ingress.unavailable` 为 1，或 Core 报 `UNKNOWN/BILLING_UNAVAILABLE`：原生源不可核验或缺少权威归因；`pending_observed` 是最后可核验页条数，不是全流 backlog。`oldest_observed_age` 是该页最旧记录年龄，不是已结算延迟。
 
 ## 判定依据
 
@@ -51,6 +52,7 @@ from audit.audit_event where operation_id = '<operation id>' order by occurred_a
    - `EVIDENCE_PARTIAL`：DISPATCH 带有不可识别种类的存量证据；结果仍照常结算，不可识别条目只留在 DISPATCH 原行。持续出现说明仍有写入方产出契约外的证据种类，按缺陷升级。
 3. **认证拒绝审计缺失**：日志中的「认证拒绝审计未写入」只说明这次拒绝没有留痕，拒绝本身已生效。记录时间窗与原因（数据库不可写），作为事件报告附件；不补录。
 4. **疑似越过 BFF 的消息**：确认发布者公钥是否为某人的设备公钥（`identity.buzz_identity_binding` 中 `custody = 'CLIENT'`）。是则属设计内；不是则按 RB-05 第 5 步（roster `unexpected`）处理。
+5. **Gateway usage 待对账**：由平台治理/计量责任人查看固定 `source_id` 与 checkpoint，不读取或补造正文。先恢复 `AGENTGATEWAY_ADMIN_URL` 的真实管理面、Core service audience 与 `AGENTGATEWAY_ADMIN_TIMEOUT_SECONDS` 时限内可用的认证/读取；既有治理循环按 `GOVERNANCE_RECONCILE_INTERVAL_SECONDS` 重读同一页。缺 trace→Invocation/Operation、meter 或 reservation 事实时保持原游标，并按未贯通的 producer 接缝处置、保持计费执行入口关闭；不得以时间、模型名或同 UUID 猜测归属。阻断持续时由该责任人处理，不能通过推进游标消除告警。
 
 ## 不可执行的动作
 
@@ -58,6 +60,7 @@ from audit.audit_event where operation_id = '<operation id>' order by occurred_a
 2. 不 UPDATE 或 DELETE 任何审计行，不临时禁用 `audit_event_append_only` 触发器。
 3. 不由系统替用户重发消息（`DD-48`）。用户在界面上重发时带同一个幂等键，BFF 回答原操作的结论而不是再发一条（`DD-81`）；不要为了「帮用户送达」绕过这个键直接调用发布。
 4. 不把 `PUBLISH_RESULT_SETTLE_SECONDS` 调到 Relay 时间漂移窗口（900 秒）以下来加快结论（`07` §1）。
+5. 不删除 Gateway 原生 outbox、不人工推进 `IngressCheckpoint`、不发布虚构或零量 UsageEvent。空页、HTTP 200 与 checkpoint 可读均不能证明用量已进入 OpenMeter 或已完成结算。
 
 ## 完成判据
 

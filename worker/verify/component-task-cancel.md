@@ -28,85 +28,19 @@
 
 因此 Stage 2 的 ExternalExecution 实例化门禁当前为**无适用对象**，不是“功能已实现”；首个真实 native task/job 的 ComponentBinding 与 ActionDefinition 一旦接入，必须与写前记录、幂等、UNKNOWN、native query/dedupe、TaskProjection 同刀交付，缺一项就不得 active。这个边界不放宽 `.design/06` §6 的真实副作用合同。
 
-## 已实现删除分支的隔离候选验证（2026-10-02 UTC）
+## 生成枚举消费者修复（2026-10-10）
 
-前文五个 kind 与宿主检查只记录当时事实，不作为本次范围或执行方式。基线 `e4c544fdb63d5e54fe775d58e684249166c89543` 的 Data 候选 `/volumes/data/kailo/tmp/codex-delete-commit-candidate-20261002.KBSv5P` 已接入现有 `TENANT_LIFECYCLE/DELETE` 分支：同一冻结 `snapshotId` 经既有 `CoreAPI.AdvanceTenantDelete` Activity 交给 Core 的持久子流程；Worker 校验返回的 snapshot/subprocess 引用，不建立另一份删除或 ExternalExecution 权威。
+本节只记录当前 TaskStatus 消费者修复，不把上面的 2026-09-26 历史适用性判断当作当前组件接入状态。
 
-取消以 `CancelPending` 继续查询同一 Core 子流程，由已持久化的不可逆标记裁决；Activity 超时、provider 失联或矛盾响应不能直接产生业务 `FAILED/CANCELED`，仍等待原生终态证据。以上是源码消费事实，不是本轮真实 Server/provider 验收，公开删除 workflow gate 未开放（`DD-99/100/109`、`V-SCN-31`）。
+1. 权威仍为 `.design/06` 的 TaskProjection 与取消收尾合同；`contracts/enums/task_status.schema.json` 的 `CANCELED` 未变。提交 `c442f2bb6e5c9e4db624057fe756272574a807f2` 新增同值枚举后，生成器把 Go 标识符从 `Canceled` 消歧为 `TaskStatusCANCELED`，Worker 消费者未同步。
+2. 全量检索命中 17 个 Worker 源码及既有检查文件、24 处引用；本次逐处改用 `worker/internal/contracts/generated/contracts.go::TaskStatusCANCELED`。未修改生成代码、Schema、四侧序列化格式、API 或数据库；未添加兼容别名。Activity、Workflow 和既有取消检查统一消费同一生成常量。
+3. 变化仅为 Go 标识符，线上值仍是 `CANCELED`；Workflow 分支、Activity 调度、投影时序、取消重试及 continue-as-new 不变。未知状态仍拒绝或保留 UNKNOWN，取消请求仍不等于已核验终态；没有新增状态或第二份权威。
+4. 空输入、重复取消、撤权、结果不明及部分完成继续沿既有实现处理；不增加 Workflow version 分支或数据迁移，不以生成符号修复改变旧 history。既有 Worker 检查和 replay 检查负责复核这些边界。
 
-首次窄验证报 `component_task.go:275:39: undefined: generated.Failed`，实际退出 1，原件为 `/volumes/data/kailo/tmp/codex-delete-candidate-worker-20261002.faLez0/{go-verify,exit}.log`。共享 ResourceState 引入同名 `FAILED` 后，原 Go 生成器将 TaskStatus 常量命名为 `TaskStatusFAILED`；唯一生产引用与两个既有 suspension 检查各两处断言已机械同步，线格式仍为 `"FAILED"`，没有新测试、重放 history 或夹具。
-
-该轮仅在不可变检查镜像 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82` 执行：
-
-```bash
-gofmt -l activities/core_api.go workflows/component_task.go workflows/tenant_suspension_test.go workflows/workspace_suspension_test.go internal/contracts/generated/contracts.go
-go vet ./activities ./workflows ./replay-tests
-go test ./workflows ./replay-tests
-```
-
-格式检查无输出；workflows 与 replay-tests 均 `ok`，attach 与容器终态退出 0。日志为 `/volumes/data/kailo/tmp/codex-delete-candidate-worker-final-20261002.n9kk40/{preflight,limits,go-verify,exit}.log`，SDK UID/GID 1000、实际 4 CPU/6 GiB、无额外 swap，依赖缓存来自 `/volumes/data/kailo/check-cache`。未使用宿主 Go，也未新增检查。
-
-该结果对应 Session 字段闭合后的生成物，先于 Customer 消费所需 `BindingNotActive/RateLimited` 两项 reason code 纳入；其后重新生成的 Go 文件不能借用这次退出码声称已经再验证。后续实际合并输入由批末既有门禁分别核验。
-
-两项 reason code 闭合后的原 `tools/gen.sh` 与 `--check` 已实际退出 0，四侧与 Mobile catalog 同步，日志在 `/volumes/data/kailo/tmp/codex-delete-candidate-reasons-gen-20261002.1ReYtS/`；这一次没有运行 Go vet/workflows/replay，不当作第二次 Worker 通过。
-
-本轮没有新 DELETE 录制历史，没有实际原生 CAS 保留统计、四类 provider 合流、不可逆窗口取消或结果不明的业务验收；现有 replay 通过不证明这些新增路径。候选尚未提交、push、构建或部署，不把上述窄验证记为 Stage 3 完成。四侧最终生成与 Core 的真实失败另见 [Tenant 删除记录](../../core/verify/tenant-deletion.md)。
-
-## TaskStatus 生成常量消费者收口（2026-10-11 UTC）
-
-本节保留上述历史证据，只记录独立的 Worker 编译修复。基线为
-`a94d0ed35a843003f83ae4e977527ee2f806e3d4`，精确源码候选树为
-`f92cbdb48782d378994ae40c401e69d1979cab28`；本节是验证后追加，未包含在该源码树中。
-
-1. 权威为 `.design/06` 的 TaskProjection 与取消收尾合同，以及
-   `contracts/enums/task_status.schema.json` 的既有 `CANCELED`。
-   `c442f2bb6e5c9e4db624057fe756272574a807f2` 的生成变更将 Go 符号
-   `Canceled` 消歧为 `TaskStatusCANCELED`，但消费者未同步。基线生成文件
-   `worker/internal/contracts/generated/contracts.go::TaskStatusCANCELED`
-   已有该常量；本批不修改 Schema 或生成代码。
-2. 全 Worker 源码检索得到 17 个 Go 文件的 24 处旧引用，涉及五个 Activity
-   消费者、Agent/组件/绑定/协议会话 Workflow、Tenant 删除取消投影及既有检查。
-   精确候选仅替换这 24 处常量名；`component_release_test.go` 的未提交
-   reconcile 类型变化未混入。没有新增 API、字段、别名、迁移或执行入口。
-3. 线格式仍为 `CANCELED`，分支、Activity 调度、投影时序、取消重试和
-   continue-as-new 未变，不增加 Temporal version 分支或第二份状态权威。
-   取消请求不是终态证据；未知响应、超时及撤权后的收敛沿原逻辑，仍不可把
-   UNKNOWN 当作成功或失败。
-4. 空输入、重复投递、并发取消、部分完成及恢复后重入没有新的行为或兼容格式。
-   该变更不涉及 secret、quota 或租户存储；六类错误的原分类不变。
-   既有 Workflow 与 replay 检查复核原路径，不据此声称完整故障演练或业务验收。
-
-验证复用固定 SDK 镜像
-`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
-Go `1.25.14`；执行 UID/GID `1000:1000`，实际 cgroup 为
-`cpu.max=400000 100000`、`memory.max=8589934592`、`memory.swap.max=0`。
-候选与基线由各自 Git 树导出，构建缓存及临时目录均位于
-`/volumes/data/kailo/tmp/worker-canceled-compile.srdpyp`；已有 Go 模块缓存只读挂载，
-不与原全量检查并行写入共享缓存。未调用宿主 Go，结束时已停止验证容器。
-
-基线执行 `go test ./activities -run '^$'` 实际退出 `1`：
+原全量检查冻结树 `c381e68b783b1860c510128126bba3c9a58556b9` 报 `FAIL go vet`。在同一受限 SDK 容器重现的 `go vet ./...` 退出码为 `1`，首个原始错误：
 
 ```text
 activities/agent_installation.go:33:105: undefined: generated.Canceled
-activities/agent_task.go:107:105: undefined: generated.Canceled
-activities/application_binding.go:23:77: undefined: generated.Canceled
-activities/component_action.go:21:77: undefined: generated.Canceled
-activities/protocol_session.go:67:48: undefined: generated.Canceled
-FAIL apps/worker/activities [build failed]
 ```
 
-精确候选随后串行执行：
-
-- 对 17 个变更文件执行 `gofmt -l`：输出为空；`git diff --check` 退出 `0`。
-- `go vet ./...`：退出 `0`。
-- `go test ./... -run '^$'`：退出 `0`，只证明全包编译，不冒充测试执行。
-- `go test ./activities ./workflows ./replay-tests -count=1`：退出 `0`，三个包均 `ok`。
-- 固定基线就是本轮反例，旧符号真实导致失败；候选恢复对同一生成权威的消费后通过。
-  没有新增测试或修改既有断言语义。
-
-原始输出分别为上述 Data 目录的 `baseline-compile.log`、`candidate-format.log`、
-`candidate-vet.log`、`candidate-compile.log` 与 `candidate-tests.log`。
-本轮没有运行 contracts 的业务往返检查；其 Agent Session/Invocation 时间格式问题
-不属于本次常量修复，见 [Agent Session 查询](../../core/verify/agent-session-query.md)。
-没有重跑全量检查、修改正式工作树的其他脏改动、构建发布镜像或部署 Worker；
-窄检查通过不等于全局门禁通过、Cells 治理接入完成或生产就绪。
+修复后 `git diff --check -- worker` 退出码 `0`，全 Worker Go 源码不再引用 `generated.Canceled`。原 4 CPU / 8 GiB SDK 的独立输入目录中，串行 `go vet ./...` 通过后执行 `go test ./... -count=1`；Worker 主包、activities、workflows 与 replay-tests 均 `ok`，但 contracts 的两项 Agent Session/Invocation 时间字符串往返失败，整体退出 `1`。实际结果保存在 `/volumes/data/kailo/tmp/component-delivery-commit.CVKZK5/worker-enum-corrected.log`；契约修正单独记录于 [Agent Session 查询](../../core/verify/agent-session-query.md)。原全量检查输入没有修改，其失败不会被专项结果覆盖。所有临时输入、日志与缓存位于 `/volumes/data`，未新增检查脚本或重建 SDK。

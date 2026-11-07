@@ -13,8 +13,8 @@ artifacts:
     build_context: .
     build_dockerfile: knowledge/adapter/Dockerfile
     inputs: [knowledge/adapter/Dockerfile, knowledge/adapter/Dockerfile.dockerignore, knowledge/adapter/package.json, knowledge/adapter/package-lock.json, knowledge/adapter/src/, client-kit/adapter/]
-    source_digest: sha256:445218b2b6a37da5c2a954dba10bf717e7575633241394216464e1ebf4b10728
-    artifact_digest: sha256:9bc691583482ad380e9e68da7a5d4b819048d1f3b1827368659f72b7d159e6af
+    source_digest: sha256:a347044c60daa41b6cb09ddce24f882e7629b38f6fce0dab092e7eb7fc0c1dbf
+    artifact_digest: sha256:809ef154fb4844889130964012b5ead999726951d3b1267a5a174a485d913048
     blocked: The frozen adapter candidate built, pushed and passed immutable registry digest readback; it is not deployed. Live Agent activation audit, approved release/binding and full component conformance remain unverified. See fork/verify/release-20261009-272693.md.
   - name: knowledge-service
     kind: image
@@ -25,7 +25,7 @@ artifacts:
     build_args: [GOPROXY_ARG, VERSION_ARG, COMMIT_ID_ARG, BUILD_TIME_ARG, GO_VERSION_ARG]
     source_digest: sha256:604dacedbc7723613ffacd779745a01f3de847c0c9080e5bcef8e00aa2e11421
     artifact_digest: sha256:8ba3155024c39f62ba70fc9141ee092448737cfcae82fc283204f48feb8dc2dd
-    blocked: The frozen pending-sync recovery candidate built and reached the local registry with immutable digest readback; this candidate is not deployed. Frozen model credential delivery, approved release/binding and governed tools/resources acceptance remain unverified. The earlier deployed backend remains historical; see fork/verify/release-20261009-272693.md.
+    blocked: The source-matched pending-sync recovery backend is independently deployed with immutable digest readback, healthy app, unchanged clean schema and native frontend OIDC configuration reachability. Frozen model credential delivery, approved release/binding and governed tools/resources acceptance remain unverified; see fork/verify/release-20261009-272693.md.
   - name: knowledge-native-ui
     kind: image
     build_context: knowledge/frontend
@@ -39,9 +39,9 @@ artifacts:
     build_context: knowledge
     build_dockerfile: knowledge/docker/Dockerfile.docreader
     inputs: [knowledge/docker/Dockerfile.docreader, knowledge/.dockerignore, knowledge/packages/, knowledge/docreader/]
-    source_digest: none
-    artifact_digest: none
-    blocked: Current declared knowledge source inputs have no matching reader artifact; prior deployed reader remains historical and native document processing acceptance remains unverified.
+    source_digest: sha256:497ae729cd498cf4c888aebfce8301b82344f064622cecb2f2206b69fa2faa3f
+    artifact_digest: sha256:71a532b8231956669e25faf45379ef12756f0918889522f134426bf4d7ffa83c
+    blocked: The source-matched native reader is independently deployed; engine listing and synthetic bilingual Markdown parsing passed. Governed document ingestion, model execution, retrieval and file-storage synchronization remain unverified. See fork/verify/release-20261009-272693.md.
 
 source_facts: [SF-WEK-01, SF-WEK-02, SF-WEK-03, SF-WEK-06, SF-WEK-12]
 source_seams: [SS-WEK-ASYNC-TRACE, SS-WEK-LLM-CTX]

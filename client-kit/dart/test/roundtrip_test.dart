@@ -92,7 +92,6 @@ void main() {
       sample['lookup'],
     );
   });
-
   test('Delay deadline preserves independent duration and legacy absence', () {
     final sample =
         jsonDecode(
@@ -395,14 +394,8 @@ void main() {
       );
       final legacy = Map<String, dynamic>.from(sample['result'])
         ..remove('readAdmission');
-      expect(
-        NativeHumanActionRequest.fromJson(sample['writerRequest']).toJson(),
-        sample['writerRequest'],
-      );
-      expect(
-        NativeHumanActionResult.fromJson(sample['writerResult']).toJson(),
-        sample['writerResult'],
-      );
+      expect(NativeHumanActionRequest.fromJson(sample['writerRequest']).toJson(), sample['writerRequest']);
+      expect(NativeHumanActionResult.fromJson(sample['writerResult']).toJson(), sample['writerResult']);
       expect(NativeHumanActionResult.fromJson(legacy).toJson(), legacy);
       expect(
         NativeHumanActionRequest.fromJson(sample['resourceRequest']).toJson(),
@@ -621,20 +614,8 @@ void main() {
     for (final value in [
       sample,
       <String, dynamic>{'view': 'PROJECTS'},
-      {
-        ...sample,
-        'view': 'WORK_ITEMS',
-        'coordinates': (sample['coordinates'] as List)
-            .map((value) => (value as String).replaceFirst('30621:', '30617:'))
-            .toList(),
-      },
-      {
-        ...sample,
-        'view': 'WORK_ITEM_ACTIVITY',
-        'coordinates': (sample['coordinates'] as List)
-            .map((value) => (value as String).replaceFirst('30621:', '30617:'))
-            .toList(),
-      },
+      {...sample, 'view': 'WORK_ITEMS', 'coordinates': (sample['coordinates'] as List).map((value) => (value as String).replaceFirst('30621:', '30617:')).toList()},
+      {...sample, 'view': 'WORK_ITEM_ACTIVITY', 'coordinates': (sample['coordinates'] as List).map((value) => (value as String).replaceFirst('30621:', '30617:')).toList()},
     ]) {
       expect(ProjectsQueryRequest.fromJson(value).toJson(), value);
     }

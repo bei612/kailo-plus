@@ -1,6 +1,6 @@
 # ADR-16：apps 目录与包名按功能命名、二开项目以完整项目直接开发，并持续跟踪上游变化
 
-- 状态：已接受（取代 ADR-15 的目录布局——`apps/upstream/<项目>/`——与 `vendor_files` 构建时放置两部分；ADR-15 的其余决策继续有效）
+- 状态：已接受（取代 ADR-15 的目录布局——`apps/upstream/<项目>/`——与 `vendor_files` 构建时放置两部分；ADR-15 的其余决策继续有效）；本地路径依赖的具体解析方式（pnpm `file:` 与 npm `install-links`，peer 由使用方解析）由 [ADR-18](ADR-18-client-kit-peer-resolution.md) 细化，正文中 `file:`/`link:` 的写法以 ADR-18 为准
 - 日期：2026-09-29
 - 决策者：Kailo 实施工程负责人
 

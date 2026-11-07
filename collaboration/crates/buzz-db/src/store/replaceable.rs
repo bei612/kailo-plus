@@ -409,6 +409,30 @@ impl Db {
                 )
                 .await?;
 
+                if kind_i32 == buzz_core::kind::KIND_NIP29_GROUP_METADATA as i32 {
+                    let channel = channel_id.ok_or_else(|| DbError::InvalidData(
+                        "channel metadata requires its channel scope".into(),
+                    ))?;
+                    // Topic commands update this same row in their event transaction.
+                    // Hold it through replacement: an older publisher must not persist
+                    // its captured topic after a newer command has committed.
+                    let topic: Option<Option<String>> = sqlx::query_scalar(
+                        "SELECT topic FROM channels WHERE community_id=$1 AND id=$2 \
+                         AND deleted_at IS NULL FOR SHARE",
+                    )
+                    .bind(community_id.as_uuid()).bind(channel)
+                    .fetch_optional(&mut *tx).await?;
+                    let topic = topic.ok_or(DbError::ChannelNotFound(channel))?.unwrap_or_default();
+                    let topic_tags: Vec<_> = event.tags.iter()
+                        .filter(|tag| tag.as_slice().first().is_some_and(|key| key == "topic"))
+                        .map(|tag| tag.as_slice()).collect();
+                    let matches = if topic.is_empty() { topic_tags.is_empty() }
+                        else { topic_tags.len() == 1 && topic_tags[0] == ["topic", topic.as_str()] };
+                    if !matches || crate::event::extract_d_tag(event).as_deref() != Some(channel.to_string().as_str()) {
+                        return Err(DbError::InvalidData("channel topic snapshot is stale or malformed".into()));
+                    }
+                }
+
                 // Check for the newest existing event. ORDER BY + LIMIT 1 is defensive against
                 // historical data where prior bugs may have left multiple live rows.
                 let existing: Option<(chrono::DateTime<chrono::Utc>, Vec<u8>)> =

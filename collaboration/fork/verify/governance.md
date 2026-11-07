@@ -527,3 +527,38 @@ Desktop 修正后 tsc 退出 0；随后误用不存在的 Desktop Vitest 路径�
 `codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`
 下 `attachments-{shared,web,desktop-final,mutation,web-restored}.log`；共享 DM
 与 pages 的启动超时后续由同批负责人沿同一 SDK 收口，不能复用旧批通过。
+
+### 2026-10-11 原版页面恢复后的既有检查操作路径
+
+REQ-24 的固定 Buzz 基准仍为 `779af8886caae1317b4de962082429867ab61503`。
+重新读取原 `desktop/src/features/workflows/ui/WorkflowDeleteDialog.tsx::WorkflowDeleteDialog`、
+`desktop/src/features/workflows/ui/workflowDefinition.ts::getWorkflowCardLabel` 和
+`desktop/src/shared/ui/alert-dialog.tsx::AlertDialogOverlay`，并沿共享页面的
+真实控件与详情读取链复核两份既有检查。步骤 textarea 通过 label.control
+定位；版本编辑走原 Edit；删除走原 alertdialog 的 Delete；精确安装版本与
+Principal 在 View installation 后核对。原卡片摘要和精确黑色遮罩逐项核验，
+没有扩大颜色豁免。不存在控件即明确失败，不按空值跳过断言。
+
+影响仅 `pages.test.tsx`、`workflow-actions.test.tsx` 的操作与显示位置断言；
+未修改页面、执行逻辑、契约、数据迁移或授权权威。Web/Desktop 同源不变，
+Mobile 无适用对象；原权限、确认、UNKNOWN、精确版本与同请求幂等断言保留。
+这属于恢复后的证据修正，不是用旧检查把产品页面改回精简布局。
+
+原 full 的 22 项失败不改写。受限 SDK 4 CPU / 4 GiB 的首次 forks 复跑
+因 worker 启动超时退出 1、no tests；同一锁定依赖改用 threads 单 worker
+后，17851 实际退出 0，`2 passed / 309 passed`。随后仅在 Data 私有副本把
+AutomationManagement.prepare 的 explicitConfirmation 改为 false，5839
+实际退出 1，`1 failed / 269 skipped`，差异正是 expected true / received false。
+已原字节还原并与正式 agents.tsx 比较退出 0。没有修改正式对象去绕过断言。
+31956 的 `tsc --noEmit -p tsconfig.test.json` 通过后，还原复跑在启动 threads
+worker 时超时，退出 1、no tests，不能记作还原后运行通过。
+随后相同 SDK、字节、限额的 40369 实际退出 0：`1 passed / 269 skipped`，
+仅选择被破坏的删除确认用例；由此补齐实际还原运行证据。原超时记录保留。
+consumer-restored-final.log SHA-256 为
+`ee0f12c55663bcaee93a77565d13a2c1b1ee365c26ee26f7d2e78411ee017a84`。
+日志目录 `ui-restored-consumers.IjIJBy` 位于 Data 的 Kailo 临时目录；
+consumer-check.log SHA-256 为
+`66de0d9b9654f74b288d67dfb4ae8ecd63b50a6894e9d28b3cfc2e24109501a4`，
+consumer-negative.log 为
+`af50f0f99582cbd05db68225314bc392cdbeca695f4a948d2dd94f0a19e4a48e`。
+这不是浏览器截图、Desktop/Mobile 设备验收、全量上游一致性或全局门禁通过。

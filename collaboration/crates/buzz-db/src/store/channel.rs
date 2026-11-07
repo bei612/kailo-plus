@@ -380,6 +380,40 @@ pub async fn list_channels(
     .await
 }
 
+async fn topic_snapshot_candidates(
+    pool: &PgPool,
+    community_id: CommunityId,
+    relay_pubkey: &[u8],
+    after: Option<Uuid>,
+    operation: crate::observability::WriterOperation,
+) -> Result<Vec<Uuid>> {
+    let mut connection = crate::observability::acquire_writer(pool, operation).await?;
+    // Current Channel rows are the authority. No retry table or second topic
+    // projection is needed: missing/stale discovery remains a candidate until
+    // the original publisher has persisted its matching relay-signed snapshot.
+    Ok(sqlx::query_scalar(
+        "SELECT c.id FROM channels c \
+         LEFT JOIN LATERAL (SELECT e.tags FROM events e \
+          WHERE e.community_id=c.community_id AND e.channel_id=c.id \
+           AND e.kind=39000 AND e.pubkey=$2 AND e.deleted_at IS NULL \
+          ORDER BY e.created_at DESC,e.id ASC LIMIT 1) snapshot ON true \
+         WHERE c.community_id=$1 AND c.deleted_at IS NULL AND c.topic_set_at IS NOT NULL \
+          AND ($3::uuid IS NULL OR c.id>$3) \
+          AND (snapshot.tags IS NULL OR \
+           COALESCE((SELECT jsonb_agg(tag) FROM jsonb_array_elements(snapshot.tags) tag \
+             WHERE tag->>0='topic'),'[]'::jsonb) IS DISTINCT FROM \
+           CASE WHEN COALESCE(c.topic,'')='' THEN '[]'::jsonb \
+             ELSE jsonb_build_array(jsonb_build_array('topic',c.topic)) END) \
+         ORDER BY c.id LIMIT $4",
+    )
+    .bind(community_id.as_uuid())
+    .bind(relay_pubkey)
+    .bind(after)
+    .bind(crate::event::DEFAULT_MAX_PAGE_LIMIT)
+    .fetch_all(&mut *connection)
+    .await?)
+}
+
 async fn list_channels_with_operation(
     pool: &PgPool,
     community_id: CommunityId,
@@ -940,6 +974,40 @@ impl Db {
             community_id,
             visibility,
             crate::observability::WriterOperation::Bootstrap,
+        )
+        .await
+    }
+
+    /// Keyset page of missing/stale topic discovery during the startup sweep.
+    pub async fn topic_snapshot_candidates_for_bootstrap(
+        &self,
+        community_id: CommunityId,
+        relay_pubkey: &[u8],
+        after: Option<Uuid>,
+    ) -> Result<Vec<Uuid>> {
+        topic_snapshot_candidates(
+            &self.pool,
+            community_id,
+            relay_pubkey,
+            after,
+            crate::observability::WriterOperation::Bootstrap,
+        )
+        .await
+    }
+
+    /// The same canonical comparison during the existing periodic sweep.
+    pub async fn topic_snapshot_candidates_for_maintenance(
+        &self,
+        community_id: CommunityId,
+        relay_pubkey: &[u8],
+        after: Option<Uuid>,
+    ) -> Result<Vec<Uuid>> {
+        topic_snapshot_candidates(
+            &self.pool,
+            community_id,
+            relay_pubkey,
+            after,
+            crate::observability::WriterOperation::Maintenance,
         )
         .await
     }

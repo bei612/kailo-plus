@@ -419,6 +419,12 @@ for mf in sorted(glob.glob("*/fork/upstream.yaml")):
 
 files = sorted(glob.glob("tools/traceability/*.yaml"))
 bad = []
+# 发布目标准入（main 的 --target，DD-91）：只有目标产物的 digest 脱节阻断；范围外的只提示，
+# 全量门禁照旧拒绝。不带目标时 scope 为 None，判定与原来逐字一致。
+scope = set(os.environ.get("RELEASE_ARTIFACTS", "").split()) or None
+scoped_out = []
+def digest_issue(name, msg):
+    (bad if scope is None or name in scope else scoped_out).append(msg)
 for f in files:
     r = yaml.safe_load(open(f, encoding="utf-8")) or {}
     cid = r.get("capability_id", f)
@@ -477,11 +483,11 @@ for f in files:
         got = upstream_artifacts.get(name)
         if got:
             if dg != got[1]:
-                bad.append(f"{cid}: 产物 {name} 的 digest 与 {got[0]} 的 artifact_digest 不一致")
+                digest_issue(name, f"{cid}: 产物 {name} 的 digest 与 {got[0]} 的 artifact_digest 不一致")
         elif name in ("core", "worker"):
             # 自建发布单元（tools/release.sh）：dist/<单元>.<digest>.spdx.json
             if not os.path.exists(f"dist/{name}.{dg.removeprefix('sha256:')}.spdx.json"):
-                bad.append(f"{cid}: 产物 {name} 的 digest 在 dist/ 中没有对应的发布产物")
+                digest_issue(name, f"{cid}: 产物 {name} 的 digest 在 dist/ 中没有对应的发布产物")
         else:
             bad.append(f"{cid}: 产物 {name} 既不是 */fork/upstream.yaml 登记的产物，也不是自建单元 core/worker")
 # 规则 7（契约侧）：契约枚举值同样不含实现产品名
@@ -490,6 +496,8 @@ for ef in sorted(glob.glob("contracts/enums/*.schema.json")):
     for v in (json.load(open(ef, encoding="utf-8")).get("enum") or []):
         if product_hits(v):
             bad.append(f"{ef}: 枚举值 {v} 含实现产品名 {product_hits(v)}")
+for x in scoped_out:
+    print(f"  \033[33mNOTE\033[0m 不属于发布目标 {os.environ.get('RELEASE_TARGET')}，全量门禁仍拒绝：{x}")
 if bad:
     print("  \033[31mFAIL\033[0m"); [print("   ", b) for b in bad]; sys.exit(1)
 if not files:
@@ -683,11 +691,27 @@ t02 = open(glob.glob(f"{d}/02-*.md")[0], encoding="utf-8").read()
 known = set(re.findall(r"^\| ((?:SF|SS)-[A-Z]+-[A-Z0-9-]+) \|", t02, re.M))
 hexes = set(re.findall(r"\b[0-9a-f]{40}\b", t02))
 bad, notes, n, arts = [], [], 0, 0
+# 发布目标准入（main 的 --target，DD-91）：结构检查全量照旧；「由当前源码构建」只对目标产物阻断，
+# 范围外产物过期只提示，全量门禁照旧拒绝。不带目标时 scope 为 None，判定与原来逐字一致。
+scope = set(os.environ.get("RELEASE_ARTIFACTS", "").split()) or None
+target = os.environ.get("RELEASE_TARGET")
+digest = re.compile(r"sha256:[0-9a-f]{64}")
 for tree, f in um.records().items():
     n += 1
     m = um.load(f)
     # 结构、删除路径、vendor 目标，以及每个已登记产物「由当前源码构建」（source_digest 重算一致）
-    bad += [f"{f}: {b}" for b in um.problems(f, m)]
+    bad += [f"{f}: {b}" for b in um.problems(f, m, check_digest=scope is None)]
+    for a in (m.get("artifacts") or []) if scope is not None else []:
+        name, art, src = a.get("name"), str(a.get("artifact_digest") or ""), str(a.get("source_digest") or "")
+        if name in scope and not digest.fullmatch(art):
+            bad.append(f"{f}: 发布目标 {target} 的产物 {name} 没有登记构建（artifact_digest 为 {art or '空'}）")
+        if digest.fullmatch(art) and digest.fullmatch(src) and src != (want := um.source_digest(a)):
+            msg = (f"{f}: {name}: artifact 不是由当前源码构建——source_digest 记为 {src}，当前源码为 {want}；"
+                   "改了源码就必须用 tools/build-upstream.sh 重建并写回")
+            if name in scope:
+                bad.append(msg)
+            else:
+                notes.append(f"不属于发布目标 {target}，全量门禁仍拒绝：{msg}")
     # 基准 commit 必须可解析：.references 的对象库或上游远端里真的有它
     if re.fullmatch(r"[0-9a-f]{40}", str(m.get("implementation_base_commit"))):
         try:
@@ -712,7 +736,11 @@ for x in notes:
     print(f"  \033[33mNOTE\033[0m {x}")
 if bad:
     print("  \033[31mFAIL\033[0m"); [print("   ", b) for b in bad]; sys.exit(1)
-print(f"  \033[32mPASS\033[0m {n} 份来源记录：基准可解析、设计引用闭合、证据可达、{arts} 个产物由当前源码构建")
+if scope is not None:
+    print(f"  \033[32mPASS\033[0m {n} 份来源记录：基准可解析、设计引用闭合、证据可达；"
+          f"发布目标 {target} 的产物 {' '.join(sorted(scope))} 由当前源码构建")
+else:
+    print(f"  \033[32mPASS\033[0m {n} 份来源记录：基准可解析、设计引用闭合、证据可达、{arts} 个产物由当前源码构建")
 PY
   return 0
 }
@@ -1489,6 +1517,34 @@ step_docs()     { hdr "10/10 文档、runbook 与 release note 同步"
   return 0
 }
 
+# 发布目标准入（DD-91、03 §6）：目标是 deploy/local/compose.yaml 的服务名，适用产物由该服务
+# 按 digest 引用的镜像名推出，须是 */fork/upstream.yaml 登记的产物。全部步骤照常执行；只有
+# 第 6 步的追溯 digest 与第 8 步的「由当前源码构建」按目标收窄——目标产物过期或缺证据仍失败，
+# 范围外产物的差异只提示。结论只对本 commit 与本目标成立，不是全量通过。
+release_target() {
+  local svc=$1 arts
+  [[ "$svc" =~ ^[a-z][a-z0-9-]*$ ]] || { echo "拒绝检查：--target 需要 compose 服务名" >&2; return 2; }
+  arts=$(python3 - "$svc" <<'PY'
+import glob, re, sys, yaml
+svc = sys.argv[1]
+services = (yaml.safe_load(open("deploy/local/compose.yaml", encoding="utf-8")) or {}).get("services") or {}
+if svc not in services:
+    sys.exit(f"拒绝检查：deploy/local/compose.yaml 没有服务 {svc}")
+names = set()
+for mf in glob.glob("*/fork/upstream.yaml"):
+    names |= {str(a.get("name")) for a in (yaml.safe_load(open(mf, encoding="utf-8")) or {}).get("artifacts") or []}
+img = str(services[svc].get("image") or "")
+m = re.search(r"/([a-z][a-z0-9-]*)@sha256:[0-9a-f]{64}$", img)
+if not m or m.group(1) not in names:
+    sys.exit(f"拒绝检查：服务 {svc} 的镜像不是 */fork/upstream.yaml 登记、按 digest 引用的产物（{img or '无 image'}）")
+print(m.group(1))
+PY
+) || return 2
+  export RELEASE_TARGET=$svc RELEASE_ARTIFACTS=$arts
+  hdr "发布目标 $svc（commit $(git rev-parse HEAD)）"
+  printf '  适用产物：%s。范围外产物的摘要差异只提示；结论只对本 commit 与本目标成立，不是全量通过。\n' "$arts"
+}
+
 main() {
   if [ ! -f /.dockerenv ]; then
     run_in_check_container "$@"
@@ -1501,6 +1557,7 @@ main() {
   local want=("${STEPS[@]}")
   case "${1:-}" in
     --full|"") ;;
+    --target) release_target "${2:-}" || exit 2 ;;
     *) want=("$1") ;;
   esac
   for s in "${want[@]}"; do
@@ -1509,7 +1566,12 @@ main() {
     "step_$s"
   done
   echo
-  [ "$FAIL" -eq 0 ] && echo "全部通过。" || echo "存在失败项，见上。"
+  if [ -n "${RELEASE_TARGET:-}" ]; then
+    [ "$FAIL" -eq 0 ] && echo "发布目标 $RELEASE_TARGET 准入通过（commit $(git rev-parse HEAD)；不是全量通过）。" \
+      || echo "发布目标 $RELEASE_TARGET 准入存在失败项，见上。"
+  else
+    [ "$FAIL" -eq 0 ] && echo "全部通过。" || echo "存在失败项，见上。"
+  fi
   exit "$FAIL"
 }
 main "$@"

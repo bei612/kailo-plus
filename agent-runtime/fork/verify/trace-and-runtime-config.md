@@ -1,11 +1,13 @@
-# Codex：SS-COD-TRACE 补丁与 SS-COD-RUNTIME/SS-COD-APP 固定配置核验
+# Codex：SS-COD-TRACE 原生改动与 SS-COD-RUNTIME/SS-COD-APP 固定配置核验
 
 基线 openai/codex@`7498521d288b9b3b96ffba4eedf089d8d6e06a84`（`.design/02` §1 Codex 行）。源树由
-`UPSTREAM_MIRROR=<本机 openai/codex 克隆> tools/build-upstream.sh --source-only <目录> codex` 重建，与开发树逐文件比对只差 vendor 目标 `kailo/`。以下路径相对 `codex-rs/`。
+`agent-runtime/` 完整原生源码树承载，改动直接在树内；与固定上游的差异使用
+`python3 tools/upstream_manifest.py diff agent-runtime --name-status` 复核（ADR-16），
+不使用补丁叠加或构建时 vendor 拷贝。以下 Rust 路径相对 `agent-runtime/codex-rs/`。
 
 ## 1. SS-COD-TRACE：模型请求带 Core 的 operation trace
 
-补丁 `0001-model-request-traceparent.patch`：
+原生源码改动：
 
 - `model-provider-info/src/lib.rs::ModelProviderInfo::build_header_map` 在合并 `http_headers`/`env_http_headers` 之后调用 `codex_otel::inject_span_w3c_trace_headers(&tracing::Span::current(), &mut headers)`。上游这个函数原先只在 `exec-server/src/client/route_aware_http_client.rs::RouteAwareHttpRequestRunner::run` 调用。
 - `model-provider-info/Cargo.toml` 增加 `codex-otel`、`tracing`（测试另加 `opentelemetry`、`opentelemetry_sdk`、`tracing-opentelemetry`、`tracing-subscriber`），`Cargo.lock` 随之更新。依赖不成环：`codex-otel` 不依赖 `codex-model-provider-info`。
@@ -15,7 +17,10 @@
 
 前提是配置了 OTel trace：只有设置 `[otel] trace_exporter` 时，app-server 才会安装 tracing layer（`app-server/src/otel_reloader.rs::layers`），span 才有 OTel context。没配置时 `inject_span_w3c_trace_headers` 不写任何 header，行为与上游相同，usage 归因仍按 DD-21 取 `NONE`。
 
-结果：
+历史核验结果（保留原执行条件）：
+
+下表是原核验记录，不是 2026-10-01 镜像工具链重新执行的结果，也不证明当前
+运行镜像已构建、部署或 Core 的真实 Agent turn 已完成用量关联。
 
 | 检查 | 结果 |
 |---|---|
@@ -28,7 +33,8 @@
 
 ## 2. SS-COD-RUNTIME / SS-COD-APP：只靠配置
 
-固定配置在 `config/` 下，经 vendor_files 放进源树，再由 `packaging/Dockerfile` 装入镜像：
+固定配置在 `agent-runtime/fork/runtime-config/`，由
+`agent-runtime/fork/packaging/Dockerfile` 直接装入镜像；不经过 vendor_files：
 
 | 文件 | 镜像内位置 | 作用层 |
 |---|---|---|
@@ -49,16 +55,42 @@
 | shell_tool（纵深） | requirements `[features] shell_tool = false` | `add_shell_tools` | 有效值 false，覆写无效 |
 | remote control、login shell | requirements `allow_remote_control = false`、`allow_login_shell = false` | `app-server/src/lib.rs` 的 `RemoteControlPolicy::DisabledByRequirements` | 未单独实测 |
 
-配置层面没有关不掉的项，没有为此打补丁。
+上述配置约束保留原实测范围；没有为这些配置另写原生控制逻辑。
 
 ## 3. 核验中观察到的部署相关事实
 
 - 用验证端点（vLLM，模型 `qwen`）跑 turn，结果是 `failed`：`Unexpected message role.`（400）。直接请求该端点可以复现：Responses 输入里的 `developer` 角色被拒，`system`/`user` 正常。Codex 的 Responses 请求固定会携带 developer 消息，因此该端点不能直接作为 Codex 的 provider 后端。
 - 启动时 Codex 会从网络拉取插件目录，写到 `CODEX_HOME/.tmp/plugins`。这是与模型无关的出网行为。
 - 模型可见工具里仍有 `web_search`、`multi_agent_v1`、`request_user_input` 与 goals，不在本切片范围内，只在此登记。
-- `build-upstream.sh` 在登记了 `build_dockerfile` 时按“安装包”处理（`--output type=local`，要求恰好 1 个文件）。本镜像是运行镜像，最后阶段导出的是整个根文件系统，不满足这个条件，所以本清单的 `artifact_digest` 为 `none`。
+- 原记录中的“`build-upstream.sh` 把运行镜像当安装包”限制已不适用于当前入口。
+  2026-10-01 实际读取 `tools/build-upstream.sh`：`kind: image` 使用 buildx
+  `--load`，推入配置的 registry 后记录真实镜像 digest；只有安装包分支使用
+  `--output type=local`。这证明入口的当前分支，不证明本运行镜像构建已成功。
 
-## 4. 2026-10-06 非临时线程出生回执的持久性
+## 4. 2026-10-01 当前交付边界
+
+固定 commit 的实际复核：
+
+```bash
+git -C ../.references/codex grep -n inject_span_w3c_trace_headers 7498521d288b9b3b96ffba4eedf089d8d6e06a84 -- codex-rs/core codex-rs/model-provider-info codex-rs/otel codex-rs/exec-server
+python3 tools/upstream_manifest.py diff agent-runtime --name-status
+```
+
+固定源码在 `core` 与 `model-provider-info` 没有该注入器调用；`otel` 定义、导出
+注入器，`exec-server` 的 route-aware HTTP client 使用它。当前原生树的
+`ModelProviderInfo::build_header_map` 已有上述注入，不再重复实现。
+本次上游差异命令实际退出 0，列出 `.gitignore`、`codex-rs/Cargo.lock`、
+`model-provider-info/Cargo.toml`、`model-provider-info/src/lib.rs` 与
+`model_provider_info_tests.rs` 五个修改文件。
+
+当前 `fork/runtime-config/config.toml` 只包含 approval policy/reviewer，没有
+`[otel]` exporter；不能将预留给 Core 的逐 Installation 配置职责写成已完成。
+来源记录的 `source_digest` 与 `artifact_digest` 均为 `none`，本轮没有重新运行
+上表的 Codex SDK 检查，没有新增运行镜像或真实 Agent turn 的验收证据。
+因此历史 trace 核验不解除当前 runtime、Core 生产调用链及模型用量关联的交付门禁；
+缺少真实 correlation 的用量仍按 `DD-21` 取 `NONE`，不能显示为可计费。
+
+## 5. 2026-10-06 非临时线程出生回执的持久性
 
 本批比较基准为 `95abbc4aed07dc14d99b6d4043c049357e22758d`。
 源码已写入，尚未编译或部署新的 Codex；下列原二进制实验不冒充改版验收。
@@ -115,3 +147,43 @@ thread/read 与 thread/resume，没有 model turn，不读真实 CODEX_HOME。
 是 CREATED、session PENDING、没有 native thread 或 lease；占用并行度的是旧
 `db6dfccb-f0db-409a-8ed6-d81e64e277d9` 的 UNKNOWN lease。
 不存在“新调用在 resume 旧 thread”的证据。未重放旧未知任务、修改权限或额度。
+
+## 2026-10-10 新运行产物的出生持久性实测
+
+原入口 `tools/build-upstream.sh agent-runtime` 的句柄 56925 已实际退出 0；
+固定 Rust 1.95.0、Cargo jobs 16、原 Data BuildKit 8 CPU / 16 GiB，
+release 编译及镜像导出、推送完成。来源记录保留 source_digest
+`sha256:8dee2887732b4595d24a5aebefe205cd5d408986733cf49d0c15e0b697f606cb`，
+artifact_digest 更新为
+`sha256:dc14e75f0c843e12432ea90b3608030ca342dfc895d234988a8de0d437389908`。
+本机 image inspect 的不可变摘要和 RepoDigests 均相符；原构建日志
+`/volumes/data/kailo/tmp/build-agent-runtime.7neS5N.log` 保留编译告警，
+没有为告警重复构建。
+
+从该不可变镜像提取的新 codex-app-server SHA-256 为
+`57f083a5f6c7431aeaab2e9f7ec39f7f678f5389cf970708e936df491a945c03`。
+提取用的未启动临时容器已删除，没有删镜像、源码或业务数据。
+实际验证在原 `kailo-wren-native-sdk-vuc6uo`（4 CPU / 4 GiB、无额外 swap）
+内执行；开跑前仅 sleep。数据仅位于独立 Data 测试目录
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/native-birth-artifact.jfC0HG`。
+复用原 stdio initialize → thread/start → 关闭进程 → thread/resume 流程，
+明确 ephemeral=false、environments=[]、allowProviderModelFallback=false；
+测试 provider 不可访问，没有发送 turn/start。
+
+句柄 73566 实际退出 0，两种原生历史模式的输出均为：
+
+- Legacy：出生回执时 rollout 路径存在；冷启动恢复同一
+  `01a127c3-cf80-7fa2-b088-0b0545e8bdb9`，状态 idle。
+- Paginated：出生回执时 rollout 路径存在；冷启动恢复同一
+  `01a127c4-0d53-7963-96ac-f59a5d7a2938`，状态 idle。
+- 分别只移走本实验的 rollout 后，原 thread/resume 均返回 -32600：
+  Legacy 为 file does not exist，Paginated 为 no rollout found。
+  finally 中原字节还原并比较一致，随后两模式均再次恢复同一 ID。
+  两组输出的 modelTurnsSubmitted 均为 0。
+
+这是新产物的出生持久性与缺失文件拒绝实证，不是完整原生 Rust 检查集、
+生产镜像全部配置验收或模型 turn/计费验收。现有 Core 尚未随这枚产物重新
+发布；没有热替换其二进制，没有重放旧 UNKNOWN 或释放历史租约。
+分页历史读取、三个独立人类与多个 Agent 稳定协作、Skills 消费及全量发布
+门禁仍须按各自实际证据收口，不能从本次同 ID 恢复推断已经交付。
+

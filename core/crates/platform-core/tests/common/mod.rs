@@ -275,8 +275,9 @@ pub async fn seed_tenant_fixture(
     sqlx::query(
         "insert into identity.buzz_identity_binding
              (tenant_id, principal_id, pubkey, custody, private_key_secret_ref,
-              private_key_secret_version, private_key_secret_audience, kind, state)
-         values ($1, $2, $3, 'SERVER', $4, $5, $6, 'CONTROL', 'ACTIVE')",
+              private_key_secret_version, private_key_secret_audience,
+              private_key_secret_status, kind, state)
+         values ($1, $2, $3, 'SERVER', $4, $5, $6, 'ACTIVE', 'CONTROL', 'ACTIVE')",
     )
     .bind(f.tenant)
     .bind(f.control_principal)
@@ -359,14 +360,18 @@ pub async fn retire_relay_community(e: &Env, pool: &PgPool, tenant: Uuid) -> Res
     }
 }
 
-pub async fn cleanup(e: &Env, pool: &PgPool, f: &Fixture) {
-    let retired = retire_relay_community(e, pool, f.tenant).await;
-    // 按外键依赖的逆序。编排三张表是后加的——夹具清理漏了它们时，库里会攒下
-    // 一堆孤立的 ActionExecution 与 WorkflowRef，下一次迁移演练就会撞上。
-    //
-    // 失败不吞掉：`let _ = ...` 曾经让「审计外键挡住 Tenant 删除」这件事
-    // 静默发生，库里攒了几轮租户才被发现。清不掉要当场说出来。
+/// 删掉一个夹具 Tenant 名下的全部行，按外键依赖的逆序（唯一一份清单）。
+///
+/// 新增引用 Tenant 的表时只改这里：清单曾在各测试文件里各抄一份，新表只补进了
+/// 其中几份，漏掉的那份在清理时被外键挡住。失败不吞掉，当场说出来；调用方
+/// 随后复核 Tenant 是否真的清掉。
+pub async fn purge_tenant_rows(pool: &PgPool, tenant: Uuid) {
     for sql in [
+        // 邀请行引用签发与开通的 ActionExecution 与 membership（DD-83），先于二者删除
+        "delete from identity.tenant_invitation where tenant_id = $1",
+        // 会话挂在 membership 上
+        "delete from identity.platform_session where tenant_membership_id in
+             (select id from identity.tenant_membership where tenant_id = $1)",
         "delete from projection.workspace_buzz_binding where workspace_id in
              (select id from identity.workspace where tenant_id = $1)",
         "delete from identity.workspace_membership where workspace_id in
@@ -388,10 +393,15 @@ pub async fn cleanup(e: &Env, pool: &PgPool, f: &Fixture) {
         "delete from identity.principal where tenant_id = $1",
         "delete from identity.tenant where id = $1",
     ] {
-        if let Err(e) = sqlx::query(sql).bind(f.tenant).execute(pool).await {
-            eprintln!("夹具清理失败：{sql}\n  {e}");
+        if let Err(err) = sqlx::query(sql).bind(tenant).execute(pool).await {
+            eprintln!("夹具清理失败：{sql}\n  {err}");
         }
     }
+}
+
+pub async fn cleanup(e: &Env, pool: &PgPool, f: &Fixture) {
+    let retired = retire_relay_community(e, pool, f.tenant).await;
+    purge_tenant_rows(pool, f.tenant).await;
     if let Err(e) = sqlx::query(
         "delete from identity.human_identity where id not in
          (select human_identity_id from identity.tenant_membership)
@@ -889,42 +899,7 @@ pub async fn teardown_live_workspace(e: &Env, pool: &PgPool, fx: &LiveWorkspace)
             ])
             .output();
     }
-    for sql in [
-        // 夹具 Tenant 里其他成员的会话（add_tenant_member 开通的人经 BFF 建立过会话）
-        "delete from identity.platform_session where tenant_membership_id in
-             (select id from identity.tenant_membership where tenant_id = $1)",
-        "delete from projection.workspace_buzz_binding where workspace_id in
-             (select id from identity.workspace where tenant_id = $1)",
-        "delete from identity.workspace_membership where workspace_id in
-             (select id from identity.workspace where tenant_id = $1)",
-        "delete from projection.task_projection where workflow_id in
-             (select workflow_id from projection.workflow_ref where tenant_id = $1)",
-        "delete from projection.workflow_ref where tenant_id = $1",
-        // 邀请行引用签发与开通的 ActionExecution（DD-83），必须先于它们删除
-        "delete from identity.tenant_invitation where tenant_id = $1",
-        "delete from admission.server_key_provision_intent where tenant_id = $1",
-        "delete from admission.action_execution where tenant_id = $1",
-        "delete from projection.tenant_buzz_binding where tenant_id = $1",
-        "delete from identity.buzz_identity_binding where tenant_id = $1",
-        "delete from identity.tenant_membership where tenant_id = $1",
-        "delete from identity.workspace where tenant_id = $1",
-        // 收藏/静音/已读挂在 principal 上（外键），必须先于 principal 删除
-        "delete from identity.collaboration_user_state where tenant_principal_id in
-             (select id from identity.principal where tenant_id = $1)",
-        "delete from admission.publish_attempt where tenant_principal_id in
-             (select id from identity.principal where tenant_id = $1)",
-        "delete from identity.principal where tenant_id = $1",
-        "delete from identity.tenant where id = $1",
-    ] {
-        if let Err(err) = sqlx::query(sql)
-            .bind(fx.tenant)
-            .bind(fx.human)
-            .execute(pool)
-            .await
-        {
-            eprintln!("夹具清理失败：{sql}\n  {err}");
-        }
-    }
+    purge_tenant_rows(pool, fx.tenant).await;
     if fx.owns_human {
         for sql in [
             "delete from identity.external_identity where human_identity_id = $1",
@@ -1645,35 +1620,7 @@ pub mod bootstrapped {
                 &format!("tenant:{tenant}"),
             );
         }
-        for sql in [
-            // 邀请引用 ActionExecution 与 membership，先于二者删除（DD-83）
-            "delete from identity.tenant_invitation where tenant_id = $1",
-            "delete from identity.platform_session where tenant_membership_id in
-                 (select id from identity.tenant_membership where tenant_id = $1)",
-            "delete from projection.workspace_buzz_binding where workspace_id in
-                 (select id from identity.workspace where tenant_id = $1)",
-            "delete from identity.workspace_membership where workspace_id in
-                 (select id from identity.workspace where tenant_id = $1)",
-            "delete from projection.task_projection where workflow_id in
-                 (select workflow_id from projection.workflow_ref where tenant_id = $1)",
-            "delete from projection.workflow_ref where tenant_id = $1",
-            "delete from admission.server_key_provision_intent where tenant_id = $1",
-            "delete from admission.action_execution where tenant_id = $1",
-            "delete from projection.tenant_buzz_binding where tenant_id = $1",
-            "delete from identity.buzz_identity_binding where tenant_id = $1",
-            "delete from identity.tenant_membership where tenant_id = $1",
-            "delete from identity.workspace where tenant_id = $1",
-            "delete from identity.collaboration_user_state where tenant_principal_id in
-                 (select id from identity.principal where tenant_id = $1)",
-            "delete from admission.publish_attempt where tenant_principal_id in
-                 (select id from identity.principal where tenant_id = $1)",
-            "delete from identity.principal where tenant_id = $1",
-            "delete from identity.tenant where id = $1",
-        ] {
-            if let Err(err) = sqlx::query(sql).bind(tenant).execute(pool).await {
-                eprintln!("拆除失败：{sql}\n  {err}");
-            }
-        }
+        super::purge_tenant_rows(pool, tenant).await;
         for h in humans.iter().copied() {
             for sql in [
                 "delete from identity.external_identity where human_identity_id = $1",
@@ -1694,4 +1641,132 @@ pub mod bootstrapped {
             panic!("{err}");
         }
     }
+}
+
+/// 只丢回应的 TCP 代理（V-SCN-69/86 故障注入）：请求逐字节转发给本地真实
+/// OpenBao，读到上游回应的状态行后双向断开，不向请求方交回任何字节。OpenBao
+/// 已处理并回应（状态行为证），请求方只得到传输错误。
+pub struct DropResponseProxy {
+    addr: std::net::SocketAddr,
+    dropped: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl DropResponseProxy {
+    pub fn start(upstream: &str) -> Self {
+        use std::io::Read;
+        let url = reqwest::Url::parse(upstream).expect("OpenBao 地址");
+        assert_eq!(url.scheme(), "http", "代理只转发明文本地 OpenBao 的字节");
+        let upstream = format!(
+            "{}:{}",
+            url.host_str().expect("OpenBao host"),
+            url.port_or_known_default().expect("OpenBao port")
+        );
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("监听丢回应代理");
+        let addr = listener.local_addr().expect("代理地址");
+        let dropped = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen = std::sync::Arc::clone(&dropped);
+        std::thread::spawn(move || {
+            for client in listener.incoming() {
+                let Ok(client) = client else { return };
+                let upstream = upstream.clone();
+                let seen = std::sync::Arc::clone(&seen);
+                std::thread::spawn(move || {
+                    let Ok(mut server) = std::net::TcpStream::connect(&upstream) else {
+                        return;
+                    };
+                    let (Ok(mut from_client), Ok(mut to_server)) =
+                        (client.try_clone(), server.try_clone())
+                    else {
+                        return;
+                    };
+                    std::thread::spawn(move || {
+                        let _ = std::io::copy(&mut from_client, &mut to_server);
+                    });
+                    let mut head = Vec::new();
+                    let mut byte = [0u8; 1];
+                    while !head.ends_with(b"\r\n") {
+                        match server.read(&mut byte) {
+                            Ok(1) => head.push(byte[0]),
+                            _ => break,
+                        }
+                    }
+                    seen.lock()
+                        .expect("代理记录")
+                        .push(String::from_utf8_lossy(&head).trim().to_owned());
+                    let _ = client.shutdown(std::net::Shutdown::Both);
+                    let _ = server.shutdown(std::net::Shutdown::Both);
+                });
+            }
+        });
+        Self { addr, dropped }
+    }
+
+    /// 经代理发出一次请求：请求方必须拿不到任何回应，OpenBao 必须已以 `want` 回应。
+    pub async fn send_losing_response(&self, request: reqwest::RequestBuilder, want: &str) {
+        let before = self.dropped.lock().expect("代理记录").len();
+        let outcome = request.send().await;
+        assert!(
+            outcome.is_err(),
+            "请求方不应收到回应：{:?}",
+            outcome.map(|r| r.status())
+        );
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let dropped = self.dropped.lock().expect("代理记录").clone();
+            if dropped.len() > before {
+                assert!(
+                    dropped[before].starts_with(want),
+                    "OpenBao 的实际回应应为 {want}，得到 {:?}",
+                    dropped[before]
+                );
+                return;
+            }
+            assert!(std::time::Instant::now() < deadline, "代理未见到上游回应");
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    }
+
+    pub fn url(&self, path: &str) -> String {
+        format!("http://{}{path}", self.addr)
+    }
+}
+
+/// 每次请求一条新连接：连接复用会让客户端把断开当作可重试的陈旧连接。
+pub fn lossy_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .pool_max_idle_per_host(0)
+        .build()
+        .expect("丢回应客户端")
+}
+
+/// 直接驱动 Tenant 成员撤权投影的用例需要与真实 `MEMBERSHIP_REVOCATION` 启动后
+/// 同形的持久事实：该成员关系版本的准入动作与固定 WorkflowRef（不启动 Workflow）。
+/// DD-115 (2)：使 SERVER 私钥到期的 operation 由它确定。返回该 operation。
+pub async fn seed_membership_revocation_ref(
+    pool: &PgPool,
+    tenant: Uuid,
+    initiator: Uuid,
+    membership: Uuid,
+    version: i32,
+) -> Uuid {
+    let action = allowed_action(pool, tenant, initiator, membership)
+        .await
+        .expect("成员撤权准入夹具");
+    sqlx::query_scalar(
+        "insert into projection.workflow_ref
+         (workflow_id, workflow_type, workflow_version, kind, tenant_id,
+          operation_id, action_execution_id, projection_state)
+         select $1, 'ComponentTaskWorkflow', 1, 'MEMBERSHIP_REVOCATION', $2,
+                ae.operation_id, ae.id, 'PENDING_START'
+         from admission.action_execution ae where ae.id = $3
+         returning operation_id",
+    )
+    .bind(format!(
+        "platform:MEMBERSHIP_REVOCATION:{tenant}:{membership}:{version}"
+    ))
+    .bind(tenant)
+    .bind(action)
+    .fetch_one(pool)
+    .await
+    .expect("成员撤权 WorkflowRef 夹具")
 }

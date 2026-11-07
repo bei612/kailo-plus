@@ -192,7 +192,7 @@ async function keyboard(input: HTMLElement, key: string) {
   await act(async () => { input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })); });
   await settle();
 }
-function setup({unknown = false, active = true, maxParticipants = 9, hidden = false, reopenUnknown = false} = {}) {
+function setup({unknown = false, active = true, maxParticipants = 9, hidden = false, reopenUnknown = false, locale = "en" as "en" | "zh-CN"} = {}) {
   let ready = active;
   let writes = 0;
   const onReady = vi.fn();
@@ -216,7 +216,7 @@ function setup({unknown = false, active = true, maxParticipants = 9, hidden = fa
     throw new Error(request.path);
   }) };
   return {transport, onReady, visibility, activate: () => { ready = true; }, mount: () => render(
-    <PlatformProvider client={createBffClient(transport)} locale="en">
+    <PlatformProvider client={createBffClient(transport)} locale={locale}>
       <ConversationVisibilityProvider value={visibility}>
       <NewMessageScreen currentPrincipalId="alice" renderComposer={(host) => <button disabled={host.disabled} data-recipients={JSON.stringify(host.recipients)}
         onClick={() => void host.prepareConversation().then(onReady).catch(() => undefined)}>Send retained draft</button>} />
@@ -224,6 +224,17 @@ function setup({unknown = false, active = true, maxParticipants = 9, hidden = fa
     </PlatformProvider>)};
 }
 describe("shared original new-message surface", () => {
+  it.each(["en", "zh-CN"] as const)("uses the actual %s recipient identity label without opening a conversation", async (locale) => {
+    setLocale(locale);
+    const {mount, transport} = setup({locale});
+    const host = await mount();
+    await keyboard(host.querySelector("#new-dm-search")!, "Enter");
+    const name = host.querySelector<HTMLButtonElement>("[data-testid=new-dm-recipient-name-bob]")!;
+    expect(name.getAttribute("aria-label")).toBe(locale === "en" ? "Verify Bob public key" : "核验Bob的公钥");
+    await click(name);
+    expect(document.querySelector("[data-testid=new-dm-selected-key-popover-bob]")?.textContent).toContain(locale === "en" ? "Verify Bob" : "核验Bob的身份");
+    expect(transport.send.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(0);
+  });
   it("reopens a hidden native DM and retains its exact pending publication", async () => {
     const {mount, onReady, visibility} = setup({hidden: true, reopenUnknown: true});
     const host = await mount();

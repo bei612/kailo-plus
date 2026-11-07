@@ -119,7 +119,6 @@ function voiceDevices() {
   vi.stubGlobal("File", RecordingFile);
   const microphoneNavigator = Object.create(navigator);
   Object.defineProperty(microphoneNavigator, "platform", {value: navigator.platform});
-  Object.defineProperty(microphoneNavigator, "userAgent", {value: navigator.userAgent});
   Object.defineProperty(microphoneNavigator, "mediaDevices", {value: {getUserMedia}});
   vi.stubGlobal("navigator", microphoneNavigator);
   return {track, getUserMedia};

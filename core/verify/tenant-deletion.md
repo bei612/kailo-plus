@@ -203,3 +203,26 @@ drain 未证实之前保留 runtime、模型凭据、Buzz Memory 和 OpenBao nam
 原 `drain_agents` 在同一 Tenant 串行事务将 ACTIVE Grant 收紧为 REVOKING，随已有取消和原工作流查证继续收敛。删除终态前仍核对固定 inventory、原 Task/native/drain 证据及无非终态 Invocation；终态同事务撤销余下 Grant、退休 Policy，保留 Scope、Use、Action、Workflow 与 Audit。不能借退休 Policy 或撤销 Grant 把 UNKNOWN 执行解释为已完成，也不删除已经发生的用量或授权使用证据。REVOKING 的终结复用原治理对账器，异常时保留原删除 UNKNOWN 和已有运维对账入口。
 
 当前环境没有旧版在线 writer；这些表此前未发布，不引入历史兼容读路径。`git diff --check` 实际退出 0、无输出；集中生成、镜像编译、真实新库查询及删除业务演练尚未执行，不记 PASS。公开删除仍关闭，本节只记录已发生的实现与确定边界。
+
+## 原生版本分页不能把缺证据认作空库存（2026-10-03 UTC）
+
+本刀依据 `DD-99(2/4)`、`DD-109(3/4/6)`、`03` §4 和 `V-SCN-31`，只修改原生 `buzz-media/src/storage.rs` 的既有版本列表解析与 `buzz-deletion/src/lib.rs::verify_storage_absence`，不重做已经实现的共享 CAS 归属/保留摘要，也不修改 Core 删除器、删除阶段、契约、公开入口或产物登记。修改前亲核只读 Buzz 固定提交 `779af8886caae1317b4de962082429867ab61503` 的完整路径 `crates/buzz-media/src/storage.rs::{parse_list_version_entry,parse_object_versions_page,MediaStorage::list_prefix_versions_page}` 和 `crates/buzz-deletion/src/lib.rs::verify_storage_absence`；原始片段保存在下述目录的 `upstream-media.txt` 与 `upstream-absence.txt`，未执行 `.references` 内容。
+
+四步结论：权威仍是同一原生 `ListObjectVersions` 和删除请求/检查点；原错误是缺失或未知 `IsTruncated` 默认为 false、缺失或空对象 `Size` 默认为零、缺完整原生列表封套仍可返回空集合。影响面为 `list_prefix_versions_page` → `inventory_versions`/`enumerate_tenant_prefixes`/`verify_storage_absence` → 原 `execute_stage` 的逻辑验证与 `mark_retention_pending`；既有测试调用同一生产解析函数。该错误既能把不明库存认作空，也能少报物理保留字节。现在同一解析器要求完整 `ListVersionsResult`、与请求一致的 `Prefix`、明确 true/false 的分页字段、对象真实 Size 与非空版本身份；截断页必须有条目和双游标，终页不能带续页游标。原空库存证明另要求终页，合法的明确空终页仍可通过，DeleteMarker 的零字节语义不变。
+
+没有引入新状态或补偿权威。缺字段、未知值、错 scope、破损 XML 或截断伪空页返回原 StorageError/transient；现有 `record_stage_failure`/`DeletionStore::record_retry` 保留原请求、阶段、租约 fence 与失败检查点，沿既有重试时限和耗尽后 blocked 收敛。Core 仍按原 `inspect`、冻结摘要和 CONTROL host 缺席判断，缺证据保持删除 UNKNOWN，不把 blocked 或传输成功当终态；依赖修复及 unblock 仍归原 RB-07 部署运维。冻结/保留数据格式没有变化，没有正文复制，也没有把集合为空等同于未请求、未知或未分页。
+
+完整 byte-exact before、后置证据与 SDK 导出位于 `/volumes/data/kailo/tmp/codex-tenant-delete-native-page-20261003.Mv5KcP/`。实际检查从 Git `4b44ac6b266345fbc19e3c315df5c3d9bd0af00b` 机械导出 collaboration 并叠加本刀两源；原不可变 Rust 1.95 SDK 为 `sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1`，UID/GID 1000、实际 4 CPU/6 GiB、`memory.swap.max=0`，Cargo 16 jobs 未降低，独占既有 Data `desktop-e2e-target`，不写主线 Core target。`preflight.log`、`limits.log`、`toolchain.log` 留存真实回执；同容器 rustfmt 实际退出 1（原镜像未安装该组件），未安装组件或再起格式 SDK，不记格式检查通过。
+
+实现后复用原检查，未增加测试函数、夹具、业务对象或检查脚本：
+
+```text
+cargo test --locked --offline -p buzz-media -p buzz-deletion --lib
+native-check.log：exit 0；buzz-media 127 passed，buzz-deletion 17 passed / 9 ignored。
+cargo test --locked --offline -p buzz-media --lib storage::tests::parse_object_versions_page
+parser-positive.log：exit 0；3 passed。
+```
+
+原三个解析检查机械补齐真实协议字段；在已有 XML 检查内后置核对合法空终页与缺失/未知/截断伪空证据。随后仅在 Data SDK 导出中逐一破坏生产裁决：缺 IsTruncated 恢复默认 false、缺 Size 恢复默认零、删除截断空页拒绝、未知 IsTruncated 恢复默认 false；四次同一原 parser 检查均实际退出 101、各 2 passed / 1 failed，原件为 `mutation-missing-terminal.log`、`mutation-missing-size.log`、`mutation-truncated-empty.log`、`mutation-unknown-terminal.log`。精确还原后 `parser-restored.log` 实际退出 0、3 passed；`restored.sha256` 和 cmp 确认正式源与 SDK 导出逐字节相同：storage 为 `d863c604db6c5ffb7e4ce64b70fc6cb76dd00047d00221104a8ec8ad48ed146d`，deletion 为 `f4b5b17edce4470b72a2b4074684a06b305b0d8c6d6bf759192f99d27fc97fcd`。最终新增的空页/未知终页断言只由 parser 窄检查覆盖；首轮 144 项并不冒称覆盖随后追加的断言。
+
+9 项依赖真实 PostgreSQL/S3 的既有演练被原检查 ignored，未运行真实 S3 HTTP、分页存储删除、保留量演练、完整 native retention_pending/CONTROL 缺席或 Core 业务删除验收；静态与反例不能替代这些证据。未连接在线 Tenant、数字人或业务库，未删除对象。本刀未重跑全量、生成、构建、发布、提交或部署，当前 Relay 产物仍未包含本刀；`SS-BUZ-COMMUNITY-DELETE` 与公开 `tenant.delete` 入口保持关闭，未宣布 Stage 或生产就绪完成。

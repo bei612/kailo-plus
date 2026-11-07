@@ -679,13 +679,8 @@ describe("shared Automation schedule consumer", () => {
     await click(host.querySelector<HTMLButtonElement>('[data-testid="new-workflow-card"]')!);
     // Original Dialog portals its content; exercise the same user-visible tree.
     const section = document.body;
-    const field = (label: string) => {
-      const node = [...section.querySelectorAll("label")].find((node) => node.textContent?.startsWith(label))
-        ?? (label === "Instruction template" ? [...section.querySelectorAll("label")].find(node => node.htmlFor.endsWith("-text")) : undefined);
-      // Original step labels use htmlFor; the associated editor is a sibling,
-      // unlike the existing governance fields which wrap their controls.
-      return node?.control && !node.contains(node.control) ? node.control.parentElement! : node!;
-    };
+    const field = (label: string) => [...section.querySelectorAll("label")].find((node) => node.textContent?.startsWith(label))
+      ?? (label === "Instruction template" ? [...section.querySelectorAll("label")].find(node => node.htmlFor.endsWith("-text"))! : undefined!);
     const choose = async (label: string, value: string) => {
       if (label === "Trigger" && !field(label)) await selectCanvasNode(section, 0);
       const select = field(label).querySelector("select")!;
@@ -698,7 +693,8 @@ describe("shared Automation schedule consumer", () => {
         if (section.querySelectorAll('ol[aria-label="Workflow sequence"] > li').length === 1) await insertCanvasStep(section, 0, "Send message");
         else await selectCanvasNode(section, 1);
       }
-      const input = field(label).querySelector("input,textarea")!;
+      const input = field(label).control ?? field(label).querySelector("input,textarea");
+      if (!input) throw new Error(`Missing control for ${label}`);
       if (input instanceof HTMLInputElement) await type(input, value);
       else await act(async () => {
         Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, value);
@@ -1062,8 +1058,10 @@ describe("shared Automation schedule consumer", () => {
       (request) => request.path === "/api/v1/tasks" ? { status: 200, body: [originalRun] } : reads(request));
     await click(button(section, "View definition")); await click(button(section, "Delete"));
     expect(section.textContent).toContain("Versions and run history remain; admitted runs are not canceled");
-    await click(button(section.querySelector<HTMLElement>('[role="alertdialog"]')!, "Delete"));
-    await click(button(section, "Re-check same request"));
+    const dialog = section.querySelector<HTMLElement>('[role="alertdialog"]')!;
+    expect(t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions")).toHaveLength(0);
+    await click(button(dialog, "Delete"));
+    await click(button(dialog, "Re-check same request"));
     const writes = t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions").map(([request]) => request.body);
     expect(writes).toHaveLength(2);
     expect(writes[0]).toEqual({ actionKey: "automation.delete", idempotencyKey: expect.any(String), explicitConfirmation: true,
@@ -1107,7 +1105,7 @@ describe("shared Automation schedule consumer", () => {
     await writeYaml(section, text);
     await click(button(section, "Form"));
     await selectCanvasNode(section, 1);
-    expect(field("Instruction template").querySelector("textarea")!.value).toBe("Result ${source}");
+    expect((field("Instruction template").control as HTMLTextAreaElement).value).toBe("Result ${source}");
     expect(field("Action").querySelector("select")!.value).toBe("POST_MESSAGE");
     await click(button(section, "Workflow YAML"));
     expect(section.querySelector('textarea[aria-label="Workflow YAML"]')?.textContent).toContain("POST_MESSAGE");
@@ -2000,6 +1998,8 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect(posts(t)[0]?.body).toEqual({ actionKey: "agent.version.publish", idempotencyKey: expect.any(String),
       resourceId: definition.resourceId, resourceVersion: definition.resourceVersion,
       assetId: version.assetId, assetVersion: version.assetVersion, explicitConfirmation: true });
+    await click(button(section(host, "agent-installations"), "View installation"));
+    expect(section(host, "agent-installation-detail").textContent).toContain(installation.pinnedVersionAssetId);
     const create = await openInstallDialog(host);
     expect(create.querySelector(`option[value="${version.assetId}"]`)).toBeTruthy();
     expect(create.textContent).not.toContain("No authorized published Agent version on this page.");
@@ -2007,8 +2007,6 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     await click(button(create, "Review request"));
     expect(create.textContent).toContain(`${version.assetId} · ${version.assetVersion + 1}`);
     expect(posts(t)).toHaveLength(1);
-    expect(section(host, "agent-installations").querySelector(`[data-testid="agent-installation-${installation.resourceId}"]`)).not.toBeNull();
-    expect(t.send).toHaveBeenCalledWith({method: "GET", path: `/api/v1/agent-versions/${installation.pinnedVersionAssetId}`});
   });
 
   it("refreshes installation candidates from the authority without changing Workspace", async () => {
@@ -2048,8 +2046,8 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect(posts(t)[0]?.body).toEqual({ actionKey: "agent.version.retire", idempotencyKey: expect.any(String),
       resourceId: definition.resourceId, resourceVersion: definition.resourceVersion,
       assetId: published.assetId, assetVersion: published.assetVersion, explicitConfirmation: true });
-    expect(section(host, "agent-installations").querySelector(`[data-testid="agent-installation-${installation.resourceId}"]`)).not.toBeNull();
-    expect(t.send).toHaveBeenCalledWith({method: "GET", path: `/api/v1/agent-versions/${installation.pinnedVersionAssetId}`});
+    await click(button(section(host, "agent-installations"), "View installation"));
+    expect(section(host, "agent-installation-detail").textContent).toContain(installation.pinnedVersionAssetId);
     expect(posts(t)).toHaveLength(1);
   });
 
@@ -3740,7 +3738,7 @@ describe("platform pages render only through the host theme", () => {
         expect(text.split(originalTint)).toHaveLength(2);
         text = text.replace(originalTint, "active");
       }
-      if (source.name === "draft-surfaces.tsx" || source.name === "workflow-discard-dialog.tsx" || source.name === "workflow-delete-dialog.tsx") {
+      if (["draft-surfaces.tsx", "workflow-discard-dialog.tsx", "workflow-delete-dialog.tsx"].includes(source.name)) {
         // Buzz 779af8886caae1317b4de962082429867ab61503,
         // desktop/src/shared/ui/alert-dialog.tsx::AlertDialogOverlay.
         // This exact modal backdrop is original; other literal colours remain
@@ -3994,8 +3992,8 @@ describe("AgentDefinitionsPage installation read-only facts", () => {
     const section = host.querySelector("[data-testid=agent-installations]") as HTMLElement;
     expect(section.textContent).toContain("No agents to show on this page.");
     await click(button(section, "Next page"));
-    expect(section.querySelector('[data-testid="agent-installation-installation-1"]')).not.toBeNull();
-    expect(t.send).toHaveBeenCalledWith({method: "GET", path: "/api/v1/agent-versions/pinned-asset-1"});
+    await click(button(section, "View installation"));
+    expect(host.querySelector("[data-testid=agent-installation-detail]")?.textContent).toContain("pinned-asset-1");
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-installations?workspaceId=workspace-1&offset=9" });
     expect(button(section, "Previous page")).toBeTruthy();
     expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);

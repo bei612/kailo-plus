@@ -6,6 +6,7 @@
       "!dist",
       "!playwright-report",
       "!test-results",
+      "!public/manifest.webmanifest",
       "!src/app/routeTree.gen.ts",
       "!src/platform/contracts.gen.ts"
     ]
@@ -26,6 +27,11 @@
       "quoteStyle": "double",
       "semicolons": "always",
       "trailingCommas": "all"
+    }
+  },
+  "html": {
+    "parser": {
+      "interpolation": true
     }
   },
   "css": {

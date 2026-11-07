@@ -8,7 +8,7 @@
 
 | 实体 | 版本字段 | 变更方式 |
 |---|---|---|
-| `TenantBuzzBinding` | `version` | Tenant 建立时写入并在查证后 `ACTIVE`，此后不切换 |
+| `TenantBuzzBinding` | `version` | Tenant 建立时写入并在查证后 `ACTIVE`；NIP-11 文档漂移时由 Core 治理对账器转 `RECONCILING`，按 `DD-114` 的比对规则重新查证后回到 `ACTIVE`。这是同一 binding 的重新查证，不是 generation 切换，不按本 runbook 处理 |
 | `WorkspaceBuzzBinding` | `version` | Workspace 建立时写入，不切换 |
 | `BuzzIdentityBinding` | `version` | 登记、投影、撤销；换钥匙是新建一条 binding（`DD-77`），不是切换 generation |
 

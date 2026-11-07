@@ -295,6 +295,62 @@ Tenant admin 经 BFF 提交需要核验用户审批的 `tenant.member.revoke`。
 - Mobile 没有登记的打包构建文件，清单的 `artifact_digest` 目前记的是 buzz-relay 镜像的摘要（见上节）。
   上节的 APK 用 debug 证书签名，没有做 release 签名。
 
+## 2026-09-29 发送结果、注销与断线恢复（源码树）
+
+本节对应 `docs/acceptance/stage-1.md`「关闭前必须补齐」第 4 项在 Mobile 源码上的部分，并回应上节「撤权后发送没有失败提示」的观察。只覆盖源码树：APK 没有重建，也没有在模拟器上执行。
+
+**发送结果。** `lib/shared/relay/relay_session.dart` 把一次发布的结果分为三类（`relay_publish_failure.dart`）：
+- **确定未发出**：EVENT 未离开本机。
+- **Relay 明确拒绝**：Relay 回 `OK false`。若前缀是 `rate-limited:`，归为限流，并附带 `retry in Ns` 提示。
+- **结果不明**：EVENT 已发出但未收到 OK，包括超时、断线和转入后台。
+
+在此之前，未连接时抛出 `StateError`，被 composer 误报成「社区已切换」；所有失败都只弹一个 SnackBar，而且直接显示 Relay 的原文。现在 composer 上会保留确定的状态：key 为 `compose-send-outcome-<kind>`，带读屏 live region，文案来自共享目录 `native.send.*`，草稿也会恢复。这个状态在下一次发送或切换草稿时撤下；如果结果不明，则在该事件出现在 Relay 的消息流中时撤下。
+
+**原样重发。** Relay 按事件 id 去重，依据是 buzz-db `store/event.rs` 的 `ON CONFLICT DO NOTHING` 和 buzz-relay `handlers/ingest.rs` 的 `duplicate:`。基于这一点，`SendMessage` 按「作者 + kind + 正文 + 标签」生成指纹，保留结果不明的已签名事件；用户原样再发时，经 `SignedEventRelay.resubmit` 重发同一个事件。记录放在独立的 provider 中，重连后仍在；只有确认被接受后才清除。
+
+**断线恢复。** 频道页与会话列表在重连期间显示「未同步」（`native.sync.reconnecting`）。Relay 在 AUTH 阶段拒绝本机时，会话会带上 `authRejected`，界面显示 `native.sync.rejected`，不再说成「正在重连」。重连后，订阅沿用上游按 `since` 的回放。
+
+**注销。** `NativeSession.endSession` 依次执行：
+1. 撤销 Core PlatformSession。
+2. 按 discovery 的 `revocation_endpoint`，以 RFC 7009 在 IdP 作废刷新令牌。
+3. 丢弃本机凭据与协作连接。
+
+服务端未确认时，状态会带上 `signOutUnconfirmed`，登录页显示 `native.signOut.serverUnconfirmed`。设备私钥保留。
+
+| 检查 | 结果 |
+|---|---|
+| `flutter analyze` | `No issues found!` |
+| `flutter test -j 8` | `+1178 ~2: All tests passed!` |
+| `core/verify/native-e2e.sh mobile`（当前本地拓扑与 Keycloak） | `1 passed`。设备撤销后，同一会话直连发布得到 `RelayPublishRejected`：`restricted: not a channel member`，是 Relay 的 OK false，不是客户端拦下。注销时 Core 与 IdP 都确认，原刷新令牌随后被 IdP 拒绝（`OidcRejected`） |
+
+新增断言：
+- `relay_session_test`：五类分类，以及 `authRejected`。
+- `send_message_provider_test`：
+  - 结果不明后重发，事件 id 与签名相同；
+  - 确认被接受后，同样正文签出新事件；
+  - 结果不明之后重发若被拒，得到 Rejected；
+  - 不同正文签出不同事件。
+- `compose_bar_test`：
+  - 五种失败各自显示共享文案，草稿保留，Relay 原文与 SnackBar 都不出现，状态 10 秒后仍在；
+  - 下一次发送后状态撤下。
+- `relay_sync_banner_test`：3 例。
+- `channel_detail_page_test` 的重连用例：「未同步」出现，连上后消失。
+- `platform_link_test`：注销请求 IdP 撤销，请求体含 token、`token_type_hint`、`client_id`；另有三种未确认情形的用例。
+- `platform_e2e_test`：同上表。
+
+破坏核验（均已还原并复验通过）：
+
+| 破坏方式 | 结果 |
+|---|---|
+| composer 不写状态 | 4 例失败 |
+| 不复用未确认事件 | 重发用例失败 |
+| 超时归为未发出 | 分类用例失败 |
+| 去掉频道页横幅 | 重连用例失败 |
+| 跳过 IdP 撤销 | 3 例失败 |
+| `authRejected` 置 false | 用例失败 |
+
+`date_formatters.dart` 中「刚刚」的阈值改为使用共享常量 `platformTimeSecondsMinute`。
+
 ## 标题与启动读屏显示名修正（2026-09-30）
 
 `lib/app.dart` 的窗口标题复用已有 `platformDisplayNameProvider`，没有可读名称时
@@ -335,25 +391,45 @@ widget/indicator 三项回归均退出 0；检查日志为
 
 未新增测试、夹具、业务对象或独立检查脚本。25 项是已有页面/读状态回归，不是新 Automation 正向场景。未进行真实受权 Automation 列表/详情端点正向、真机交互、APK/iOS 构建、release 签名、部署或本刀提交/push；未重跑全量 Flutter/full/端到端，未把空数据库、旧安装包或上文历史产物移作本增量证据。只清理本人 4 个已退出 SDK 容器，日志、镜像、Data 缓存与其他 lane 的容器保留。
 
-## Definition、Version 与 Memory 只读功能批（2026-10-03）
+## PlatformSession 共享契约消费者适配（2026-10-01）
 
-现有 Workspace 管理入口增加 Definition 分页、受权详情与 exact PublishedVersion，
-Installation 详情接 Memory core/entries/entry 的原 BFF typed query；取消只展示
-原 Task phase/evidence，cancel accepted 不作为已取消终态。
-DD-74/75、REQ-21 与设计17/19的端边界不变：无 Memory 写、运行命令、
-组件宿主、文档编辑或 WebView；未知枚举和 scope/pin 不匹配不渲染成功。
+`DD-96` 的共享契约为 `PlatformSessionView` 增加必填 `accessMode`。已有
+`test/features/channels/channels_page_test.dart` 的 `_sessionView` 构造缺少该参数，
+`test/shared/platform/platform_test_support.dart` 的 `sessionView()` 回应也缺少该字段，
+分别会使现有构造无法通过类型检查、现有 JSON 回应无法被当前生成类型读取。
+现按这两份既有普通会话数据的语义补入 `PlatformSessionAccessMode.FULL` 与 `"FULL"`；
+没有新增用例、夹具、契约、生产行为或入口。两个生产 `fromJson` 消费者继续读取 Core
+真实回应，不添加缺字段默认值，也不把受限会话映射成 `FULL`。
 
-在同一选定输入的原 Flutter SDK 上，八源 dart format/check 未产生格式变化，
-dart analyze 为 0，原 `platform_pages_test.dart` 实际 63/63、退出 0。
-原件在 `codex-memory-ui-selected-verify-20261003.pxMZ6I/`，
-`terminal-receipt.json` SHA 为
-`edb98fbe8292b456aa71b865b892a545d2e42646e25ddfa72586f3c9831ed2b9`。
-与共享 UI 一起记录的 22 路径最终摘要为
-`d65adf01a7b4bd41c0b4a0236f4378cc0afcf677726124befabc6519293b9d9e`，
-不是整个仓库或 Mobile release 的证明。13 条 Dart 文案由原同源生成器补齐。
-SDK 实际4CPU/8Gi、swap0、UID1000；停止清理的 idle tail 137 与检查退出0分开，
-OOMKilled=false。本轮未做新破坏、签名、真机/BFF业务 E2E或安装包构建，
-不将前一输入的反例、旧25项或静态枚举检查替代这些验收。
+编辑前以正确 `apps-source` 图谱执行 query 和两处符号、两处 File 的 upstream impact。
+当时索引与 HEAD 均为 `14fa7833d6bfd6d089c805899002b869fadebe86`，
+`indexedAt=2026-10-01T12:16:37.059Z`；完整 schema-4 runner、空 incomplete 列表、
+content current 与 up-to-date 已核对。四项 impact 均退出 0，但风险为 `UNKNOWN`，
+不是没有使用方；源码补证确认 `sessionView()` 由既有 `platform_link_test.dart` 与
+`platform_api_test.dart` 使用，`_sessionView` 由现有频道页测试的 Provider override 使用。
+原始输出为 `/volumes/data/kailo/tmp/codex-mobile-session-preimpact-20261001.log`。
+源码编辑后该前置回执不作为改后图谱已同步的证明。
+
+镜像内仅执行两文件的原有格式检查：
+
+```text
+dart format --output=none --set-exit-if-changed channels_page_test.dart platform_test_support.dart
+Formatted 2 files (0 changed) in 0.32 seconds.
+ExitCode=0 OOMKilled=false
+```
+
+实际镜像为 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+Dart SDK 3.9.4。执行前通过已有 `container-safety.sh` 检查并发与压力；Docker 实际限额
+为 2 CPU、2147483648 字节内存、同值 memory+swap，两份源码只读挂载，临时目录与
+pub cache 均挂载到 `/volumes/data/kailo` 下。原始输出为
+`/volumes/data/kailo/tmp/codex-mobile-session-format-20261001.log`。
+
+该格式结果不是 Mobile 编译或用例通过证据。Mobile 要求 Dart `^3.11.4` 与 Flutter；
+现有打包 Dockerfile 固定的 Flutter 3.41.7 镜像
+`ghcr.io/cirruslabs/flutter:3.41.7@sha256:644e3cea0a8440ce75804b67ceab77b16a87b39d9e9d89b07aceca7a98af1aa3`
+在本机执行 `docker image inspect` 返回 `No such image`。本轮没有回退宿主工具链、
+下载替代工具链或新建验证脚本；Flutter analyze、既有 Flutter 用例、APK 和真实设备链
+均未执行，不把上述历史结果转作本次验收。
 
 ## 原 Mobile 频道已读确认与身份隔离（2026-10-13）
 

@@ -1645,3 +1645,116 @@ Data tmp/cache、无导出或下载。输入为当前实施文档与设计，两
 覆盖，不冒充固定发布树 full。期间 markdownlint 发生 Data 读等待，未重启。
 同目录 `check-docs.log` SHA-256：
 `fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`。
+### 2026-10-10 原生 HUMAN 分享的平台权限接缝（私有源码，未启用）
+
+本批只补原 `native_human::handle/resolve_resource` 到现有
+`resource.grant_read/revoke_read`，不把平台权限动作改成 APPLICATION 动作。
+原版 Cells 基准为 `c57f02f4962835447df694c63bd0fd8c22bd7baf`：
+`/volumes/kailo/.references/cells/idm/share/rest/handler.go::SharesHandler.PutCell`
+调用 `/volumes/kailo/.references/cells/idm/share/client.go::Client.UpsertCell`。
+后者的原生 Workspace/ACL 多 RPC 仍是后续接线范围；平台 reader 变更成功不证明
+这些 RPC 完成。本批未改 Cells 页面/原确认框、未生成分享替代页面，也未激活
+FILE_STORAGE release/binding。
+
+四步影响结论：
+
+1. 权威是 `.design/03` §6、§8 与 `.design/07` §8.2 的同一 HUMAN 准入、
+   资源 reader 与原审批/SpiceDB 权威。`nativeHumanOrigin={bindingId,generation}`
+   是本批新增的 AE 内部来源元数据格式，只有已验证 SERVICE+HUMAN 原入口构造；
+   普通 BFF `ActionCommand` 不接受它。未新增平台实体、权限表、票据或工作流。
+2. 实际读写方为原 submit/open execution、同键 replay、Governance::allow_in_tx
+   参数摘要检查、request_approval、validate_approval_owner、原 permission
+   prewrite/dispatch、native HUMAN observation、binding advance/finish_generation。
+   来源进入原规范化参数摘要；同事务核实当前 Resource 版本/归属、binding generation、
+   release/runtime 与 HUMAN 成员。原 component quartet 保持 NULL。
+   原 `governance_reconcile::OPEN_STATES/drive` 继续消费这些平台 AE；没有第二个
+   对账队列。EVALUATING/WAITING 沿既有期限收敛，UNKNOWN 不转成未执行。
+3. 观察只接受同 operation、target、action/version、parameter hash 的原
+   `permission-outcome`。HUMAN_READ_GRANTED/REVOKED 对应平台动作完成；
+   NOT_APPLIED 仅在原 ABORTED 时表示未应用。无回执、错回执、UNKNOWN 不返回成功。
+   下架屏障检查所有来源 generation，原 UNKNOWN 或缺原终态证据不能漏过；
+   停用后不可重新执行，未知 RPC 仍需原证据/原人工处置，不能伪造空结果解锁。
+4. 缺/畸形来源、非正 generation、空 binding UUID、异 actor、跨资源/绑定、
+   旧 generation、scope/成员失效均拒绝。普通无来源平台动作保持原行为。
+   grant 接收者沿 `human_recipient_scope` 重核 ACTIVE 同 Tenant/Workspace；
+   revoke 保留原 `human_resource` 识别已停用 HUMAN 以撤旧 reader 的语义。
+   原 Cells `NativeActorDelivery.Actors/User` 已有受控 principalId↔userUuid 映射，
+   本批没有新增 recipient 字段或第二身份目录；反查将随原 PutCell 真消费者接入。
+
+兼容与发布停止条件：请求/响应字段未变，result schema 仅补充原平台权限终态的描述。
+旧无来源 AE 仍按原逻辑读取。旧服务器不会消费新 AE 来源保护，因此本批不是允许
+新旧服务混跑的声明：新版 Core 全部部署与实际治理验收前，组件分享生产者不得开启。
+历史 UNKNOWN 不迁成成功，不重派原生多 RPC；也不能靠六键子集批准 FILE_STORAGE。
+
+实现后的原模块检查已补来源解析/摘要/精确终态，以及原显式 ignored 隔离库场景的
+binding、generation、actor 和未知结果排空断言。当前尚未运行这些 Rust/SQL 检查，
+没有行锁或并发通过证据；等待主线 full 释放后集中原过滤检查及真实破坏/还原。
+这里只是源码接缝，不是完整分享、三组件联调或生产验收。
+
+仅格式/生成的真实结果：现存 `kailo-agent-receipt-xvkujx` 执行前只有 sleep，
+实际 UID/GID 1000:1000、4 CPU、8 GiB memory=memory+swap，镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`。
+宿主可用内存 22 GiB、memory PSI avg10=0；原 full Cargo 与原 Gateway buildx
+仍在途，本批没有启动 Cargo/Go/镜像构建。原 rustfmt 1.8.0 对四生产文件格式化，
+随后 `--edition 2021 --config skip_children=true --check` 退出 0、日志为空。
+原 `tools/gen.sh` 句柄 78981 退出 0；`tools/gen.sh --check` 句柄 36467 退出 0，
+四侧 PASS，Mobile 同源词条 PASS。四侧生成差异只为同一 result description 注释；
+字段/序列化代码以及 Mobile 词条字节不变，不把这项生成检查称为四语言业务验证。
+全部使用原 Data 挂载，npx 固定 quicktype@23.0.171、npm offline；未安装新工具。
+
+私有日志目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/native-human-sharing.RF0uoh/`。
+
+```text
+52b398e382b2959e01fb16033b4e4b80dde009698f1f262ed6881c8f1db4f1f2 generation.log
+e4f0fe74c3ed4493881f06f68e24c100aa7ccf811e925991008ed7a448a18975 generation-check.log
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 rustfmt-check.log
+```
+
+### 2026-10-11 集中检查发现的两处静态检查修正
+
+固定树 `ab5d817b94c802b821a2bddf85be7f2fd3909aee` 的原 full（20979）
+在 clippy 明确失败：application_native_human.rs:760 的本地 SQL 查询行类型
+触发 type_complexity；application_binding_native.rs:140 的测试模块位于后续
+生产实现之前，触发 items_after_test_module。两者均未加 allow 或降低门禁。
+
+沿本节既有绑定/原生 HUMAN 权威，前者仅为既有五列元组命名本地类型别名，
+后者仅把原测试模块原样移到文件末尾。查询、调用方、拒绝条件、事务、
+终态证据、契约和三端行为不变；不引入迁移或第二份状态。
+既有受限 SDK 的 rustfmt --edition 2021 --emit stdout 均退出 0，输出与
+正式两文件字节相同。完整差异复核确认没有改变运行逻辑或测试断言。
+当前在途 full 使用修正前的不可变输入，不据此宣称修正后 clippy/full 通过；
+需在集中批次验证最终源码。本记录不是业务验收、提交、push 或部署回执。
+
+同一在途 full 随后完成 Cargo/Go/Dart 既有测试及 Workflow replay，通过；
+TypeScript 共享页面检查实际为 1132 通过、22 失败，集中在 pages.test.tsx 和
+workflow-actions.test.tsx。保留失败，未改写为本批修正后的通过证据；契约四侧
+同步及 302 schema 兼容比对通过，实际数据库演练因未提供 DATABASE_URL 而
+明确跳过。设计文档/追溯步骤通过，但不覆盖本段后追加的文档。
+
+20979 已结束，实际退出码 1。供应链与安全不变式步骤通过；seam 步骤另有
+9 项源码/镜像摘要不匹配（Relay、Desktop、Wren UI、Cells adapter/service、
+WeKnora adapter/service/UI、Web）。运行配置预检因未投递 .env 明确跳过。
+后来完成的 Wren UI 构建回执单独记录于 data-query 的 native-integration，
+不改写这次不可变树的失败结果；尚不能标记整批验收或部署完成。
+
+2026-10-11 的共享页面整包复验 55151 已实际退出 1。正式 client-kit/ts
+输入与 Data 私有副本逐文件相同；原 4 CPU/4 GiB、UID 1000 SDK 使用项目
+固定 pnpm 10.33.4 和离线缓存，测试类型检查通过。原 Vitest 为 708 passed、
+1 failed（英文外观用例 5000ms 超时），另有 pages、projects、workflow-actions、
+settings、new-message、profile-settings 六文件 forks worker 启动超时；
+不把这些未执行项或历史筛选通过计入整包通过。首次 48902 错选缓存中的
+pnpm 11.4.0，在依赖恢复前退出 1，未改项目声明以绕过。
+结果日志 `shared-full-pinned.log` 位于
+`/volumes/data/kailo/tmp/codex-native-page-navigation-20261005.4rBmBZ/shared-final.pmVplF/`，
+SHA-256 `23045b043114e614dadb4a14f12642346f75b9b1844c909d61d34632a50175e2`。
+终态后另发现并补入 pages 原源码检查实际读取的 Web PlatformApp 与 Desktop
+platform.$section 两文件，cmp 均为 0；运行期间未修改冻结输入。
+这两项缺输入不是上述启动超时的已证实原因，不能据补文件宣称问题已解决。
+
+随后 16835 仅复验上述七文件，原 forks/timeout/断言均未改，实际 462/462、
+7/7 文件通过，19.59s、退出 0；包含此前的 270 项 pages 与工作流动作消费。
+同目录 `shared-seven-complete-input.log` SHA-256 为
+`a909ac540c463abffe6a26d04d412448c9e6015f710401f9781664036ae6634c`。
+这是受影响范围通过，不抹掉 55151 的整包失败，也不替代全量门禁、浏览器
+视觉复核、真实治理调用、提交或部署；原 act/scrollTo 警告仍保留。

@@ -539,3 +539,262 @@ Tenant 策略（早于本策略的 namespace 没有该能力）、确认没有�
 两个失败夹具 Tenant 仍在 Core 与 OpenBao 中，按“失败保留夹具供排查”纪律未在线
 删除，待离线拆除。
 
+
+## 真实响应丢失与执行中撤权的故障注入（2026-09-29）
+
+权威为 `DD-85`、`.design/03` 的 `SecretRefRehome` 说明与 `V-SCN-69`。只增加集成用例，
+不改归位状态机、数据库、API 或 Workflow。
+
+注入手段：`tests/secret_ref_rehome.rs` 的 `DropResponseProxy` 是测试进程内的 TCP 代理，
+把请求逐字节转发给本地真实 OpenBao，读到上游回应的状态行后双向断开，不向请求方交回任何
+字节。它真实而非模拟：OpenBao 实际处理并回应（代理记录状态行；KV v2 写入与 `destroy` 均在
+回应前同步提交，`destroy` 先写 metadata 再删版本数据，见
+`openbao/internal/builtin/logical/kv/path_destroy.go`），请求方得到的只是传输错误，与 Core 在
+`write_once` / `destroy_legacy_identity_version` 收到 `Transport` 时的局面相同。限制：部署中
+的 Core 直连 OpenBao，不重启就不能改道，因此那次「回应丢失」的请求由测试代替 Core 发出，
+随后只由真实 Core 的 service API 按冻结 locator 与 metadata 收敛。现有 `drill-*.sh` 与
+集成夹具中没有可复用的回应丢弃手段（此前两个用例以 root 直接写入代表「已落盘」）。
+代理自检 `drop_response_proxy_delivers_request_and_withholds_reply` 不依赖集成环境：假上游
+完整收到请求体并回应 200，请求方得到错误；把代理改为转发回应后该检查以
+「请求方不应收到回应：Ok(200)」失败，还原后通过。
+
+新增用例（均需集成拓扑）：
+
+- `lost_write_and_destroy_responses_converge_by_locator_and_metadata`：`COPY_UNKNOWN` 下目标
+  缺失得 503；目标 `cas=0` 写入回应丢失后，下一次推进只查证 locator 得 `COPIED`，随后
+  `SWITCHED`；待冻结的旧 generation 消费者在 Core 侧已终态，再以回应丢失的方式销毁旧版本；
+  metadata 已 `destroyed=true` 而行仍 `SWITCHED`，下一次推进按 metadata 退役为 `RETIRED`，
+  重放仍 `RETIRED`，`retired` 审计恰一条，目标 `current_version=1`，binding 指向目标版本 1。
+- `revocation_during_rehome_never_leaves_an_unreferenced_copy`：补齐执行中撤权矩阵（既有
+  `copied_then_rejected_*` 已覆盖 COPIED 后 SpiceDB 撤权与 binding 偏离）——`INTENT` 写前
+  撤权得 403、`FAILED/NONE`、目标 KV 不存在、`copy-rejected` 一条；`COPY_UNKNOWN` 写入回应
+  丢失后撤权，查证仍得 `COPIED`（按设计只查证目标），随后 409、`FAILED/DISCARDED/1`、目标
+  版本 1 已销毁；另一位 Tenant admin 发起、COPIED 后其 Core 成员关系被撤而 SpiceDB 仍有
+  admin，同样 409 并销毁副本。三处 binding 均保持原 ref。
+
+本节提交时两条集成用例只经编译（`cargo test --workspace --no-run` 退出 0）与未开启集成
+开关时的空跑，尚无真实拓扑运行结果；`V-SCN-69` 与 Stage 2 的结论不因本节改变。
+
+## 接手真实拓扑复验（2026-09-30）
+
+基线为 `0ec5e552` 之后接手的未提交工作树。既有 `core/verify/run-integration.sh` 中
+`tests/secret_ref_rehome.rs` 为 **6 passed、0 failed、0 ignored，21.91 秒**：
+`lost_write_and_destroy_responses_converge_by_locator_and_metadata`、
+`revocation_during_rehome_never_leaves_an_unreferenced_copy` 及另外四项均通过。
+日志为 `/volumes/data/kailo/tmp/codex-integration-20260930.log`。
+
+这一结果替代上一节「仅编译、未在真实拓扑运行」的当前状态：真实 OpenBao 接受写入与
+销毁后回应被丢弃，真实 Core 按冻结 locator、binding 与 metadata 推进；执行中撤权的
+三条拒绝路径及副本销毁通过。故不能继续把这三类情况全部列为没有证据。
+
+边界保持不变：丢回应的那次请求由测试进程发出，运行中的 Core 没有被改道；本轮不是
+对 Core→OpenBao 网络链的全路径故障注入，不是生产规模积压实测。接手后尚未重跑
+本增量的破坏核验与浏览器走查，`V-SCN-69` 和 Stage 2 不据此整体关闭。
+全套命令退出 **0**，Rust/Go 检查均通过，35 个本轮测试 namespace 已离线清理、前后
+集合相等，Core 恢复后独立 `/healthz` 为 **HTTP 200**。实际恢复镜像和显式未运行项见
+`native-identity.md` 同日记录。
+
+## 独立复核：存量 BOUND 意图的退休事务缺陷（2026-09-30，修复前）
+
+本节记录修复前未提交工作树的源码与只读数据库核对，不是修复完成声明，也不是运行中
+已经观察到约束报错的记录。权威为 `DD-85`、`DD-113` 第 6 条和 `DD-115`：存量当前
+引用补建为 `BACKFILLED/BOUND`；退休审计归属必须是实际引发退休的 operation，不能
+伪造原始签发 operation。
+
+复现源码核对：
+
+```bash
+rtk proxy sed -n '50,65p' core/migrations/20260930120000_platform_key_retirement.up.sql
+rtk proxy sed -n '100,115p' core/migrations/20260930120000_platform_key_retirement.up.sql
+rtk proxy sed -n '812,901p' core/crates/platform-core/src/secret_ref_rehome.rs
+```
+
+迁移的 CHECK 要求 `retired_at` 非空时 `retire_operation_id` 非空；补建的旧 BOUND 行
+没有退休 operation。`retire` 先调用 OpenBao destroy 并取得 metadata 证明，再仅设置
+旧意图的 `retired_at`。匹配上述存量行时，该 UPDATE 违反 CHECK，Core 的 RETIRED
+与审计事务回滚，而已销毁的旧版本不能回滚。下一轮重复同一 UPDATE，不能终结。
+复核时的 `cutover` 也没有在切 binding 的事务中冻结旧意图的退休 operation。
+
+只读联接 `secret_ref_rehome` 与同 Tenant、同旧 locator 的意图，实际返回：COPIED
+1 条、匹配旧意图 1 条、退休 operation 为空 1 条；FAILED 1 条、匹配旧意图 1 条、
+退休 operation 为空 1 条。此次没有推进这些保留行，没有销毁任何钥匙。
+既有 6/6 用例在迁移之后制造 legacy binding，未建立相应旧 locator 的补建意图，
+退休 UPDATE 匹配 0 行；其通过不能排除本缺陷。
+
+历史兼容边界另行核对 `git show 0ec5e552:apps/core/crates/platform-core/src/secret_ref_rehome.rs`：
+该版本的切换不创建签发意图，迁移只扫描当前 binding。因此迁移前已经 SWITCHED 的
+合法历史任务能缺少旧意图；不能用补造签发事实或拒绝所有历史任务处理这一边界。
+有旧意图时退休归属必须核对真实归位 operation，已有其它 operation 不得覆盖。
+本缺陷修复与兼容路径核验完成前，`V-SCN-69/86` 和 Stage 2 不整体关闭。
+
+## 退休归属冻结与历史兼容的实施（2026-09-30，运行核验待完成）
+
+本轮只修改 `secret_ref_rehome.rs` 的 `load/cutover/retire`，增加由后两者调用的
+`freeze_old_retirement`，保留原未提交的目标 BOUND 意图登记；没有新增迁移、API、
+状态、Workflow、fixture 或测试。四步变更分析为：核对 DD-85/113/115 与现有 SQL；
+确认编辑前影响；落实退休冻结与历史来源判别；格式检查及现有证据记录，随后由根代理
+统一构建、运行验证和图门禁。
+
+编辑前根代理已取得同一 runner 的 CLI/MCP 新鲜回执：HEAD `0ec5e552`、
+2026-09-30 10:03:16 UTC 的 schema 4/current、`incomplete_reasons=[]`。
+三个已有函数 impact 均 LOW，直接调用方为 `advance_inner`，经 `advance` 挂 service API。
+`load` 的图结果另有同名 receiver 的下界缺口，本文内检索确认调用方仅 `advance_inner`；
+不把该图下界当成全面无缺口，也不把编辑前图的新鲜度当作编辑后最终门禁。
+
+实现后的源码条件：
+
+- `load` 核对归位 ID 就是原 ActionExecution ID，并把实际 WorkflowRef 的
+  action、Tenant、operation、type/kind 与当前绑定的 Principal/pubkey 归属关联。
+  HEAD 的 Governed Action 预写原本就以同一 Workflow ID 同事务写 WorkflowRef、
+  SecretRefRehome 和 `ActionExecution.temporal_workflow_id`；此要求不套用于旧消费者清单
+  中 Stage 1 的直接 service 动作，原 `consumer_terminal` 判定保持不变。
+- 新 `cutover` 在 binding 行锁和原 ref/generation CAS 下，要求同 Tenant/kind/Principal
+  的旧 BOUND 意图；仅在退休 ID 为空或等于真实归位 operation 时冻结，与 binding CAS、
+  新目标 BOUND 和 SWITCHED 同事务提交。缺行、形态不符、已退休或已有其它 operation
+  都不切换，不覆盖退休归属、不伪造签发意图。
+- `retire` 在旧消费者终态后短事务锁当前 binding、验证目标 ref/version/audience 与
+  最小切换 generation，恢复遗漏的真实退休冻结并先提交，才查询/销毁原钉定旧版本。
+  查证后仅按确切旧意图 ID、Tenant、locator 和已冻结 operation 写 RETIRED，与归位
+  终态、审计同事务提交；已查证 destroyed 的版本不再次发起 destroy。
+- 缺旧意图只接受完整原 DD-85 的 SWITCHED、cutover 与 SUPERSEDED/ACTIVE 事实，
+  且当前目标为同 Tenant/kind/Principal 的 BACKFILLED 意图。HUMAN/CONTROL BACKFILLED
+  的唯一生产写入者是 DD-113 迁移按当前 binding ref 的补建；运行期补建仅为 OPERATOR，
+  其他生产写入均为 PROVISIONED。目标 PROVISIONED 缺旧意图、不匹配的既有旧行或
+  不完整的 Action/Workflow 关联均在 destroy 前拒绝。历史分支不补造任何旧意图。
+
+不使用 `cutover_at <= target.created_at`：两者的 `now()` 是各自事务起点，迁移先开始、
+旧 cutover 随后完成、迁移再读取新当前 ref 的合法交错会违反该比较。切换后身份撤权或
+目标意图已退休不阻断旧版本 cleanup；原 `old_version>1` 仍按 DD-85 查证该固定版本。
+不持有数据库行锁跨 OpenBao 请求；并发或结果不明仍可能重试同一固定版本的 destroy，
+不宣称外部副作用 exactly-once。
+
+本轮从 `/volumes/kailo` 实际运行以下检查，均退出 0：
+
+```bash
+rtk proxy rustfmt --edition 2021 --check apps/core/crates/platform-core/src/secret_ref_rehome.rs
+rtk proxy git diff --check -- apps/core/crates/platform-core/src/secret_ref_rehome.rs apps/core/verify/secret-ref-rehome.md
+```
+
+尚未编译、部署或运行本修复的真实拓扑/破坏核验，也未证明现场历史 SWITCHED 兼容链。
+既有 6 个 rehome 用例在当前迁移后制造没有旧意图的 legacy binding，不能作为新 cutover
+门禁的正向种子；本轮未为使其通过而放宽门禁、修改 fixture 或制造意图。
+此前 6/6 结果保持其原条件范围，不扩展为本修复 PASS；最终图门禁、`V-SCN-69/86`
+和 Stage 2 仍待根代理统一核验。
+
+## 写前目标意图与副本持久 fence 的实施（2026-09-30，运行核验待完成）
+
+本轮修正 DD-85/86/113 的 target-copy 并发缺口：先前只在切换事务 INSERT BOUND
+意图，discard 的「检查无引用→外部 destroy」没有持久 fence，不能排除另一个 Core
+实例在检查之后切换并绑定这份副本。本轮修改 `secret_ref_rehome.rs` 的
+`actor_still_authorized/copy_once/observe_copy/cutover/discard_copy`、
+`platform_keys.rs::fence_and_destroy_with` 和 `governance_reconcile.rs::pass`；
+新增由 observe/cutover/discard 实际调用的 `target_copy_intent`，未修改现有审计 helper、
+SecretStore、退休兼容路径或 fixture，没有新增 schema、状态、Workflow、配置或服务。
+
+四步变更分析与实际执行顺序为：复核现有 DD/实体、意图约束与共享 fence；核对编辑前
+新鲜影响回执；实现写前 OPEN、绑定条件和唯一 fence 收敛；格式/diff 检查并追加本节
+事后证据。根代理提供的 #10 同 runner CLI/MCP 回执均为 HEAD `0ec5e552`、
+indexedAt `2026-09-30 10:46:15 UTC`、status `up-to-date`、contentDrift `current`、
+schema 4/current、`incomplete_reasons=[]`。七函数的 impact 已实际完成，原始记录在
+`/volumes/data/kailo/tmp/codex-corrections-impact-20260930.log`；除共享 fence 为 CRITICAL
+外均为 LOW。CRITICAL 已在编辑前告知用户，直接调用方包含 `freeze_operator_write`
+和 `fence_and_destroy_intent`，影响部署引导 main 与 `provision_tenant_buzz`；不能把
+编辑前回执当作编辑后最终门禁。
+
+实现后的源码事实：
+
+- `copy_once` 先锁真实归位 Action/Principal，核对同 Tenant 的实际 binding 归属与固定
+  ComponentTaskWorkflow；以该 Action 的 operation、该 binding 的 kind/Principal 在
+  `INTENT→COPY_UNKNOWN` 同事务 INSERT PROVISIONED OPEN 目标意图，再发唯一 CAS0 写入。
+  SQL 唯一约束失败会回滚整个事务，不改 locator、不复用已有 fenced 意图。
+- `observe_copy` 回读版本 1 与派生 pubkey 后，在登记 COPIED 的同一事务锁定并要求
+  该真实目标 OPEN；历史 COPY_UNKNOWN/COPIED 缺写前意图保持 fail closed，不补造。
+- `cutover` 在目标回读之前识别已持久 FENCED/DESTROYED 的副本并继续 discard；即使
+  发起者后来恢复权限，也不复活副本或卡在读取已销毁目标。最终事务按原 Action、
+  Principal、目标意图锁序取得同一 OPEN，再锁 binding，原 ref/generation CAS 与
+  `finished_at`、旧退休 operation 冻结、SWITCHED 和审计同事务提交，不再 INSERT BOUND。
+- `discard_copy` 只调用平台共享 `fence_and_destroy_intent`，CONVERGED 后才把 COPIED
+  转为 FAILED/DISCARDED 并追加原 DD-85 outcome。共享链先 commit 持久 fence，再调用
+  现有 `destroy_unbound_rehome_copy` 的 CAS0/版本 1/metadata 查证；未知结果不宣告失败。
+  若 binding/BOUND 先提交，fence 不销毁；若 fence 先提交，cutover 不能绑定。
+- 平台共享链先读取实存 AE.action_key；归位还须匹配真实 Rehome、原 AE/operation、
+  同 Tenant 的 pubkey/owner/kind、固定 Workflow ID/type/kind 和 AE.temporal_workflow_id。
+  已知是归位而任一因果事实不匹配直接 CONFLICT，不退回普通 CONTROL 初建销毁入口。
+  HUMAN/CONTROL 副本复用同一归位销毁能力；原归位 AE 不执行初建 UNKNOWN→ABORTED。
+  DESTROYED 审计沿用原 ActionDefinition 分类，追加到真实原 operation；原 Workflow
+  决定任务终态。不存在新增的缺定义审计分类兜底。
+- HUMAN 与 CONTROL 的两处初建意图扫描按实存同 Tenant AE.action_key 排除归位，
+  不因它仍持有旧 binding 而把合法归位误判为初建孤儿。原固定归位 Workflow 继续
+  重试，现有 rehome/open/overdue 指标仍保留未知结果；legacy 初建扫描原本只选初建动作。
+- `actor_still_authorized` 使用既有严格 `check_bulk` 的单项 FullyConsistent Check。
+  缺 revision、缺项、重复、item error 或未知 permissionship 都是不可判定，只暂缓，
+  不触发 discard；只有完整确定的拒绝或已持久 fence 才进入对应清理路径。
+
+本轮从 `/volumes/kailo` 实际执行以下检查，前两项退出 0：
+
+```bash
+rtk proxy rustfmt --edition 2021 --check apps/core/crates/platform-core/src/secret_ref_rehome.rs apps/core/crates/platform-core/src/platform_keys.rs apps/core/crates/platform-core/src/governance_reconcile.rs
+rtk proxy git diff --check -- apps/core/crates/platform-core/src/secret_ref_rehome.rs apps/core/crates/platform-core/src/platform_keys.rs apps/core/crates/platform-core/src/governance_reconcile.rs apps/core/verify/secret-ref-rehome.md
+rtk proxy git diff --no-index --check -- /dev/null apps/core/crates/platform-core/src/platform_keys.rs
+```
+
+`platform_keys.rs` 原已为未跟踪文件，普通 scoped diff 不展示它；第三项补充检查该
+完整文件，退出 1、输出为空（no-index 对新增文件的差异退出码），不登记为退出 0。
+尚未编译、部署或运行本修复的真实拓扑/并发/破坏核验，没有声称 exactly-once 外部
+destroy。此前 6/6 的条件范围不变，
+既有迁移后缺旧意图的 rehome 种子未修改；V-SCN-69/86、Stage 2 与最终图门禁仍未
+据此关闭，后续构建及统一门禁由根代理执行。
+
+DD-113/115 的 `20260930120000_platform_key_retirement` 与
+`20260930130000_intent_action_scope` 对旧 writer 的不兼容结论保持其原实验范围。
+2026-09-30 用户明确当前交付为全新开发环境，没有线上旧版或历史数据保留要求；
+按 `06-工程基线规范.md` §5，旧 writer 兼容与迁移前历史形态恢复无适用对象，不作为
+当前开发或发布阻断。当前生命周期创建的 SecretRef 的复制、切换、撤权、退休及持久
+fence 仍须真实服务验证，不能用历史 6/6 或静态通过替代当前产物证据。
+
+## 接手失败日志与现有核验数据形态复核（2026-10-01）
+
+本节只记录现有失败的边界，不修改生产归位逻辑、测试数据、API、迁移或部署。
+`/volumes/data/kailo/tmp/codex-retirement-media-integration-20260930.log` 中当前
+`secret_ref_rehome` 的实际结果为 **1 passed、5 failed，44.22 秒**；通过的仅是
+`drop_response_proxy_delivers_request_and_withholds_reply`。此前 6/6 对应更早源码和
+数据条件，不能替代本次结果或证明当前 DD-113/115 集成通过。
+
+对该日志、现有测试源码与生产 SQL 逐项核对后，失败位置与以下缺失事实一致：
+
+- `copy_unknown_observes_only_the_frozen_target`、
+  `copied_then_rejected_destroys_the_unreferenced_copy`、
+  `lost_write_and_destroy_responses_converge_by_locator_and_metadata`、
+  `revocation_during_rehome_never_leaves_an_unreferenced_copy` 直接写入
+  `COPY_UNKNOWN`，再以核验凭据写目标 KV，没有登记同一原 Action/operation 的
+  `ServerKeyProvisionIntent`。`observe_copy` 的 `target_copy_intent` 因而不能取得
+  写前 OPEN 事实，不能仅凭目标版本可读补造意图或宣布 `COPIED`。
+- `legacy_server_secret_ref_is_blocked_until_exposed_then_rehomes` 走真实 BFF
+  准入与复制，但先把新建 binding 改指迁移后新造的部署级旧 locator，没有该旧
+  locator 的 BOUND 意图。`freeze_old_retirement(false)` 在切换前拒绝，任务停在
+  `COPIED`；不能为这一核验数据形态放宽 DD-113/115 的退休归属门禁。
+
+当前全新开发数据库中，按原日志精确限定五个失败 Tenant，联接归位行与目标/旧意图
+的只读查询退出 0、返回 `(0 rows)`。本轮没有重放这些原失败，没有创建新核验数据，
+没有推进归位或执行任何销毁；上述源码解释不登记为当前运行成功。
+
+随后按 `SecretStore::classify_legacy_server_identity_ref` 的部署 namespace、mount、
+`buzz-human/<tenant>/…` 与 `buzz-control/<tenant>[/…]` 形态，查询全部 ACTIVE Tenant
+的 ACTIVE SERVER HUMAN/CONTROL binding，实际为 **4 个 binding、0 个遗留 locator**；
+`admission.secret_ref_rehome` 查询为 `(0 rows)`。只读 `psql -X -v ON_ERROR_STOP=1`
+退出 0，输出存于
+`/volumes/data/kailo/tmp/codex-secret-ref-rehome-applicability-20261001.3nrubv.log`；
+凭据仅从既有配置与 secret 文件以内存环境传入，没有写入日志。
+
+因此上述五项依赖遗留 locator 的核验在本次全新环境没有真实适用对象；没有补种子、
+写入旧 locator 或补造 OPEN/BOUND 意图来制造这一对象，也没有删除或放弱其原断言。
+第六项 `drop_response_proxy_delivers_request_and_withholds_reply` 不依赖遗留 locator，
+其原日志 PASS 保留，但本轮未重新运行。六项均不因本次适用性查询变为新的运行 PASS，
+当前 SecretRef 复制、切换、撤权和退休链也不由这些计数获得验收。
+
+编辑前同一 `kailo-plus` 图谱的登记回执为 HEAD `ee4c796`、indexedAt
+`2026-10-01T02:47:31.671Z`。七个现有函数的 context/impact 完成，impact 均为 LOW；
+File 的 UNKNOWN 以 `service_api`、BFF、Worker 的实际调用补充，不解释为无人使用。
+完整回执为 `/volumes/data/kailo/tmp/codex-secret-ref-rehome-preimpact-20261001.log`。
+本轮未改生产源码、未重新构建或运行全套集成；现有核验数据条件不满足时不扩大完成
+声明，`V-SCN-69/86` 和 Stage 2 不由本节整体关闭。

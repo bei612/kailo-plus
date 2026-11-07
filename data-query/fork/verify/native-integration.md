@@ -11083,6 +11083,806 @@ overall component release gates retain their own acceptance gaps. Both
 wren-ui and wren-ai-service source inputs changed; existing image digests
 do not represent this batch and must not be relabeled as its build.
 
+### 2026-10-10 original SQL adjustment private HUMAN query callback
+
+Authority: design 08 SS-WRN-IDENTITY / SS-WRN-GOVERNANCE preserves the
+original adjustment flow; GAP-WRN-01 still forbids claiming generic SQL
+cancellation. Fixed upstream `c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/apollo/server/adaptors/wrenAIAdaptor.ts::createAskFeedback`,
+`wren-ai-service/src/web/v1/routers/ask_feedbacks.py::ask_feedback` and
+`src/web/v1/services/ask_feedback.py::AskFeedbackService.ask_feedback`
+were rechecked. This extends the preceding original Asking batch, not a
+new service actor, delegation, permission table or task registry.
+
+Impact: original adjustment resolver/service/tracker/adaptor and original
+AI router/service now consume the original HUMAN identity through private
+headers and the existing background-task ContextVar. The optional feedback
+MDL hash accepts the original `id` alias; old standalone calls without it
+remain supported. No platform contract or database migration changed.
+The callback derives adjustment ownership from its persisted original task,
+revalidates HUMAN/scope/project/deployment and reuses existing SQL admission,
+ApiHistory keys and receipts. Credentials do not enter task rows or payload
+serialization. The two union-detail consumers explicitly narrow their
+existing adjustment branch; no public type was weakened.
+
+Side-effect/exception boundaries: AI pending SQL exits the actual AI job
+as STOPPED/NATIVE_EXECUTION_UNKNOWN, not SQL cancellation or failure.
+Original GET stays observational. Original explicit rerun checks the
+registered child SQL receipts first; an unsettled child preserves the old
+task and never starts a replacement. Its original row lock rechecks the
+query ID, stopped/failed state, original native scope and exact child-key
+set before replacement. Revocation and changed source reject; lost POST
+acknowledgement stays observable under the persisted original ID. The
+preceding same-key ApiHistory recovery remains the only missing-admission
+recovery consumer. These are request-level controls, not a new authority.
+
+Evidence directory: `/volumes/data/kailo/tmp/wren-human-asking.I5YEuR`.
+Original Node 18 image `sha256:2676b7ad8b38878419f996150cfc17c491c39cb2092acebcf9c1800c81066882`
+ran the actual `nativeAskingQuery.test.ts nativeAdjustmentScope.test.ts`
+consumers with Jest/ts-jest isolated transpilation: 42/42, exit 0
+(`feedback-ui-final-positive.log`). Replacing the persisted adjustment
+kind, skipping child receipt settlement and removing locked status/key-set
+checks caused four actual failures, exit 1 (`feedback-ui-negative.log`).
+After restoring those production bytes and adding explicit union narrowing,
+42/42 passed, exit 0 (`feedback-ui-restored.log`, SHA-256
+`a2a97877fb245a3ebcba9680aedc095052155bc1f8efab40603e6f1c68c8bb39`).
+Repository/provider interleavings are boundary substitutes; this batch does
+not claim live PostgreSQL multi-process locking or Core approval acceptance.
+
+Original AI image `sha256:721fd2fd5c4b1501303d17b13fdec67e7a978ac24187bb9d26d2436ef18792b4`
+ran actual FastAPI BackgroundTasks, Hamilton and AskFeedbackService:
+5/5, exit 0 (`feedback-ai-final-positive.log`). Removing private context
+and changing pending to generating produced two failing checks, exit 1
+(`feedback-ai-negative.log`); exact restoration passed 5/5, exit 0
+(`feedback-ai-restored.log`, SHA-256
+`b7a4e68b20f5eeb323d2459b2d0499c18738ad54d6270e2536dd904f177f855d`).
+The existing stream/standalone selection passed 17/17, exit 0
+(`feedback-stream.log`); four Python sources parsed successfully.
+Both actual image checks used network none, no pull/install/build,
+read-only input and 4 CPU/4 GiB. Existing missing config.yaml/disabled
+telemetry warnings remain; these do not prove production startup.
+
+Initial failures are retained: the first AI run failed one of five because
+the original Feedback request had no MDL hash field; its optional alias was
+added at that actual consumer. The first Node run passed 41/42: an existing
+source-change fixture lacked the now-required private HUMAN token; fixing
+only that fixture restored 42/42 without relaxing production admission.
+Prettier write/check applies to the seven hand-maintained TypeScript files.
+The original tsc session 55132 was stopped only after its exact PID, command
+and two superseded production accesses were verified; exit 143 is retained,
+not a typecheck pass. Its process disappeared before the final source bytes
+were synchronized into the same SDK. Final session 54363 runs the complete
+frozen source and then Prettier; both completed with exit 0. TypeScript emitted
+no diagnostics and Prettier reported all matched files use its code style.
+The exact log `feedback-types-final.log` has SHA-256
+`17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20`.
+This typecheck covers this frozen adjustment batch, not the later REST batch.
+
+No full check, browser screenshot/interaction, image refresh, live model
+request, active binding or deployment is claimed. Existing AI/UI artifacts
+do not represent these new sources. Full release admission, model delivery
+and live AE/EE quota/audit settlement retain their separate delivery gates.
+
+### 2026-10-10 original REST Asking HUMAN callback and atomic completion
+
+Authority: design 08 SS-WRN-IDENTITY / SS-WRN-GOVERNANCE keeps the
+original HUMAN actor and existing query/dry-run admission; GAP-WRN-01
+does not authorize generic SQL cancellation. Fixed official source
+`c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/pages/api/v1/ask.ts::handler` and
+`wren-ui/src/pages/api/v1/stream/ask.ts::handler` remain the REST/SSE
+product baseline. This batch repairs their existing managed consumer,
+not a new API, Agent, model credential, task table or platform authority.
+
+Impact: `nativeRestAsk.ts::governedRestAsk` now passes the same private
+HUMAN transport already used by original Asking and adjustment. Original
+`ApiHistoryRepository.prepareNativeGeneration` reserves the existing
+AskingTask and API history in one existing Knex transaction, retaining
+the native unique query_id. Replay verifies project/question/nativeScope,
+cannot adopt another task or reconstruct a missing owner. Existing
+records without that native ownership proof fail closed; no migration
+silently assigns users. No platform wire contract or generated type changed.
+
+Side effects: source/owner refusal before AI POST persists original
+FAILED task and history together. Lost create acknowledgement only
+observes the fixed query_id. AI STOPPED with an unsettled child remains
+HTTP 202/NATIVE_EXECUTION_UNKNOWN, never SQL cancellation. An explicit
+same-key POST recovers missing admission only through the existing
+persisted child SQL history and original HUMAN query/dry-run admission.
+Once verified terminal, the stopped AI generation returns HTTP 409;
+it does not start another AI job or new SQL key.
+
+Boundary: original task row locking compares the exact settled child
+set during final history publication. GENERAL's early classifier is
+not completion: actual matching native DONE and emitted text are first
+checkpointed at 202, then compare-and-closed with the task. A concurrent
+child keeps that real DONE/text for same-key reconciliation, never
+reopens the non-replayable stream. Closing marks the original task
+FINISHED, preventing new child registration while preserving existing
+key observation. Already sent chunks cannot be recalled; each chunk
+retains fresh source authorization/child settlement and only verified
+closure emits message_stop. This is not a generic stream-resume protocol.
+
+Actual post-implementation evidence is in
+`/volumes/data/kailo/tmp/wren-human-asking.I5YEuR`.
+Original Node 18 image
+`sha256:2676b7ad8b38878419f996150cfc17c491c39cb2092acebcf9c1800c81066882`
+ran `node node_modules/jest/bin/jest.js src/nativeHumanQuery.test.ts
+src/nativeRestAskOwnership.test.ts --runInBand`, filtered to the
+original run_sql HTTP HUMAN consumer and original REST history/task
+transaction; ts-jest used isolated transpilation, not a typecheck.
+The container had 4 CPU/4 GiB, network none, read-only inputs and no
+pull/install/build. Nine cases execute the original repositories and
+migrations against the image's real better-sqlite3; HTTP/provider
+interleavings use boundary substitutes, not live Core or multi-process PG.
+
+Positive `rest-corrected-positive.log`: 159 passed/377 filtered, exit 0,
+SHA-256 `2c3449a7e0d16dbb2226fd31586c4dc04ae2a87fccab6176ebcd49eb7eb0a5bd`.
+Removing the real private HUMAN transport and final locked child-set
+comparison caused four failures, exit 1 (`rest-negative.log`,
+SHA-256 `f6e3c6f249aa072b042e6b6131a377a6c9eb5c8f3516a241ce8dfca3acd7c8d8`).
+Both production files were restored byte-for-byte; `rest-restored.log`
+passed 159/159 selected, exit 0, 377 filtered, SHA-256
+`18459eab6774c3a2ff231b4ff3944e38e75b1c3a86a9044cb44dab0157791976`.
+
+Retained first failures: `rest-positive.log` passed 153 and failed two;
+`rest-final-positive.log` passed 157 and failed two. Dry-run's completed
+fixture incorrectly returned query rows rather than its required
+`valid:true`; the real disclosure consumer rejected it. The other
+failure was ECONNRESET on a local reused HTTP connection after GraphQL
+schema initialization. Only the fixture's native result and test client
+connection lifecycle were corrected; no production timeout/admission
+was relaxed. The PostgreSQL-only `nativeQuery.test.ts` compatibility
+fixtures were updated but not executed in this SQLite/HTTP selection.
+The original frozen REST TypeScript job 2704 exited 2: its real IContext
+producer omitted modelService. The two-line correction uses the original
+ModelService constructor, not a type assertion or optional context member.
+The corrected HTTP/SQLite consumers passed 159 selected cases (job 92411).
+The same complete REST input then passed tsc and Prettier (job 49097, exit 0;
+rest-types-corrected.log SHA-256
+`17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20`).
+This input predates the terminal-race correction below. No full check,
+browser, production binding, model billing, live approval/AE/EE settlement
+or deployment is claimed. New wren-ui inputs need a real new artifact;
+existing source/artifact digests are not relabeled.
+
+### 2026-10-10 REST and original tracker terminal-write convergence
+
+The existing repository and both original trackers were corrected before
+running the checks below.
+Authority remains SS-WRN-GOVERNANCE, SF-WRN-07/08/09 and .design/08's rule
+that native task references and actual results, not stream closure, establish
+terminal evidence. GAP-WRN-01 remains UNSUPPORTED for database cancellation.
+Fixed upstream is `c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/apollo/server/repositories/askingTaskRepository.ts`
+(`AskingTaskRepository`); the existing Kailo updateQuery and original
+AskingTaskTracker/AdjustmentBackgroundTaskTracker remain the actual writers.
+
+Four-step impact and failure review:
+
+- Authority: original asking_task is still the only native task owner;
+  neither API history nor in-memory polling can reopen its known terminal query.
+- Impact: updateQuery holds the existing task/query/project row lock. Same-query
+  FINISHED/FAILED/STOPPED accepts identical detail only; a conflict returns null.
+  The original history and thread-response transactions throw and roll back
+  associated writes. Explicit new-query rerun remains the existing path.
+- Side effects: no new table, state, wire field, action or permission authority.
+  A previously unknown SQL child is not marked failed or cancelled by AI STOPPED.
+  Existing child keys survive identical replay; no new child may join a closed task.
+- Boundaries: both trackers evict only the same observation object after fresh
+  matching task/query/project/nativeScope and a real database terminal status.
+  An unchanged late GENERATING result cannot hide a REST FINISHED row in cache.
+  Changed scope, unavailable storage and unresolved rows are not silently retired.
+  Getters then read the original database; no AI/SQL redispatch is introduced.
+
+Actual production code was exercised through original SQLite migrations,
+AskingTaskRepository, ApiHistoryRepository and both tracker consumers; only
+the remote AI provider was a boundary substitute. This is not PostgreSQL
+multi-replica locking, live provider or browser acceptance. The original
+locked Node 18 image `sha256:2676b7ad8b38878419f996150cfc17c491c39cb2092acebcf9c1800c81066882`
+ran with network none, read-only root, 4 CPU/4 GiB, no dependency installation.
+Evidence directory: `/volumes/data/kailo/tmp/wren-human-asking.I5YEuR`.
+
+- First run 34444 exited 1: 16 passed, two new checks referenced the wrong
+  exported tracker class. Production was not changed to accommodate this failure.
+- Corrected run 95836 exited 0: 20 passed. Log `rest-monotonic-corrected.log`,
+  SHA-256 `45d4e5240718670d702a1dbfa1fef61ec4dfe2b021e5ae911d450c6ca3971414`.
+- Real production negative 10410 exited 1: disabling the repository terminal
+  fence and the two post-provider cache checks produced nine failures.
+  Log `rest-monotonic-negative.log`, SHA-256
+  `4b9cd43033a1dc76e91c079e4bf44de0bf879b84d44bcf660539856243730cb1`.
+- All three production files were restored byte-for-byte. Run 4223 exited 0:
+  222 passed, 435 filtered across nativeHumanQuery, nativeRestAskOwnership,
+  nativeTaskOwnership and nativeAdjustmentScope, selected by their original
+  REST/Asking persistence/adjustment describe blocks. Log
+  `rest-monotonic-restored.log`, SHA-256
+  `42e66c17fda7f71951e5c1ec255ca4f8b4ab6ea7ada6ec35e368351f2b4e4c6b`.
+- The final check fixture names the original enum value and ASK union type
+  explicitly. Its 20 actual SQLite/tracker cases passed again, run 45707 exit 0,
+  after Prettier. Log `rest-monotonic-final-consumer.log`, SHA-256
+  `dd59ba8b7903832040c3c38bed50adc4bf51d982a7d81d7550f318c1e1c0db57`.
+
+The final four-file input was copied byte-for-byte with apply_patch into apps
+and the original isolated SDK. Job 32800 exited 2 with eight TS2322 diagnostics
+in the new check fixture: the feedback branch of the shared detail union
+allows absent error while ASK requires it. Five ASK fixture constructions now
+explicitly retain the original row's null error; no production type or behavior
+was weakened. The failed log rest-monotonic-types.log remains at SHA-256
+`033d8c695afd697f1c47731f46ac6fb0cf0d9eab4a14b4ba77c60e4bf012559e`.
+The corrected fixture's 20 actual consumers passed again (40947, exit 0),
+log rest-monotonic-type-fixture.log SHA-256
+`8cb5c9a3a4c61ef9db27e4d0d9a46f7cdac4d235beb9f057fbf9e8b2d735647c`.
+Final complete tsc --noEmit --incremental false and four-file Prettier
+--check passed in the original 4 CPU/4 GiB SDK (16415, exit 0), log
+rest-monotonic-types-corrected.log SHA-256
+`17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20`.
+There is no new build, deployment, model-route activation or release approval.
+
+## 2026-10-10 — Built-in data-query contract bootstrap, not release approval
+
+Authority: design 03's built-in capability set, design 07 §2.4 and DD-102/DD-108
+require data_query.v1 to be delivered by the original audited deployment
+bootstrap. This is an authorized governance adaptation; no Wren page or
+business engine is replaced. The fixed upstream remains
+c5f02a0391c87420dba78632dcd86073710deb72,
+wren-ui/src/apollo/server/services/queryService.ts::QueryService.preview.
+The actual current Core read-only query returned zero data_query categories
+and contracts, and zero component definitions, releases and bindings.
+
+Impact: platform_bootstrap now installs both compiled Knowledge and data-query
+seeds in its existing transaction, through the same deployment principal,
+ActionExecution and audit writers. The new registration supplies only the
+three existing NativeQueryService consumers: query, dry_run and describe.
+The original schema validator and content/digest checks remain authoritative.
+Core Docker/release inputs include the new registration. No generated wire
+schema, enum, field, account, permission table or client presentation changed;
+four-language serialization regeneration has no changed wire input in this
+batch. The added Wren checks consume the original MCP SDK validator and real
+query/describe results, not synthetic success responses.
+
+Side effects and boundaries: existing registered content cannot be overwritten,
+retired contracts are not reactivated, and unknown categories/versions remain
+refused. The new migration only widens the original deployment-proof predicate
+to the fixed data_query/v1 seed; it writes no catalog rows. Its down migration
+refuses to orphan an existing PLATFORM_SEED. Empty-catalog up/down/up passed;
+with a real seed, the actual down SQL returns 23514 and its savepoint rolls
+back, after which the same transaction's seed validation still succeeds.
+Repeated seed calls produce exactly two AEs and six audit events for the two
+contracts, with no duplicate bootstrap. All verification writes were confined
+to the existing isolated PostgreSQL instance and rolled-back test transactions.
+
+Actual post-implementation verification:
+
+- Rust SDK kailo-installation-scope-sdk-e4agxd retained 4 CPU/8 GiB and Cargo
+  jobs 16, with the original Data target cache. sqlx migrate run, revert and
+  run passed on the new isolated wren_data_query_seed_fdlqu2 database.
+  The first create attempt failed with role root does not exist because the
+  PG container did not export POSTGRES_USER; the original SDK connection
+  supplied the actual isolated database identity without printing its secret.
+- First Cargo run 45761 exited 0 but selected zero tests because its filter
+  named tests instead of registration_tests. It is compilation evidence only.
+  Corrected command cargo test -p platform-core --bin platform-core
+  capability_contract::registration_tests -- --include-ignored --nocapture
+  passed 13 tests (37714, exit 0; 409 filtered). Actual production mutation
+  disabling the immutable content comparison failed the real PG check
+  (7454, exit 101; 12 passed/one failed). Byte-for-byte restoration passed all
+  13 again (47478, exit 0).
+- Original Node/PG SDK kailo-wren-query-sdk-itgs2n retained 4 CPU/4 GiB.
+  The original Jest nativeQuery.test.ts query/dry_run history and HTTP/MCP
+  describe cases passed three tests, with 108 filtered (58256, exit 0).
+  Mutating NativeQueryService's actual dry_run result from valid=true to false
+  failed the new output-schema consumer with data/valid must be equal to
+  constant (5344, exit 1; two passed/one failed). Original bytes were restored
+  and all three passed again (10164, exit 0). Native Engine and PEP remain
+  boundary fixtures; repositories and HTTP/MCP consumers are real.
+- rustfmt --check for the two Rust files and bash -n tools/release.sh exited 0.
+  The original Prettier formatted the added Wren check. No new full check or
+  Wren-wide type check was run; the parent's subsequent fixed-input full
+  check must cover integration. No image was built, deployed or activated.
+
+Rust logs are in
+/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/data-query-seed.fDLqU2:
+registration-positive.log SHA-256
+5a4f80ef695ce2b22e94d115c3358ad18232a4d1d977eadb93c37af95ecc80a4,
+registration-negative.log
+161b8cca98e38a0220e793ec3531a7ee352b474fad9a284f7a542ffd2c1d8cee,
+registration-restored.log
+3dca07d25e54ad4eede4a2293480c45c6f99a175a3594279d48fb7ee603c7cca.
+Node logs are in
+/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/data-query-seed.dzbkvq:
+consumer-positive.log SHA-256
+71986507109a423edf301be80ee468468b5b89835d27f2e86a7db274b58c0518,
+consumer-negative.log
+82fe4aaa1e0e009d2d01398395611e33a81b9c69cf68a1efcc3d72ff3e36931a,
+consumer-restored.log
+ea5c979e75d794851cf107f412811e4a45d0307f70eb88cdbe051a924a27e146.
+
+Release boundary: the existing component_release typed ContentReference
+roundtrip gate is unchanged. The describe consumer currently returns resultJson,
+not the typed reference producer required by referenceFromStepKey; the supplied
+shape vectors are not passing release-conformance evidence. This batch does
+not claim Wren release approval, binding activation, model delivery or sidebar
+availability. Actual ContentReference production/roundtrip is the next
+consumer gap, not grounds to relax the existing gate. Earlier image digests do
+not automatically cover these changed Core inputs or Wren check source.
+
+## 2026-10-10 Wren describe typed-reference production and native roundtrip
+
+Authority: DD-94/98/102, .design/07 sections 2.4 and 8A, and .design/08
+section 6. Fixed upstream remains
+c5f02a0391c87420dba78632dcd86073710deb72,
+WrenAI-ui-0.32.2/wren-ui/src/apollo/server/services/queryService.ts::QueryService.preview.
+The original query engine, native history, model/view reference validation and
+Core authorization remain authoritative; this is not another query executor.
+
+Impact: describe with the original empty input remains metadata-only. An explicit
+positive integer limit now calls the existing modelReference producer against
+the captured deployment. The original GET_MODELS ApiHistory stores its typed
+reference alongside the original request, not in Core or inferred from resultJson.
+Successful referenced dry_run/query responses return that exact validated
+ContentReference. The HTTP/MCP schema and the still-unpublished data_query.v1
+registration consume the same optional limit. No default limit, new action,
+wire field, platform entity or database migration was added. The v1 input schema
+digest changes before its first registration; an already registered immutable
+contract must not be silently overwritten. Existing empty-input clients retain
+metadata-only behavior. Existing query cancellation remains GAP-WRN-01.
+
+Side effects and boundaries: fresh PEP, binding/project/connection, source-resource
+authorization and captured deployment checks remain on the original execution
+path. A changed model SQL revision, foreign target or revoked access is refused.
+Replay compares both stored metadata and its typed reference before exposure;
+it neither follows a newer deployment nor repeats SQL. UNKNOWN/FAILED responses
+do not invent a reference or result. Explicit invalid limit is rejected before
+history reservation. No Resource or runtime grant is created by these vectors.
+
+The original Core runner does not map or create the fixed vector UUID.
+component_conformance_identity::context checks its referenceResourceId against
+the separately delivered context targetId; component_release::production_probe_execute
+copies that exact target into arguments.target.resourceId. The developer
+environment must actually deliver the isolated native model/deployment, its
+simulated PEP resource mapping, and artifact-matched environment/identity/fixture
+files. Those have not been delivered or exercised through ComponentTaskWorkflow
+here. The native PostgreSQL/HTTP checks below use the existing fixture PEP and
+engine boundaries, not production catalog authorization or release approval.
+
+Evidence directory:
+ /volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/data-query-reference.5EcxyG
+
+Execution used the existing kailo-wren-query-sdk-itgs2n (4 CPU/4 GiB,
+memory=swap), its original isolated PostgreSQL connection and installed
+Jest/ts-jest. No dependency install, image build, timeout increase or live
+catalog write occurred. The original command was jest src/nativeQuery.test.ts
+--runInBand with runtime isolatedModules and the existing @/ and @server/
+mappings; the selected pattern was
+typed.reference|describe|same original SQL-editor history.
+
+- reference-positive.log, handle 86336: exit 1, 24 passed/4 failed/94 filtered.
+  Failures were three original 5000 ms test/hook timeouts and a duplicate fixture
+  source-table insertion; these failures are retained, not counted as passes.
+- reference-failed-cases.log, handle 69311: unchanged input, only those four
+  failed cases, exit 0, 4 passed/118 filtered.
+- reference-negative.log, handle 61144: actual private production mutation
+  removed reference echo and nativeRevision comparison; exit 1, both selected
+  consumers failed assertions (missing typed echo and changed revision accepted).
+- Restored nativeQueryService.ts SHA-256:
+  af636b640ffa1fa5038651d64f3fddb2c921ead50f1c7680068b2d8877b5a8ef.
+- reference-restored.log, handle 76981: exit 1, 21 passed/7 failed/94 filtered;
+  six original 5000 ms timeouts and an overlapping history-count assertion failed.
+- reference-restored-failed-cases.log, handle 37707: one targeted follow-up only,
+  exit 1, 6 passed/1 failed/115 filtered plus afterAll timeout. The full new
+  describe→dry_run→query vector and typed reference replays passed. The remaining
+  case is "keeps describe replay on its original captured deployment after a
+  newer deployment becomes current", nativeQuery.test.ts:3459.
+  The log identifies the whole async case, not its specific awaited operation.
+  Its original MCP helper closes clients in finally; afterAll uses server.close.
+  A post-run read of the isolated PG found no other sessions or open transaction
+  and no authorized/other fixture-model residue. This does not prove I/O was
+  the timeout cause. No further Jest retries or timeout changes were made.
+
+The final TypeScript/Prettier command, handle 19351, terminated with exit 1:
+tsc --noEmit --incremental false passed (exit 0), then the original Prettier
+check rejected only src/nativeQuery.test.ts formatting. Its original output is
+reference-types-format.log (SHA-256
+e1b0397f0c62f799f85c1f2f6b89b27a75f942f29a44b704425a4124de56d133).
+Handle 52970 applied the original formatter to that test only and checked all
+three TypeScript files: exit 0, "All matched files use Prettier code style!"
+reference-format-restored.log SHA-256:
+91b7944693a81966320a117963f31a914b1e8e1850fab4ee4ee8e7ad961e14ca.
+
+Source patch is four paths, +312/-16, SHA-256
+74a5d8536316f9b8fad5476065ddd6331d21ad8287a6287e1201bb20d959e479.
+The full restored narrow batch remains NOT PASSED. No full check, browser,
+Windows/Mobile, real release conformance, commit/push or deployment is claimed
+by this packet. Earlier UI/AI/Core artifact digests do not cover these new inputs.
+
+### Isolated Wren native fixture preparation and observation
+
+Authority is REQ-22 / DD-76, `.design/07` section 8A. This implements the
+local isolated environment side of the existing conformance suite, not a
+replacement runner or a production PEP. Upstream baseline remains
+c5f02a0391c87420dba78632dcd86073710deb72,
+`wren-ui/src/apollo/server/services/deployService.ts::DeployService.deploy`.
+
+Impact is limited to `data-query/docker/conformance/provider.mjs`, its
+`preparation.test.mjs` and README. Existing Adapter Protocol, environment,
+identity and binding delivery are consumed; no wire type, native table,
+platform registration authority or production grant is added. Wren's original
+Next adapter rewrites and GraphQL endpoint share the same native application;
+the preparation endpoint must match that explicitly delivered Wren origin.
+
+The explicit prepare/observe operations call the original GraphQL deploy or
+modelSync consumer. Only the original DeployService creates its durable intent
+and calls real AI. The existing project row lock adopts an in-progress intent
+or same-hash successful deployment before dispatch; this is source-backed
+idempotence, not newly claimed concurrent integration acceptance. Preparation
+checks the full isolated project set before each request and requires the exact
+original native CSRF origin from WREN_NATIVE_IDENTITY_JSON. Current HUMAN
+credentials stay in an owner-only file and request memory, never output.
+
+Missing/changed delivery, wrong project or origin, mismatched manifest/model/
+columns/connection and lost acknowledgement cannot publish a fixture. Existing
+intent is observed rather than force-redeployed. IN_PROGRESS/FAILED retain their
+actual meaning. Only an actual matching SUCCESS can publish the native fixture
+with the real deployment ID; the output is owner-only, complete and create-only.
+Same-byte re-observation is idempotent; other fixture files are not overwritten.
+No native SUCCESS row, SQL output or passing expected vector is produced by it.
+
+Post-implementation checks used the original isolated PostgreSQL and constrained
+Node SDK (4 CPU / 4 GiB, memory=swap), original Wren migrations and three real
+refusal consumers: ambiguous current-project, delivered CSRF mismatch, and
+observe without durable intent. Handle 1161: exit 0, 3/3. Removing the three
+production guards made handle 98807 exit 1, 0/3, each reaching the unexpected
+HTTP-dispatch trap. Original bytes restored; handle 21196: exit 0, 3/3. This
+HTTP trap returns no fake GraphQL or AI response, and no SUCCESS row is written.
+Original Prettier formatting/check and final Node syntax check exited 0.
+Final source patch is 3 files +1165/-0, SHA-256
+e1a7202728291abb02d67aa0e340f92b510bbe7af51170be1ac33236f80de242.
+Raw evidence directory:
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/conformance-provider.OxjdRz`.
+preparation-positive.log SHA-256: 16f07773e7ea84b7aa50368901785ec28c1cced876f0487a7cdce53122d1746b.
+preparation-negative.log SHA-256: fe560c9db93cb81976a9672d47895955aae0b473368ddbbac6acb11db04a48e3.
+preparation-restored.log SHA-256: 3b0b272246ebb645025bda2e3827d0b5ae8a2926795dd7e390e82a9a712952ef.
+
+Earlier handle 8363 (4/4) used older mutable input and boundary-only SUCCESS
+rows. It is not final evidence; that private check is excluded from delivery.
+Actual GraphQL/AI successful preparation, concurrent deployment, publication,
+real Ibis column/result facts and complete Core/Worker conformance remain
+unverified pending controlled native configuration and actual source services.
+The first immutable v1 vectors are not registered from placeholders. No binding
+activation, sidebar acceptance, full check, new image or deployment is claimed.
+
+### Isolated native preparation scope and runtime setup (2026-10-10)
+
+Authority remains design 07 sections 8A/8.3, REQ-22 and DD-76: this is an
+isolated developer provider, not production authorization or a second runner.
+Impact is limited to the original conformance provider, its preparation
+consumer check and README; no UI, AI or Engine build input changed in this
+increment. Preparation now consumes the independently signed native HUMAN
+token through the existing service-authenticated authorizeScope transport.
+Actual project/model facts, fixed token, public JWKS and file identity are
+checked per request. Query admission, ActionTokens and production access are
+not implemented by this temporary listener. Missing/changed inputs refuse;
+listen conflicts refuse and finally closes the listener and database client.
+Original deployment intent remains the only deployment observation authority.
+
+Original limited Node SDK and isolated PostgreSQL checks: positive 4/4 exit 0;
+removing the exact HUMAN token comparison caused the real HTTP consumer to
+fail (200 !== 401), exit 1; original bytes restored, 4/4 exit 0. Formatting
+completed through the original Prettier. No new framework or passing native
+SUCCESS fixture was used. Source patch SHA-256:
+84c7895b297d75f0c14212b47547004db35dbbb537b767602416d9144a87a7d3.
+Evidence directory is the preceding conformance-provider.OxjdRz directory.
+preparation-scope-positive.log SHA-256: a1148beaa45febc637510d126a1decefee1ac8394063f994033e75c33c51015b.
+preparation-scope-negative.log SHA-256: 04be60fb6c84a5f66271efe4fef8f9af274734935cae4a3c6eff2528eb7f57df.
+preparation-scope-restored.log SHA-256: 7054ff845c8786faffc094eefa4e53c187828008757eecee8ab7ea25603949c8.
+
+Separately, isolated operational preparation uses the private Data directory
+`/volumes/data/kailo/tmp/wren-native-conformance-runtime.pawCOZ`.
+The two user-provided model catalogs returned HTTP 200. One synthetic embedding
+request returned Qwen3-Embedding-4B, one vector with 2560 values and 8 total
+tokens; embedding-probe-response.json SHA-256:
+c40c50a47a67754b898da1256e7499899de7a303afcb09acdc966fd9ba0aaa3e.
+This is the dimension evidence, not the catalog context length. The isolated
+SELF_MANAGED_MODEL configuration contains no fabricated API key or production
+binding. PostgreSQL and original Ibis were started on an independent internal
+network, with no host ports and 1/2 GiB respective memory limits. PostgreSQL
+initialization and native project/model creation are not yet verified here;
+no successful deployment, full conformance, release approval or activation is claimed.
+
+### AI and Engine artifact publication recovered (2026-10-11)
+
+The original two `tools/build-upstream.sh` jobs built from frozen tree
+`d102d73679fc8d4f2af4801af0231dba9ab50daa` and loaded their images, but both
+exited 1 at tagging: the caller appended `REGISTRY_PORT` to `REGISTRY_HOST`,
+which already included that port. No product source or build recipe was changed.
+The original Engine verification reported 6 tests, 0 failures, 0 errors and
+BUILD SUCCESS; this does not establish native end-to-end query conformance.
+
+The existing loaded images were tagged and pushed using the actual delivered
+`REGISTRY_HOST`, without rebuilding. The original `upstream_manifest.py record`
+ran against the same exported source and its `source.index`. Both registry
+manifest HEAD requests returned HTTP 200 and their exact Docker-Content-Digest:
+
+| Artifact | Source digest | Registry artifact digest |
+| --- | --- | --- |
+| data-query-ai-service | `sha256:512dcd824b1bace37f7f6fa5e1f9676deaaab77b0fc3d8a9bcdb1af17fac005a` | `sha256:9e90bd314f8bfee34917664df5de16cfe87fc09737e584353965705fc9a3ba90` |
+| data-query-engine | `sha256:b15ffaf38771968d05c0434bd83b6e06d278ad882becedb4a38e825216472e45` | `sha256:44f6327653922e428d8317fb084f02825fb3d797116cffddc4fffc870db5b6dc` |
+
+The source export and full build logs remain at
+`/volumes/data/kailo/tmp/data-query-release-20261010.xZPSNC`:
+`build-data-query-ai-service.dYX0gg.log` and `build-data-query-engine.zfc6Fb.log`.
+The formal upstream manifest matches the original tool's generated manifest.
+An initial metadata-record attempt without the export's Git context failed;
+the subsequent command supplied that original context and exited 0.
+This publishes two artifacts only: no production container, UI image, binding,
+release approval or left-menu entry was activated by this operation.
+
+The isolated `pawCOZ` native PostgreSQL first exited 1 because its original
+entrypoint's shutdown checkpoint timed out (`pg_ctl: server does not shut down`).
+Only that stopped, project-owned conformance container was started again; its
+existing data completed crash recovery and `pg_isready` reported accepting
+connections. No data directory, WAL, other project or production service was
+removed or restarted.
+The original Wren migrations then ran through its existing Knex dependency in
+the 4 CPU/4 GiB setup container (35864, exit 0). Readback from the isolated
+native database reported 48 migrations and zero project, model and deploy_log
+rows. This establishes schema initialization only, not a successful native
+deployment or query; no SUCCESS row or component activation was fabricated.
+
+### Original model creation and physical-source preparation (2026-10-11)
+
+REQ-22 / DD-76 and design 07 section 8A remain the authority. In the isolated
+`pawCOZ` database, original ProjectService.createProject, Ibis metadata reading,
+ModelResolver.createModel and MDLService.makeCurrentModelMDL created/read one
+native PostgreSQL project and one `public_source` model from synthetic
+`source(value)` data. Readback exited 0: project/model IDs 1/1, one source row,
+and **zero deploy_log rows**. These are native setup facts, not successful
+deployment, query execution, production permission or release approval.
+The setup invocation 90938 printed its native result, destroyed its Knex pool,
+but original background trackers kept the process alive and reported inability
+to acquire a connection. Only that owned Node process was terminated; its exit
+is 143, not a claimed successful command exit. The subsequent independent
+database read is the exit-0 evidence for persisted setup facts.
+
+The actual original manifest used `tableReference` and omitted `refSql`, while
+the database stored `ref_sql = NULL`. The previous preparation reader compared
+only ref_sql/refSql, incorrectly rejecting that original representation and not
+pinning its physical source. Fixed-source evidence was reread with git show:
+`c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/apollo/server/mdl/mdlBuilder.ts::MDLBuilder.addModel`,
+`MDLBuilder.buildTableReference` and `MDLBuilder.postProcessManifest`.
+The provider now checks the native table properties against the exact manifest
+table reference; SQL is absent/null in that representation. SQL-backed models
+retain exact nonempty SQL and cannot also name a physical table.
+
+Impact is the existing preparation provider and its existing post-implementation
+checks; no original UI/engine code, wire contract, schema, binding generation,
+permission authority or fixture publication semantics changed. Missing source,
+changed catalog/schema/table, SQL mixed with table reference, and changed SQL
+all refuse with the existing unavailable result. No database/result row is
+rewritten to match the checker, no unknown native deployment becomes success,
+and the production binding remains unactivated.
+
+The existing 4 CPU/4 GiB SDK, original migrations and isolated refusal database
+ran `node --test .../data-query/docker/conformance/preparation.test.mjs`:
+55785 exited 0, 5/5. Deliberately bypassing only verifyNativeModelSource in the
+private snapshot made 17909 exit 1, 4/5, with `Missing expected exception
+(denied)`. Restoring the source byte-for-byte made 96113 exit 0, 5/5; cmp against
+the formal provider exited 0. No mutation remains. The source guard is used by
+the native reader; these checks do not claim actual GraphQL/AI deployment.
+Evidence remains under the existing `conformance-provider.OxjdRz` directory:
+
+```text
+be54936a5c5f1b40c2835b81af8775d1b4b28e9e07cd78c5f0ada731eb7f0e49 native-model-source-negative.log
+bad47611edde18b14549159cb04c5b14bf34173803bbb7245935bce35ebcd149 native-model-source-restored.log
+```
+
+Original Prettier formatted the existing check, and the source used in the
+verification matches the formal files. Wren UI image construction is still in
+progress; no new UI deployment, production binding, menu or full conformance
+acceptance follows from this increment.
+
+The original MDLService and IbisAdaptor were then called against that isolated
+native model and real Ibis v3 service. Two first attempts (70231 and 69640)
+exited 1; the actual response was HTTP 422 / GET_CONNECTION_ERROR with PostgreSQL
+password authentication failure. This was incorrect diagnostic input: Wren's
+dataSource.toIbisConnectionInfo decrypts the stored connection fields, whereas
+those attempts supplied a plaintext connection. No product code or native
+database password was changed to accommodate it. The corrected invocation read
+ProjectRepository.getCurrentProject().connectionInfo and supplied the original
+controlled encryption configuration before importing the native consumers.
+
+Invocation 75877 exited 0. For `SELECT "value" FROM "public_source"`, the real
+dry-run returned correlation ID `f271916e-0e86-4908-9d64-b01b471410e4`; the real
+query returned columns `["value"]`, data `[[1]]`, dtype `int32`, cacheHit false
+and correlation ID `99d19bfb-b573-43d1-8f8d-2baf15991ac9`. The manifest came from
+original MDLService, not a hand-written passing vector. No authorization token,
+connection secret, SUCCESS deploy row, release or binding was fabricated.
+This proves only the isolated original model-to-Ibis dry-run/query path for
+synthetic data; governed Adapter Protocol, GraphQL/AI deployment and production
+HUMAN permissions remain separate gates. The diagnosing-bugs source/request
+comparison identified the incorrect diagnostic credential representation;
+no additional test framework or test-first implementation was introduced.
+
+### 2026-10-11 native UI artifact and actual embedder boundary
+
+The existing frozen UI build (invocation 6963) completed with exit 0, using
+`tools/build-upstream.sh data-query-ui`, the original locked Next build and the
+existing 8 CPU / 16 GiB Data-backed builder. All 39 static pages generated.
+Its recorded source digest is
+`sha256:ed04aac37eb16f618d5e29c3ff888121bf049ba69d305bace50f341908742dda`;
+the independently read registry manifest returned HTTP 200 and
+`Docker-Content-Digest: sha256:608f7fabd0ac30ffbd0176d41caa2a535197b908da7ad5f2f2dcb34a48a9d1d3`.
+The selected candidate's Wren UI inputs equal the frozen build inputs; the
+existing manifest helper's `plan data-query-ui` reproduced that source digest.
+The generated artifact record was adopted without changing either digest.
+This is an image build/push receipt, not a deployed UI or browser acceptance.
+
+Invocation 82208 exercised the actual built AI image
+`sha256:9e90bd314f8bfee34917664df5de16cfe87fc09737e584353965705fc9a3ba90`
+in a 2 CPU / 2 GiB container with Data-backed temporary/cache paths. It loaded
+the delivered embedding model configuration and invoked
+`LitellmEmbedderProvider.get_text_embedder().run` with synthetic text. It exited
+1 before an HTTP request: `litellm.AuthenticationError`, caused by the fixed
+OpenAI client requiring an API key. No dummy key or alternate embedding
+implementation was supplied. Earlier direct HTTP embedding success therefore
+does not prove that this native consumer can deploy/index a Wren model.
+Actual credential delivery or a supported upstream no-auth path remains
+necessary; no successful native deployment, production binding, menu or
+conformance approval is claimed from these receipts.
+
+### 2026-10-11 correction: supplied model services do not require credentials
+
+The operator confirmed that both supplied services are unauthenticated. Fresh
+requests explicitly omitted Authorization: both `/v1/models` requests returned
+HTTP 200. Actual inference, not merely model discovery, also succeeded:
+
+| Service | Native operation | Observed result |
+| --- | --- | --- |
+| `http://10.33.33.120/v1` | `/embeddings`, advertised `Qwen3-Embedding-4B` | HTTP 200; one 2560-dimensional vector; 6 input tokens |
+| `https://vision-27b-uat.geniusafc.com/v1` | `/chat/completions`, advertised `qwen` | HTTP 200; reply `OK`; finish reason `stop`; 56 input and 22 output tokens |
+
+These addresses and model IDs are operator input and observed catalog facts,
+not new product defaults. The earlier pre-request AuthenticationError is a
+native client configuration failure, not evidence of a service credential
+requirement. Requesting a model API key from the operator was incorrect.
+
+The fixed Wren commit `c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ai-service/poetry.lock`, pins LiteLLM 1.79.3 and OpenAI 1.109.1; the built
+AI image contains those versions. Its original OpenAI `AsyncOpenAI.auth_headers`
+omits Authorization for an explicitly empty key, while an absent key raises
+at construction. The existing LiteLLM OpenAI path reads `OPENAI_API_KEY`.
+The first isolated invocation (12291) exited 1 with `KeyError: 'type'`: the
+diagnostic passed the YAML settings document directly to `transform`. That
+was incorrect diagnostic input, not a provider authentication failure. The
+corrected invocation (54077) uses the original `Settings.components` with
+`CONFIG_PATH=/input/config.yaml` and explicitly empty `OPENAI_API_KEY=`, without
+changing the native configuration or inventing a token. It exited 0. Actual
+text and document embedding each returned 2560 dimensions and 8 input tokens;
+the non-streaming LLM returned `OK`, `stop`, 56 input and 26 output tokens.
+The observer forwarded real HTTP requests unchanged and refused Authorization
+before transmission: both embedding requests and the completion request were
+HTTP 200 with no Authorization header. This proves those three original
+consumers, not native deployment or the entire query flow.
+
+The invocation runs in the existing AI artifact under 2 CPU / 2 GiB limits,
+with temporary data at `/volumes/data/kailo/tmp/wren-noauth.IwzgBY`. The earlier
+kernel `cgroup_writeback_umount` / `__flush_workqueue` wait ended; it was not
+treated as terminal failure or OOM. The retained failed diagnostic log is
+`native-noauth-consumers.log`, SHA-256
+`83903cc0cc77deb46b6244f3eecf66387834945a1efd5aa92edb80a1ea72265d`.
+The successful corrected log is `native-noauth-consumers-corrected.log`, SHA-256
+`6e2380c715f2816179d4a16fd6e70f4241558f9c4e623282c0996b482274fae2`.
+Deliberately removing the empty environment value in a separate process (96627)
+reproduced the original pre-request `litellm.AuthenticationError`, exit 1;
+`native-noauth-missing-env.log` retains that result. No source file or shared
+container environment was mutated for this negative check.
+Restoring the same explicit empty value for invocation 49029 exited 0: the
+original text embedder returned 2560 dimensions, HTTP 200 and no Authorization.
+The negative and restored log SHA-256 values are respectively
+`ddcd52b0e92f393430c48f867dd8da4f49c82c99f7ef88eb903ccc756cd431ba` and
+`01dc110692b56723e500a7aa38904f6cd3366f97793f3451a871a57c2452d10e`;
+the restored log is `native-noauth-restored.log` in the same directory.
+Named credentials and PLATFORM_LLM_ROUTE delivery remain mandatory on their
+existing paths; this independent no-auth diagnostic does not relax them,
+activate a binding or prove that the three component menus are delivered.
+
+### 2026-10-11 native startup and fixture source readback
+
+The existing isolated `pawCOZ` Compose now starts the source-built AI artifact
+through its original `/app/entrypoint.sh`, with the observed native model
+configuration, explicitly empty `OPENAI_API_KEY` and no production binding.
+Actual HostConfig readback before start confirmed 2 CPU, 2 GiB memory and
+memory+swap, UID 1000, read-only root, no host ports and Data-backed `/tmp`.
+Only this environment's model-egress network was added after checking existing
+routes/subnets; Docker's exhausted default address pool first refused creation.
+No other project's network or service was changed. Native `recreate_index` is
+false, preserving collections on subsequent observations rather than deleting
+them. This does not alter the production Compose's model-delivery requirements.
+
+The original lifespan reached Qdrant: Document and table_descriptions creation
+and their payload indexes returned 200. Creating view_questions exceeded the
+configured 120-second client timeout, so Uvicorn reported application startup
+failure at 02:44:22 UTC. Qdrant later logged that same create returning 200 at
+02:45:24 UTC, after 181.815319 seconds. Therefore the client failure is not
+evidence that the remote create had no effect. Data is retained; no forced
+recreate, success deployment row or retry loop was introduced. At the last
+Docker observation the container still reported running while shutdown was
+pending, with OOMKilled=false; no terminal container exit was asserted.
+Raw logs in the existing `pawCOZ` directory are `ai-startup.log` and
+`qdrant-ai-initialization.log`. Native AI readiness, GraphQL deployment and full
+conformance remain unaccepted.
+
+Source review also found the completed-fixture reader in `openProvider` still
+comparing only `metadata.refSql !== model.ref_sql`, although original physical
+MDL omits null refSql. It now calls the same `verifyNativeModelSource` used by
+preparation. Fixed upstream evidence remains commit
+`c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/apollo/server/mdl/mdlBuilder.ts::{addModel,buildTableReference,postProcessManifest}`.
+Authority is REQ-22 / DD-76, design 07 section 8A. Impact is the isolated
+provider's startup and per-request native-source reads, not a second runtime
+authority, production schema or wire-contract change. Exact physical table or
+SQL identity is checked; changed/missing source and mixed representations still
+refuse with the existing 503 before a permitted response. Deployment SUCCESS,
+manifest/hash, captured native object, columns, actor and PEP checks are kept.
+No native data is rewritten, no migration is needed, and Web/Desktop/Mobile
+production presentation is unchanged. The existing constrained 4 CPU / 4 GiB
+Node SDK completed syntax and the original five preparation checks against
+the byte-matched private source: invocation 90004 exited 0, 5 passed, 0 failed.
+The retained `provider-source-readback.log` under the existing
+`conformance-provider.OxjdRz` SDK input has SHA-256
+`0b7ead4e2a55ac1b5e0eed118364e249e45a9a8c6f38db799690e6a72a642299`.
+These checks do not prove a successful completed-fixture read before actual
+native deployment exists.
+
+The first AI process subsequently reached an authoritative terminal state:
+Docker reports exit 3 at 02:54:19 UTC, OOMKilled=false and PID 0. A subsequent
+read-only Qdrant collections request returned 200 and all three collections
+(`Document`, `table_descriptions`, `view_questions`). Only after that readback,
+the same isolated AI container was started again with preserved data and
+`recreate_index: false`; no remote create result was assumed absent.
+The existing documentation check invocation 15554 also finished with exit 0;
+`/volumes/data/kailo/tmp/wren-noauth.IwzgBY/docs-native-noauth.log` has SHA-256
+`a546e95f28b46f74498936dbbda9f88ef17be3793f8a732842c1d396d97bfc77`.
+That check predates this result update and is not a full-code or runtime gate.
+
+The preserved-data restart reached `Application startup complete` at 02:59:33
+UTC. A direct read of this isolated instance's `/health` returned HTTP 200 with
+`{"status":"ok"}`. The original entrypoint, image and limits were unchanged;
+neither Qdrant recreation nor a larger timeout was required. Retained log
+`/volumes/data/kailo/tmp/wren-native-conformance-runtime.pawCOZ/ai-recovery.log`
+has SHA-256 `1891d32cbe2da05bc68a1ce151d7ec9f8f27dd0b89b022fe9b5ab52e15476bfc`.
+This establishes AI readiness only. Actual GraphQL deployment, its native
+SUCCESS observation, complete governed conformance and production activation
+remain unaccepted.
+
+### Retained original MDL input, not a successful deployment (2026-10-11)
+
+For REQ-22 / DD-76 section 8A, invocation 84264 used the existing constrained
+setup SDK and original `wren-ui/src/apollo/server/services/mdlService.ts::MDLService.makeCurrentModelMDL`
+and repositories to retain the isolated instance's actual manifest and native
+object references. The original baseline remains
+`c5f02a0391c87420dba78632dcd86073710deb72`. The read ran in a repeatable-read,
+read-only native transaction and required exactly one project and model. It
+did not create a deployment, grant, binding, or terminal result. Its owner-only
+output is create-only: an existing output refuses replacement rather than
+silently changing a retained deployment input. The Knex pool is closed without
+starting the original background trackers.
+
+84264 exited 0, returning project/model IDs 1/1 and one manifest model.
+`native-mdl.json` under the existing `wren-native-conformance-runtime.pawCOZ`
+Data directory has SHA-256
+`5a459ec3dbd94a8e53669913db428e38504cca9611d45570285263092fde210b`;
+`native-mdl-retention-final.log` has SHA-256
+`839dcc4dae3b5ffb0a5ba746688584576d3ba7369fee0a63192dcc359ee68a69`.
+The first two invocations failed resolving the original `@server/utils` alias.
+Inspection showed tsconfig-paths resolving an absolute supplied baseUrl as
+`/source/source`; relative `TS_NODE_BASEURL=.` resolved the existing original
+tsconfig paths. No production imports or aliases were changed. Those failures
+remain in `native-mdl-retention.log` and `native-mdl-retention-resolved.log`.
+This retained input is not `nativeFixtureFile`, not a SUCCESS observation, and
+not proof of the still-unaccepted GraphQL/governed deployment path.
+
 ### Native task ownership and closed binding generation (2026-10-11)
 
 This scoped source batch implements REQ-22 / DD-76 and DD-87 lifecycle

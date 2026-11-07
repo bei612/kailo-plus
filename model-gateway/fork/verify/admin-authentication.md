@@ -91,6 +91,105 @@ config:
 - 网络：admin 端口不发布到宿主，不接入 `mgmt`（`check.sh` 禁止 edge 与 mgmt 同属一个服务），Core 经
   两者共有的 `app` 网络访问；网络隔离只是纵深防御，认证不依赖它。
 
+## 2026-10-02 Hybrid 与模型缺授权拒绝源码增量
+
+本节为实现后的事实记录，不覆盖上面的 2026-09-29 实测。固定上游基线仍为
+`1f7ebbf87cbdbe9517f6f181221879d04dc50692`；`tools/upstream_manifest.py status model-gateway`
+输出「无新提交」。只读 `git show` 核对该 commit 的
+`agentgateway/crates/agentgateway/src/llm/model_router.rs::model_authorized`，缺授权原返回
+`true`。同版本 `agentgateway/crates/agentgateway/src/types/local.rs::convert_llm_config`
+只在声明授权时添加 backend Authorization，Failover provider 从该原生 inline policy 集合继承，
+不能只改直接模型判断而留下 Failover 的缺规则旁路（`DD-13/37`、`.design/12`、`.design/17`）。
+
+实际修改如下：
+
+- `deploy/local/model-gateway-config.yaml` 显式使用原生 Hybrid 与 `config.database.url`，连接值仍由
+  唯一既有 `AGENTGATEWAY_LOG_DATABASE_URL` 的受控 env 文件提供；删除重复日志库配置，日志通过
+  `config.rs::parse_config` 原生 fallback 使用同一库。沿用现有 Gateway 私有 PostgreSQL、凭据与网络，
+  没有新增数据库、配置副本或 Core 直连。File 模式的原生资源读取返回空清单，不具有真实 revision
+  证据；Hybrid 配置属运行期，重启生效。
+- `types/local.rs::convert_llm_config` 一次将缺授权模型归一化为原生 `require: false`；同一规则进入
+  ModelRoute 和已有 backend/provider inline policies，显式授权不重写。直接、Weighted、Conditional
+  使用既有模型裁决，Failover 继承该 backend 拒绝规则，不另建 PEP 或配置权威。
+- `llm/model_router.rs::model_authorized` 缺规则直接拒绝；虚拟模型发现与 Failover 准入复用真实模型
+  目标及原 `resolve_concrete_model`。Failover 的内部目标引用来自同一原生配置的声明，序列化不增加
+  ConfigResource 正文或公开字段；未知、缺失或全部未授权目标不放行。XDS 原协议只有不透明 backend
+  引用、没有模型目标清单，转换保留为空并拒绝，不伪造授权事实；Kailo 不改用 XDS。
+- 产品源码写入之后，既有 Conditional 正向用例的模型构造显式声明授权；已有授权用例补缺规则拒绝
+  断言，原 XDS Failover 解构同步内部字段。没有新增测试文件、夹具、业务对象或检查脚本。
+
+这项缺省授权裁决是**编译期**安全修正；运行时无法补救旧 binary。现有
+`sha256:43366f393c57aedd895ece4ba7ea2fc5f2b6578a1a79bdf3927870888b68df16` 产物登记仍保留原值，
+尚未为本刀重建、登记新 digest 或部署。没有生成 LLM listener、provider、llm_route Resource、公开管理
+Action 或未消费的 OpenBao file sink；当前 Core `native_route` 的存在性读取不是 `DD-110` 的
+Responses、function tool 与 stream 执行证明，不据此提升 AgentVersion/Invocation 或接缝验收状态。
+
+编辑前原生回执为 `994aa3ca536d09ad8ea716c4aad1088f759f552c`、schema 4/current、
+`incompleteReasons=[]`、contentDrift current。六个目标的完整 context/impact 原件为
+`/volumes/data/kailo/tmp/codex-agent-next-feature-impact-20261002.Xdl8Sl/impact.jsonl`；
+`convert_llm_config` 为 HIGH（9 个影响点），已在写入前告警，其调用链含原生 reload、UI validate 与
+CLI validate。`ModelRoute::from_xds` 和枚举的 UNKNOWN 不记为零风险；实际动态消费核到
+`store/binds.rs::insert_xds_model_route` 的 `agent::ModelRoute::from_xds` 调用及 local/xds 构造。
+本刀 before 原字节目录为
+`/volumes/data/kailo/tmp/codex-gateway-hybrid-authorization-20261002.ySmy61/before/`。
+
+记录时尚未启动本刀 SDK、格式/静态检查、原生用例、破坏还原、受控 PG 运行或正式 release；没有
+通过输出可贴，不记为 PASS。下一批由原受限检查与正式构建入口集中核验；源码、发布、部署、业务
+验收分别记录，不把本节当作其中任何未发生步骤的完成证据。
+
+## 2026-10-03 受治理 Route 创建与 provider SecretRef 投递源码窗口
+
+本节只记录已写入源码，不覆盖此前实测和产物回执。权威为 `.design/03` §3/4/8、
+`05` §2.1、`17` §9 及 DD-13/37/70/71/99/100：HUMAN 经原 `/api/v1/actions` 创建
+Tenant 或可选 home Workspace 的 `llm_route`，Core 是 requested/effective 唯一治理写者，
+配置正文留在 Gateway，密钥权威仍为 OpenBao。未新增 Route update/delete、模型默认值、
+Agent 工具、第二配置数据库或公开 Gateway 管理入口。
+
+固定上游 `1f7ebbf87cbdbe9517f6f181221879d04dc50692` 已以只读 `git ls-tree/git grep/git show`
+复核。原生事实引用为 `crates/agentgateway/src/types/local.rs::LocalLLMProvider`、
+`LocalLLMParams`、`SecretFromFile`、`LocalLLMVirtualModel`，以及
+`crates/agentgateway/src/config_store.rs::prepare_resource`、
+`ConfigResourceStore::upsert_prepared`、`upsert_sqlite/upsert_postgres` 和原 `deleted_at`
+存储语义；`.references` 未执行、未修改。
+
+四步实施结论：
+
+1. 权威与真实调用：`LlmRouteCreate` 进入既有 resolve/evaluate/allow/prewrite/dispatch。
+   目录为 SYNC、EXPLICIT、HUMAN、Quota/Capacity NONE、meters 空；其他策略不降级。
+   `DECLARED_WORKSPACE` 来自已有设计封闭规则，非新默认 scope。调用参数仅为确切原生
+   Provider/Model ID、revision/hash 和同 Tenant 的 SecretRef，不接收 URL 或 key 正文。
+2. 影响面：新增 `03070000` paired migration 和 `model_route_projection`，先写真实
+   PROVISIONING Resource、原 AE 和一次 dispatch fence；只有 file、三份 stored/effective
+   ConfigResource、workspace-aware FullyConsistent owner 全部查证后才写实际 native revision
+   并激活。ActionCommand 和 WorkspaceRule 的四侧生成由集中入口执行，本节未运行生成器。
+   Core 直接消费生成的 `contracts::LlmRouteCreateInput`；已删除本刀最初的三份手写输入
+   DTO，只保留内部 SQL 冻结/缺失证据结构，KV version 在原 native u32 边界检查转换。
+   原 Version/runtime 验证继续消费同一 Route；Tenant 冻结库存增加 pending 创建意图，原
+   GATEWAY 删除处理器查证 config/file absence。生命周期资格只接受同 ALLOWED create AE 的
+   PROVISIONING Route，不放宽其他类型的 pending 或普通 Definition CRUD。
+3. 副作用边界：沿原 Core-only admin JWT client 及原 AuditObserver/SecretStore 读取确切
+   OpenBao version，正文只瞬态投递至 Gateway 独占文件。公共配置只有必填的
+   `AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY`，Core 不挂该卷，也不持 Gateway DB 凭据。
+   Gateway 原三份 ConfigResource 在同一原生事务 create-only；原 tombstone 保留迟到请求
+   的拒绝 fence。受控文件写/退役共享 OS lock，退役 marker 防止迟到 PUT 复活，不更换原配置引擎。
+4. 异常与收敛：源 pin 漂移、scope/成员/secret/projection 缺失都关闭；确定未派发且资格
+   已失效须查证原生退役及 SpiceDB 完整空集合才能中止。dispatch fence 后 UNKNOWN 只读
+   同 ID/hash/file，不重新 PUT；不把 native revision 的缺失伪造为零。删除记录中的空 revision
+   表示原生完整集合实际未见该 ID，不是 ACTIVE 证据。暂停/撤权不激活未知投影，Tenant 删除
+   先沿原 drain 退役全部使用者，再销毁 native 配置和凭据。对账由原 Governance tick/batch、
+   open/oldest-age 度量和 RB-05 责任入口承接；依赖失败保持 UNKNOWN，不以经过时限推断外部终态。
+
+原始窗口位于 `/volumes/data/kailo/tmp/codex-route-producer-before-20261003.ckpjoP`。
+其中 main、tenant_delete、WorkspaceRule 三份最初捕获晚于本人窄 hunk；原件保留在
+`late-captures`，before 仅逆向移除这些已知本人 hunk 重构，未称其为事前原字节。
+其它既有路径保留实际 before，新文件无 before；不把 HEAD 以来继承差异计为本刀。
+
+已实际运行 `git diff --check`，退出 0、stdout 为空。记录时未运行本刀 SDK/格式/clippy、
+paired SQL 前进/回退、四侧兼容核对、负向破坏还原或真实 native/OpenBao 端到端。
+公开 Action 仍需集中 registry/trace 生成与验收后发布；本节不证明真实 Provider/Model pin、
+租户 SecretRef、公共目录投递或 DD-110 Responses/function tool/stream 协议验收已成立。
+未重建产物、未改登记 digest、未提交/部署，也不把 PROVISIONING 或 UNKNOWN 声称为可运行。
+
 ## 2026-10-03 本窗口原生构建与拒绝边界终态
 
 本节为前一源码窗口实施后的实际执行记录，不改写上述历史。原件全部位于
@@ -259,3 +358,91 @@ record，相关 BFF 读取均为 200，pageErrors 为空；它记录的稍早 Ru
 `33f63e8add86d19cb90af390664f184cb0fb9dbb88d80faf22643d44c937b0ec`。
 这些证据关闭本次原安装初始化问题；不证明首轮模型执行、频道回复或用量收尾，
 也不替代 Win11/Mobile 设备与签名验收。本批无新安装、未知操作重放或业务 SQL 写入。
+
+## 2026-10-10 OIDC locale 产物与原管理资源投递恢复
+
+本次不另改模型路由或权限语义。已提交的 `a6f62135a9ed9909a6a7fcd96732d92cd433b33e`
+在 `model-gateway/crates/agentgateway/src/http/oidc/local.rs::LocalOidcConfig` 配置解析及
+`model-gateway/crates/agentgateway/src/http/oidc/callback.rs::start_login` 登录跳转消费者接入中文默认/英文 locale；部署仍是旧 binary，
+因此原 ConfigResource PUT 在解析现有 `binds[0].listeners[0].policies.oidc.uiLocales`
+时返回 422。没有把该确定拒绝记成模型已写入，也没有删 locale 配置绕过。
+
+原 `tools/build-upstream.sh model-gateway` 作业 66070 实际退出 0。沿既有
+`kailo-core-data` BuildKit、8 CPU / 16 GiB（swap 同额）与 Data 盘缓存，构建前核查
+并发和内存，未调整 Cargo 并行度。固定上游仍为
+`1f7ebbf87cbdbe9517f6f181221879d04dc50692`，源码摘要为
+`sha256:7411d0e07914cf1a5ebe9c0b5361d19fd1f245730ac86f9c0f664fa1654f9bc5`；
+release 编译与内置 version 自检通过，日志为
+`/volumes/data/kailo/tmp/embedding-route-20261010.jELlQ0/build-model-gateway.cNVYHX.log`。
+实际推送产物为 `sha256:accd2243c94c3f72c150c70f8bc397e1e791735f87ca87b2bc13de4ddcdaa3fe`。
+
+registry 使用 OCI image manifest media type 读取固定 digest 为 200，响应正文
+`sha256sum` 与该 digest 一致。首次只接受 OCI index 的请求返回 404；改为该产物真实
+manifest media type 后读回，不把首次空响应的哈希记为产物。来源记录、Compose 镜像
+及两份既有 traceability 引用同步该实际摘要，没有手填新源码摘要。
+
+22:53:06 UTC，原 Compose `up -d --no-deps --no-build agentgateway` 退出 0，实际
+新容器 `082be3b2dad85ba870509f9b50f12a4231b5083f99e8f65134eae8928cd265a2`
+运行上述固定镜像。预检 `config --quiet` 退出 0；与旧容器比对，投递环境键值与
+启动命令未变。原生日志确认 PostgreSQL 配置库连接、加载现有配置及 state manager
+ready；容器 running、exit=0、restart=0。前后另 22 个运行平台服务的容器 ID 未变，
+未重启 Core、Worker、Relay、Web 或数据库。Gateway 重建会使旧内存 OIDC 会话失效，
+随后旧浏览器流收到 401，需沿原登录恢复，不放宽认证或将此记为业务成功。
+
+本节只证明产物与 Gateway 部署，不证明嵌入模型 PUT、SERVICE binding、三组件菜单、
+模型执行计量或全量验收；这些仍须各自真实 API 与页面证据。当前批次旧 full 作业
+69733 已退出 1，不能拿历史 full=0 覆盖本候选。
+
+### 2026-10-10：原向量模型配置 API 恢复（非 Route 或 binding 激活）
+
+Gateway 更新后沿原 Core `OIDC_TOKEN_URL`/服务身份与
+`AGENTGATEWAY_ADMIN_URL` 访问原管理 API，没有新建账号、凭据或管理 helper。
+匿名 `GET /api/config/resources/llm.provider` 实际为 401；原服务身份读取为 200。
+两个既有 source pin 的 revision 仍为 1，canonical SHA 与原记录相同。
+
+先读取 stored 与 effective，确认 `qwen3-embedding-4b-provider` 和
+`qwen3-embedding-4b-source` 精确缺失；然后对每类原
+`PUT /api/config/resources/{kind}` 仅发送一次原 JSON，均返回 200。
+两项随后 stored/effective 均 200、完整值与输入一致，revision 均为 1：
+
+- provider SHA：`1bb5b3f053472f8f6a002f3e03a912fff45b7569b50f24a68a372179cef49622`。
+- model SHA：`760ab41ad3bf56cad470ac6e0ae6d37d875a33dcc7d925bfa4e9404a296a68e1`。
+
+原执行退出 0；脱密日志为
+`/volumes/data/kailo/tmp/embedding-route-20261010.jELlQ0/native-config-resume.log`，
+SHA-256 `541b35bb5cb1a385143855a72b0645b8ebb37cbd0b71cf08c7af45abb0e6684a`。
+此前 `native-config-rejection.log` 的 422 保留：旧版本不认识 `uiLocales`，
+原 `validate_materialized_config` 在 `upsert_prepared` 前拒绝，没有落库。
+本次没有删除该字段、重写旧 source 或盲重放未知结果。
+
+这只完成原 ConfigResource 配置与生效读回；未创建平台 LlmRoute、
+ApplicationBinding 或凭据，没有发送推理请求，也未运行 Wren 原生部署、
+prepare/observe 或完整 conformance。后续仍须正常受治理动作与真实模型投递。
+
+### 2026-10-10：原 HUMAN 动作创建嵌入 Route
+
+独立 `kailo-model-route` 浏览器沿正常 HUMAN SSO 登录，原 `/api/v1/session`
+返回 FULL，tenant 为 `6179e160-6055-4e9a-ae63-1793509c230c`，实际 principal
+为 `91b92140-cc3f-404b-8f4c-ce93782bfe9e`，不是旧 Route 的 owner。
+原 BFF 确认该用户是现有 Kailo workspace 成员；SpiceDB fullyConsistent
+tenant/create 返回 HAS_PERMISSION。未切换管理员、补授权或使用 SERVICE 冒充 HUMAN。
+
+先只读全部同租户非 DELETED Route，确认不存在该 embedding source pin。
+2026-10-10 23:03:29 UTC，原 `/api/v1/actions` 仅提交一次 `llm_route.create`，
+使用上节两个真实 revision/hash、显式 `providerCredentialMode: NONE`，不携带
+providerSecretRef。幂等键 `84be8ee2-bd7f-4cb2-bf39-243df8650840`；返回 200、
+ALLOWED/DISPATCHED，AE `2e2c9f5e-7c29-45a8-8d72-c220cb89a68d`，operation
+`b2bce134-5845-4e44-bf64-7f800ab698e7`。随后只观察原 task 和投影，没有重新 POST。
+Route `de79e6c3-4b61-4267-92df-119639ba5f27` 实际 ACTIVE/version 2，owner 为
+上述实际 HUMAN，home workspace 为 `ad9a6443-f0a2-47d2-895d-f11b8fef9e38`。
+原 Gateway provider/model/virtualModel 的 stored/effective 全值与冻结投影
+hash 一致，均 revision 1；virtualModel SHA 为
+`f703f5cbe9577a77cde6c02bf534269f359f7ed1b42addcc13b768eadbf4a93e`。
+
+脱密证据均在 `/volumes/data/kailo/tmp/embedding-route-20261010.jELlQ0/`：
+`human-route-submit.log` SHA-256 `32661621a011d6f1bff56a8b390fddb616813554ec660b20c406478f9e9eb89f`；
+`human-route-task.log` SHA-256 `8aaffa5910fcd5b8507bf68cb282ec62ab558e814427de1c9f3890a3490e9cf0`；
+`human-route-effective.log` SHA-256 `0a0c430ef1e9d8b521feaead636facc5331811004b3c1a081ff2252eb23b3fb0`。
+该次原命令均 exit 0；没有执行推理、创建组件 binding 或输出秘密。
+同轮只读 ComponentDefinition/Release/ApplicationBinding 仍各为 0。Route 可用
+不等于 Wren 已部署或获准；原组件 conformance、release、绑定及 Bao 投递仍需完成。

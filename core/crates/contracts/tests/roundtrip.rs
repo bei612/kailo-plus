@@ -913,14 +913,12 @@ fn file_storage_share_preserves_exact_native_reference() {
 #[test]
 fn message_authors_preserve_exact_event_mapping_and_absent_metadata() {
     let sample: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(sample_path().with_file_name("web-message-authors.sample.json"))
-            .unwrap(),
+        &fs::read_to_string(sample_path().with_file_name("web-message-authors.sample.json")).unwrap(),
     )
     .unwrap();
     let request: contracts::WebMessageAuthorQuery =
         serde_json::from_value(sample["request"].clone()).unwrap();
-    let view: contracts::WebMessageAuthorView =
-        serde_json::from_value(sample["view"].clone()).unwrap();
+    let view: contracts::WebMessageAuthorView = serde_json::from_value(sample["view"].clone()).unwrap();
     assert_eq!(serde_json::to_value(request).unwrap(), sample["request"]);
     assert_eq!(serde_json::to_value(view).unwrap(), sample["view"]);
     let legacy: contracts::WebMessageAuthorView =

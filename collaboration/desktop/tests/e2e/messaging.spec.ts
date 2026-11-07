@@ -396,6 +396,50 @@ test("send a message and see it in timeline", async ({ page }) => {
   );
 });
 
+// 共享平台文案目录（client-kit i18n.ts）中 native.send.* 的英文
+const NOT_SENT_REFUSED =
+  "Not sent: the server refused this message. Your text is kept.";
+
+for (const [name, relayAnswer, expected] of [
+  ["a relay refusal", "restricted: not a channel member", NOT_SENT_REFUSED],
+  [
+    "relay rate limiting",
+    "rate-limited: quota exceeded; retry in 7s",
+    "Not sent: you are sending too fast. Try again in 7 s. Your text is kept.",
+  ],
+] as const) {
+  test(`${name} keeps the draft and shows a lasting shared-text state`, async ({
+    page,
+  }) => {
+    await installMockBridge(page, { sendMessageErrors: [relayAnswer] });
+    await page.goto("/");
+    await page.getByTestId("channel-general").click();
+    await expect(page.getByTestId("chat-title")).toHaveText("general");
+
+    const message = `not accepted ${Date.now()}`;
+    await page.getByTestId("message-input").fill(message);
+    await page.getByTestId("send-message").click();
+
+    // composer 上的确定状态（不是会消失或盖住发送键的 toast）
+    const state = page.getByTestId("composer-send-outcome");
+    await expect(state).toHaveText(expected);
+    await expect(state).toHaveAttribute("data-outcome", "not-sent");
+    // 草稿恢复，消息没有进入时间线，Relay 原文不上屏
+    await expect(page.getByTestId("message-input")).toContainText(message);
+    await expect(page.getByTestId("message-timeline")).not.toContainText(
+      message,
+    );
+    await expect(page.getByText(relayAnswer)).toHaveCount(0);
+    await page.waitForTimeout(5_000);
+    await expect(state).toHaveText(expected);
+
+    // 再发一次（Relay 这次接受）：状态撤下，消息进入时间线
+    await page.getByTestId("send-message").click();
+    await expect(state).toHaveCount(0);
+    await expect(page.getByTestId("message-timeline")).toContainText(message);
+  });
+}
+
 test("long autolink wraps without widening the timeline", async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 600 });
 

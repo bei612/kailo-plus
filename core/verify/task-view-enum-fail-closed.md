@@ -18,6 +18,102 @@
 
 任务取消与重跑仍需独立完成 Governed Action、BFF 控制入口、Web/Desktop 操作和 Temporal 真终态验证；此项不将其计为已完成。
 
+## 共用审批面板控制事实修正（2026-10-01）
+
+本节追加本次 Web/Desktop 共用 `ApprovalPanel` 的事后事实，不改变上述历史验证范围。
+权威为 `.design/06` §4 的每人不可变决定、同值幂等，以及 §8 的受权工作台与
+`06-工程基线规范.md` §4 的 UNKNOWN 分类；BFF 与 Temporal 仍执行 fresh admission，
+客户端显示条件不成为权限或审批权威。
+
+原面板有两处可达的不一致：打开的确认框跨刷新保留，即使回读为终态或投影不可担保，
+仍绕过按钮的 `controllable` 条件；决定响应不明时该条件只排除确定成功，因而再次显示
+批准与拒绝两个新意图入口。现在面板刷新先清除旧确认，确认框与按钮使用同一条件，
+确定结论及 UNKNOWN 均不再提供新意图。UNKNOWN 决定仍只允许原样重发原决定，
+原 Update 去重身份不变；UNKNOWN 撤回保留等待查证，不新增重试协议。
+
+编辑前在 `apps-source`（`/volumes/kailo/apps`、HEAD `ee4c79683453b0cdc45ca5a0668338b6f977c17c`）
+执行 context/impact，索引 `2026-10-01T07:48:55.354Z`、schema 4/current、
+`incompleteReasons=[]`、`contentDrift=current`、`status=up-to-date`。函数 impact
+为 LOW/9，直接调用者为 `ApprovalsPage` 与 `TaskDetail`；File 为 LOW/19，Web、
+Desktop 与 NativeBootstrap 的共用消费链不变。完整输出为
+`/volumes/data/kailo/tmp/codex-approval-panel-preimpact-20261001.Iu2hO3.log`。
+
+SDK 验证只在既有镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`
+内执行。每次 `docker create` 后先回读实际 HostConfig 为 2 CPU、2147483648 字节
+memory、相同 memory+swap，再 start；源导出、临时依赖和日志均在 `/volumes/data`，
+不使用宿主 SDK、不修改工作树 node_modules。固定 pnpm 实际为 10.33.4，命令为：
+
+```bash
+pnpm install --frozen-lockfile
+pnpm -r typecheck
+pnpm --filter @client-kit/platform test
+```
+
+首轮两包 typecheck 通过，平台 test 退出 1：私有导出漏了原有 presentation test vector
+与 Web/Desktop 的 tailwind 配置，两个 suite 因 ENOENT 未运行；已运行的 54 项通过，
+不能解释成平台全部通过。原输出保留于
+`/volumes/data/kailo/tmp/codex-approval-ui-check-20261001.YDjky4.log`。
+补导出这三个既有依赖后，不改源码、测试断言或数据，再运行原平台 test，实际
+**7 files / 88 tests passed、容器退出 0**；输出为
+`/volumes/data/kailo/tmp/codex-approval-ui-check-restored-inputs-20261001.Exajyv.log`。
+既有 NativeBootstrap 的 `act(...)` warning 保留，不把 warning 隐藏为无输出。
+
+源与验证导出的 `governance.tsx` SHA-256 均为
+`5e6de2a08a08347a77debe19c0af98b12b69fa0d16462c84e8e9ddf97d3fcedb`。
+原 `governance.test.tsx` 未修改，其中 14 项通过，但其现有断言不直接覆盖本次两处
+场景，因此这不是两处场景的独立运行证明；本次没有新增夹具或检查脚本。
+下述 Web 产物已构建并部署；Desktop 未构建或部署本修正。本次既有回归不直接
+覆盖两处场景，真实用户范围又没有适用审批对象，因此不登记为 V-SCN-68 或
+Stage 2 完整验收。
+
+### 实际 Web 产物、限定部署与浏览器结果
+
+现有 `tools/build-upstream.sh web-client` 于 2026-10-01 实际退出 0，耗时
+2m58.550s。外层 systemd 为 2 GiB/200%/swap 0；原 BuildKit builder
+`kailo-core-data` 的真实容器为 16 GiB、8 CPU、memory+swap 16 GiB，缓存挂载
+`/volumes/data/kailo/buildkit-core-state`。未创建 builder、改变它的限额或降低
+Cargo 并行度。Node/npm 构建发生在 Dockerfile 的镜像内，临时上下文及日志在
+`/volumes/data`。构建原输出报告 3 个 npm vulnerabilities（2 moderate、1 high），
+未执行自动修复或把构建成功解释成漏洞验收通过。
+
+工具自动写回 `web-client/fork/upstream.yaml` 的实际结果为：
+
+- source digest：`sha256:00d158994f8af0029930b762fc4c2f9a8f2043eab58722a7aefbf3f08adb62ed`。
+- Registry artifact digest：`sha256:970e17432d5292a22dcc921069b67829e6b2900dfa20e8f555eaa0ffcde588e0`。
+- 构建日志：`/volumes/data/kailo/tmp/codex-approval-web-build-20261001.dVFaAK.log`，
+  原 BuildKit 日志：`/volumes/data/kailo/tmp/build-web-client.XEcCag.log`。
+
+实际配置中的 registry 地址从 `deploy/local/.env` 取得。仅用数据目录的 image
+override 执行原 Compose `up -d --no-deps --no-build --pull never --wait buzz-web`，
+退出 0。之前实际运行 Web 为 `sha256:b474c25ccb35f80dca16fa15d23058ca5fb86acea0a01f44f914f71cf62cf6ae`，
+之后容器 `86605d82081a85c65ff8085e59b879bceeb704eda63468a90bd6e295f55f297e`
+回读 image 为上述 `970e1743…` 且 healthy。Core、Keycloak、Relay、Worker、Gateway
+五个容器的 ID 与 StartedAt 前后相同，未重启它们。部署日志为
+`/volumes/data/kailo/tmp/codex-approval-web-deploy-20261001.EDSKyx/deploy.log`。
+本次没有修改主 Compose 的持久 image pin；Registry push 不是 Git push，工作树
+产物摘要也不是某个已提交 clean commit 的发布证明。
+
+真实浏览器最初因本机缺域名解析出现 `ERR_NAME_NOT_RESOLVED`；CLI 退出 0
+并不代表浏览器成功。随后只为本次 Chrome 进程按原 `PUBLIC_ORIGIN` 与
+`OIDC_ISSUER` 配置映射 host/port，不改宿主 hosts。使用现有 BOOTSTRAP_USER
+经真实 Keycloak 表单登录，登录凭据在匿名 pipe 内存中交付既有 CLI，未写入 argv、
+凭据文件或日志，未手写 token/header。CLI 的 raw 输出及关闭 session logging
+经本机工具源码核实，不回显执行的凭据代码。
+
+浏览器实际加载 `/app/assets/PlatformApp-DbzF7gT3.js`，显示登录后的产品页面。
+Tasks 的原 BFF GET 返回 200/0 entries，页面显示
+“You have not started any governed action yet.”；Approvals 的原 BFF GET 返回
+200/0 entries，页面显示 “Nothing is waiting for your approval.”。
+当前用户范围没有可进入 Workspace、本人任务或待我审批；没有制造业务对象、
+使用其他验证用户的专属 Tenant、注入 UNKNOWN 或改写授权。完整安全结果保留于
+`/volumes/data/kailo/tmp/codex-approval-browser-20261001.cHOkIB/live-governance.log`
+及同目录 `live-source.log`。
+
+这些结果证明新 Web 已运行、真实认证和两条列表路径可用，不能证明两处审批场景
+已经在真实对象上触发。刷新清除确认与 UNKNOWN 限定原决定重发的业务验收仍无
+适用对象，本次不记 PASS，也不新增夹具或需求来制造适用对象。
+
 ## 共用审批原决定 UNKNOWN 保留与定向验收（2026-10-04）
 
 本节只追加已实现事实，不改写上述历史验收。基准为

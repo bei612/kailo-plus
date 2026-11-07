@@ -3248,40 +3248,6 @@ web_transport 27 项通过，原运行句柄 24108 退出 0；因此上文交接
 - 部署 `.env` 预检跳过，未安装 gitleaks，Windows/Mobile 发布和三组件绑定
   仍有各自未验收项。未改变真实运行数据、额度、权限或旧 UNKNOWN。
 
-## 2026-10-06 Pulse 缓存重入的原虚拟列表挂载修复
-
-实现前四步结论：
-
-1. 权威：REQ-24、DD-75 与既有 Pulse Community 边界不变。核验固定 Buzz
-   `779af8886caae1317b4de962082429867ab61503` 的
-   `desktop/src/shared/ui/VirtualizedList.tsx::VirtualizedList`；
-   保留原 TanStack 虚拟化、可变行高、浮动标题、滚动与卡片交互，不替换列表。
-2. 影响：仅共享 `forum/VirtualizedList.tsx` 的 DOM 挂载同步；实际调用方包括
-   `pulse/ui/PulseView.tsx::PulseView` 两种时间线以及原共享论坛消费者。
-   Web/Desktop 的 Pulse 使用同一主体；没有契约、Core、数据迁移或 Mobile 改动。
-3. 原因及副作用：缓存已有数据时，子列表的 layout effect 早于祖先滚动容器 ref
-   挂载；TanStack 当次读取 null，ref 写入不会触发 render，原无标题路径也没有
-   状态变化，因此一直没有可见行。改变窗口宽度引发的 render 才使它重新订阅。
-   现在只在整次 commit 后发现真实滚动元素变化时触发一次同步；不伪造尺寸，
-   不主动发 resize、不轮询、不重新取数据，也不改变消息/权限/已读权威。
-4. 边界：外部容器与列表同次首次挂载、切走再进入、内部自持滚动容器和浮动标题
-   均沿真实 DOM 与原订阅清理路径处理。元素未挂载时仍不测量；同元素后续
-   commit 不重复更新状态。此 UI 生命周期修复不改变原异常分类或 UNKNOWN。
-
-先实现后在既有受限 SDK 的独立 `message-edit.AGX058/apps` 快照验证。
-共享 source/test 两套 `tsc --noEmit` 均退出 0；
-`vitest run test/virtualized-list.test.tsx` 使用真实 TanStack hook，仅为
-jsdom 提供浏览器尺寸，三项通过：缓存首挂、缓存重入、内部容器与标题。
-私有快照删除新增同步调用后，前两项真实失败，分别得到空 article 列表和
-`expected length 2 but got 0`，退出 1；内部容器检查仍通过。
-恢复正式字节且 cmp 0 后，两套类型检查及三项用例再次退出 0。
-日志位于
-`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`：
-`pulse-virtualized.log`、`pulse-virtualized-mutation.log`、
-`pulse-virtualized-restored.log`。
-本批未 full、未构建、未部署；线上浏览器复验留待包含此源码的真实投递，
-不能将旧页面或 jsdom 结果称为新线上验收。
-
 ### Projects 原生公告目录共源增量（2026-10-06）
 
 本批关联 REQ-24、DD-39、SS-BUZ-GOVERNANCE、SS-WEB-RELAY，比较基准为
@@ -3353,6 +3319,40 @@ TS 契约 29 项、Dart 往返 24 项与 i18n 8 项、Go contracts 包通过，�
 随后原 `./tools/check-docs.sh ../.design` 实际七段全部通过、退出 0，
 同目录 `docs.log`；该轻量文档检查不改变上述未 full/未部署边界。
 
+## 2026-10-06 Pulse 缓存重入的原虚拟列表挂载修复
+
+实现前四步结论：
+
+1. 权威：REQ-24、DD-75 与既有 Pulse Community 边界不变。核验固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/shared/ui/VirtualizedList.tsx::VirtualizedList`；
+   保留原 TanStack 虚拟化、可变行高、浮动标题、滚动与卡片交互，不替换列表。
+2. 影响：仅共享 `forum/VirtualizedList.tsx` 的 DOM 挂载同步；实际调用方包括
+   `pulse/ui/PulseView.tsx::PulseView` 两种时间线以及原共享论坛消费者。
+   Web/Desktop 的 Pulse 使用同一主体；没有契约、Core、数据迁移或 Mobile 改动。
+3. 原因及副作用：缓存已有数据时，子列表的 layout effect 早于祖先滚动容器 ref
+   挂载；TanStack 当次读取 null，ref 写入不会触发 render，原无标题路径也没有
+   状态变化，因此一直没有可见行。改变窗口宽度引发的 render 才使它重新订阅。
+   现在只在整次 commit 后发现真实滚动元素变化时触发一次同步；不伪造尺寸，
+   不主动发 resize、不轮询、不重新取数据，也不改变消息/权限/已读权威。
+4. 边界：外部容器与列表同次首次挂载、切走再进入、内部自持滚动容器和浮动标题
+   均沿真实 DOM 与原订阅清理路径处理。元素未挂载时仍不测量；同元素后续
+   commit 不重复更新状态。此 UI 生命周期修复不改变原异常分类或 UNKNOWN。
+
+先实现后在既有受限 SDK 的独立 `message-edit.AGX058/apps` 快照验证。
+共享 source/test 两套 `tsc --noEmit` 均退出 0；
+`vitest run test/virtualized-list.test.tsx` 使用真实 TanStack hook，仅为
+jsdom 提供浏览器尺寸，三项通过：缓存首挂、缓存重入、内部容器与标题。
+私有快照删除新增同步调用后，前两项真实失败，分别得到空 article 列表和
+`expected length 2 but got 0`，退出 1；内部容器检查仍通过。
+恢复正式字节且 cmp 0 后，两套类型检查及三项用例再次退出 0。
+日志位于
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`：
+`pulse-virtualized.log`、`pulse-virtualized-mutation.log`、
+`pulse-virtualized-restored.log`。
+本批未 full、未构建、未部署；线上浏览器复验留待包含此源码的真实投递，
+不能将旧页面或 jsdom 结果称为新线上验收。
+
 ## 2026-10-06 原成员浏览与受治理资料入口
 
 本批实现前四步结论：
@@ -3405,90 +3405,6 @@ Core 原 web_transport 范围 28 项（含真实隔离库事务用例）通过�
 不能由 WorkspaceMemberView 缺失字段猜造。目录头像保留原 fallback，完整资料按需
 读取；未完成资料批量头像投影。本批未 full、未构建、未部署、未做线上或安装包
 验收；投递仍须 Core 新路由先于 Web 消费者。
-
-## 2026-10-06 原 Workflows 卡片动作菜单与选定版本编辑
-
-实现前四步结论：
-
-1. 权威：REQ-24、DD-107、`.design/03` §7 的 AutomationVersion、复制和
-   运行语义。只读核验 Buzz `779af8886caae1317b4de962082429867ab61503` 的
-   `desktop/src/features/workflows/ui/WorkflowActionsMenu.tsx::WorkflowActionsMenu`
-   与 `desktop/src/features/workflows/ui/WorkflowDialog.tsx::WorkflowDialog`。
-   复用原 DropdownMenu、图标、启用复选项和可视开关，不重新设计菜单。
-2. 影响：共享 `AutomationCard` 接同一个 `AutomationAction`，由 Web/Desktop
-   现有 WorkflowsPage 消费；新增原菜单组件，没有宿主第二套实现。
-   卡片所选不可变版本明确传入编辑/复制；表单和 YAML 仍读写同一已定义合同。
-   不改 Core、数据库、Action schema、Workflow 类型或公开管理 API。
-3. 副作用：菜单打开动作前沿原授权读取刷新详情，校验 scope、资源版本、
-   canManage/canRun；没有读取证据不打开写表单。编辑只发布新版本，复制只携带
-   配置、不复制 source Resource/Asset/pin/Delegation 或历史。菜单启停、删除和
-   单次运行仍经过原确认与 `submitAction`，不发原生 Relay 控制事件。
-4. 边界：无权限动作不渲染；启用仍显式选择已发布版本与未过期委托。
-   切 Workspace、版本、身份或进入已冻结请求后，迟到读取不能打开旧表单。
-   读取失败显示原可重试的拒绝/中性未知状态，不当作空结果成功；
-   请求 UNKNOWN 继续锁定原 intent，重查同一幂等键，不提前切卡片状态。
-
-原执行接缝仍为
-`core/crates/platform-core/src/governance.rs::Semantic::from_key` 的现有
-`automation.publish_version/enable/disable/delete` 解析及
-`core/crates/platform-core/src/automation.rs::ACTION` 的 `automation.run`；
-本批没有重写 Temporal。暂停等既有详情动作原样保留。
-
-使用现有受限 SDK 独立 `message-edit.AGX058/apps`：
-共享 source/test 两套 tsc 退出 0；原 Automation/Workflows 78 项加新增菜单
-10 项共 88 项通过，其余 165 项按明确 filter 跳过。
-新检查实际覆盖中文原菜单、选定旧版本 form/YAML、复制边界、
-显式版本/委托启用、单次运行/停用/删除治理消费、UNKNOWN 同键、撤权和迟到读取。
-SDK-only 删除 fresh canManage 检查后，撤权用例真实失败，1 failed / 9 passed、
-退出 1；按正式字节恢复 cmp 0 后，两套 tsc 与 88 项再次退出 0。
-首轮失败是新检查误把原中性 ReadFailure 当 alert，以及英文断言拼写不符；
-只修夹具，未改变产品失败语义。唯一词条源新增两条菜单文案，
-原 `gen-platform-i18n.py` 生成和 `--check` 均退出 0；
-独立候选不夹带并行 Members 词条。
-
-日志位于
-`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`：
-`workflow-menu.log`、`workflow-menu-final.log`、
-`workflow-menu-mutation.log`、`workflow-menu-restored-final.log`。
-本批未 full/build/deploy，未做新线上浏览器或 Windows 包验收。
-原多步骤可视编排、Webhook、cron 和原完整条件/步骤编辑仍有既定合同与消费者
-缺口；没有用空按钮伪造支持，也不把这组已接通交互称为 Workflows 全功能完成。
-
-## 2026-10-06 Workflows 原运行轨迹卡片与真实任务引用
-
-实现前四步结论：
-
-1. 权威：`.design/06` §9、§9.1 要求运行历史复用原 ActionExecution、
-   WorkflowRef 和 TaskProjection；`AutomationRunView` 目前只有真实父任务、
-   可选步骤审批子任务、进度与用量引用。核验 Buzz
-   `779af8886caae1317b4de962082429867ab61503` 的完整路径
-   `desktop/src/features/workflows/ui/WorkflowRunTrace.tsx::WorkflowRunTrace`，
-   复用其运行轨迹卡片和状态行布局；不把父任务冒称任意原生步骤数组。
-2. 影响：共享 WorkflowsPage 的展开运行详情接同一 WorkflowRunTrace，
-   两宿主继续消费该页；WaitingReason 仅导出原 Tasks 已有翻译映射复用。
-   没有新合同字段、存储、端点、任务类型或词条。原 usage 引用保留，
-   不把空引用解释为零消费或结算完成。
-3. 副作用：每张卡片仅打开其真实 actionExecutionId，原 TaskDetail 和
-   Approvals 继续 fresh 授权读取；本呈现本身没有写请求。
-   状态徽标与图标都经既有 taskPhase，不引入第二套执行状态判断。
-4. 边界：UNKNOWN 和 PROJECTION_DELAYED 优先于旧 COMPLETED/FAILED。
-   缺审批引用不推断无需审批；没有开始/结束时间或输出证据就不生成耗时、
-   输出或任意步骤。等待原因沿原中英文映射，未知 code 保留为明确代码，
-   不改门禁、执行准入、幂等或迟到读取规则。
-
-定向验证在原受限 SDK 的独立 `message-edit.AGX058/apps` 完成：
-共享 source/test 两套 tsc 退出 0；现有 Workflows/Automation 80 项、
-原动作菜单 10 项、新轨迹 4 项共 94 项通过，163 项非本范围用例按 filter 跳过。
-SDK-only 去掉徽标输入的 observation 后，两项未知/滞后用例真实失败，
-输出分别出现错误 Completed 和 Failed，2 failed / 2 passed、退出 1。
-按正式字节恢复 cmp 0 后，4 项再次通过、退出 0。
-
-日志同 `message-edit.AGX058/` 下 `workflow-trace.log`、
-`workflow-trace-mutation.log`、`workflow-trace-restored.log`。
-本批不改前一动作菜单冻结候选，未 full/build/deploy 或新浏览器验收。
-任意多步骤配置、完整触发条件与原 executionTrace 仍没有当前合同和
-Temporal 消费者；本批恢复的是已有执行与审批引用的原卡片呈现和详情交互，
-不是这些缺口已经完成。
 
 ### 2026-10-06 原成员行角色／移除菜单与邀请弹窗
 
@@ -3546,533 +3462,53 @@ member-actions-core-mutation-restored.log。
 补齐；原用户全资料批量头像、加入日期仍未作推断。本批未提交、构建、部署或
 实机浏览器验收；投递需 Core 两字段先于两端菜单，旧 Core 不显示移除入口。
 
-## Agent Library 原管理弹窗与真实版本引用恢复（2026-10-07）
-
-本批按 REQ-24、DD-53、设计 17 §8 与 03 §7 恢复现有 Agent
-管理交互，不新增注册表、权限或执行入口。
-固定上游 Buzz `779af8886caae1317b4de962082429867ab61503`：
-`desktop/src/features/agents/ui/AgentsView.tsx::AgentsView` 使用卡片与独立管理弹窗；
-`desktop/src/features/agents/ui/AgentDefinitionDialogShell.tsx::AgentDefinitionDialogShell`
-和 `desktop/src/shared/ui/chooser-dialog-content.tsx::ChooserDialogContent`
-提供本批复用的宽度、滚动区域、标题与内容间距。
-
-影响面是两宿主已共同消费的 `AgentDefinitionsPage`，不改 Web/Desktop
-路由或再造一份页面。定义、新建/转移、版本、安装/升级、委托、权限和
-平台工具仍使用原 BFF 消费者；从一直堆叠在卡片下改成原弹窗。
-未提交定义草稿在关闭后保留，打开工具弹窗才读取现有只读目录。
-版本详情显示原合同中的 Skill 版本引用、Tool 资源引用及 capability
-要求，不能将声明列表当成已授予权限。
-
-副作用检查：状态不明的写请求仍冻结同一幂等命令；定义写入 UNKNOWN
-后的查询拒绝不得释放原意图，后续返回必须关联原 actionExecutionId
-和 operationId。Memory 原编辑锁向安装详情弹窗和列表传递，未决时
-关闭、Escape、切 Workspace 和刷新卸载都不得丢失原消费者。
-本批没有复制业务正文到 Core，也没有改变版本不可变性、配额或授权。
-
-边界覆盖保留原 403/503/空目录、权限收紧、过期身份响应、候选刷新、
-升级准入、UNKNOWN 重查与原 Memory 写入检查。原夹具改为从实际入口
-打开真实 Radix portal，而非依赖旧内联 DOM 或点击模态遮罩后的控件。
-首轮失败来自这些旧夹具位置假设；最后一个迟到 Task 用例改为确认整个
-页面不残留旧 operation，而不是要求身份切换后仍保留安装弹窗。
-
-实际验证：shared 源码和测试 TypeScript 检查均退出 0；
-`vitest run test/pages.test.tsx test/agent-library-dialogs.test.tsx -t 'Agent|Installation'`
-定向 116 项通过（另 131 项未运行）。首次负向误改了其它既有写入函数，
-未命中新用例并返回 0，已还原；随后精确移除 DefinitionAction 的
-UNKNOWN 重查保护，真实出现 1 failed / 3 passed、退出 1，
-断言为拒绝重查后 Escape 错误关闭弹窗。正式字节恢复 cmp 0 后，
-以精选候选词条和测试重新检查，不将首轮无效负向作为证据。
-
-日志在 `message-edit.AGX058/agent-library-final-restored.log`、
-`agent-library-definition-mutation.log`、`agent-library-selected-restored.log`。
-精选 Skill 标签经原 `gen-platform-i18n.py` 和 `--check` 同源生成，
-没有夹入并行 Members 词条或测试改动。
-本批未运行 full、构建、部署或新浏览器验收。
-Skill 发布/选择没有现成目录写消费者，仍明确未恢复；本批仅呈现真实引用，
-不宣称完整上游 Agent 导入、Team 与所有配置页面已经完成。
-
-### 2026-10-07 成员邀请与管理命令的未知结果保护
-
-关联 DD-83、REQ-24 与原 ActionSubmission 终态语义。交叉复核确认原重查
-catch 将后续 403 当作原写入失败，会解除未决意图并允许新键。现邀请签发、
-撤回及共用成员角色/移除控制器均保留原 UNKNOWN、命令和幂等键；只有同一
-operationId、已知时同一 actionExecutionId 的有效回执才能解除。EVALUATING
-及 ALLOWED/NOT_DISPATCHED 不渲染签发完成或无链接成功；未知枚举仍拒绝。
-没有新增契约、写接口、权限或工作流。原 Dialog 关闭仅卸载内容，意图 hook
-在外层；列表 403 返回空呈现而不清空 hook，不能据读取拒绝推断原副作用失败。
-
-实现后定向 shared 源/测试 tsc 均退出 0；Members 8 项、Invitations 14 项
-共 22 项通过，含未知 HTTP 回应、重查 403、异操作回执、最终原回执、弹窗
-关闭与原键保留。SDK 单次将签发 catch 的 `!wasUnknown` 改为 `true`，四个
-未决签发用例实际失败，退出 1；原字节恢复 cmp 0 后上述 22 项通过，退出 0。
-日志位于既有 `projects-directory.wiWDv3` 证据目录：
-`member-actions-unknown-mutation.log`、`member-actions-unknown-restored.log`。
-未重复四侧生成、full、构建、部署；两端完整类型检查由合批执行，当前窄验
-仅证明共享消费逻辑。原测试仍有 React act 提示，不当作新增业务失败。
-
-### Workflows 原 Cron 到既有 Temporal Schedule（2026-10-07）
-
-本批在原 SCHEDULE 消费链增加 Cron，不建立本地时钟或第二执行权威。
-Web/Desktop 共同使用原五格 Cron 输入、粘贴与键盘移动交互；原 interval
-输入保留。六字段（含秒）与七字段（含年份）仅通过原 YAML 编辑，不能无损
-转五格时保留 YAML 并明确拒绝切换，不能截断。当前仍不是 Workflows 全功能。
+## 2026-10-06 原 Workflows 卡片动作菜单与选定版本编辑
 
 实现前四步结论：
 
-1. 权威：DD-107、03 §7、05 §2.9 的既有 SCHEDULE、AgentTaskWorkflow 与审批
-   链不变。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
-   `desktop/src/features/workflows/ui/CronExpressionInput.tsx::CronExpressionInput`、
-   `cronExpression.ts::validateCronFields` 与
-   `crates/buzz-workflow/src/schema.rs::normalize_cron/validate_cron` 为原交互和
-   5/6/7 字段依据。后者使用 Cargo.lock 固定的 cron 0.16；其
-   `src/time_unit/days_of_week.rs::DaysOfWeek` 为 1=周日、7=周六，不能按
-   Temporal 数字星期直接解释。原 UI 的 0–7 提示在这里纠正为真实执行语义。
-2. 影响面：只扩既有 AutomationScheduleSpec 的可选 kind/cron，旧三字段
-   interval 内容与摘要不变；Core 管理写入、详情读取和原 Schedule 建立/恢复
-   统一调用同一个 spec 转换；Worker 原 ScheduleTaskInput、首次准入、审批、
-   AgentTask 和运行历史均未另开分支。四侧类型由原生成入口产出。
-3. 副作用：复用 Temporal `d94e34a1ebba5410a2e7d07119a76896909591aa` 的
-   `service/worker/scheduler/calendar.go::makeRange/parseValue` 字段转换与
-   `service/worker/scheduler/spec.go::CleanSpec` 默认值规则，直接投递原生
-   StructuredCalendarSpec；星期只从原 1–7 映射至原生 0–6，不实现日期求值。
-   原 exact-ID Describe、ScheduleSpec 严格相等、UNKNOWN 同 intent 对账均保留。
-4. 边界：Cron 与 interval 字段互斥，未知 kind、空值、非法范围/步长与不可表达
-   值均拒绝，不退回 interval。使用 UTC，显式年份按原生 2000–2100 边界；
-   本批接原表单的星号/数字/列表/范围/步长及固定 cron 0.16 的
-   `MONTH_MAP` / `DAY_OF_WEEK_MAP` 精确别名：三字母、完整月份/星期名、
-   `Tues` / `Thurs`；前端校验与 Temporal 字段转换一致，不接受任意截断。
-   `?` 或其它特殊语法仍未覆盖。Catch-up 与 SKIP 原策略不改。
+1. 权威：REQ-24、DD-107、`.design/03` §7 的 AutomationVersion、复制和
+   运行语义。只读核验 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/workflows/ui/WorkflowActionsMenu.tsx::WorkflowActionsMenu`
+   与 `desktop/src/features/workflows/ui/WorkflowDialog.tsx::WorkflowDialog`。
+   复用原 DropdownMenu、图标、启用复选项和可视开关，不重新设计菜单。
+2. 影响：共享 `AutomationCard` 接同一个 `AutomationAction`，由 Web/Desktop
+   现有 WorkflowsPage 消费；新增原菜单组件，没有宿主第二套实现。
+   卡片所选不可变版本明确传入编辑/复制；表单和 YAML 仍读写同一已定义合同。
+   不改 Core、数据库、Action schema、Workflow 类型或公开管理 API。
+3. 副作用：菜单打开动作前沿原授权读取刷新详情，校验 scope、资源版本、
+   canManage/canRun；没有读取证据不打开写表单。编辑只发布新版本，复制只携带
+   配置、不复制 source Resource/Asset/pin/Delegation 或历史。菜单启停、删除和
+   单次运行仍经过原确认与 `submitAction`，不发原生 Relay 控制事件。
+4. 边界：无权限动作不渲染；启用仍显式选择已发布版本与未过期委托。
+   切 Workspace、版本、身份或进入已冻结请求后，迟到读取不能打开旧表单。
+   读取失败显示原可重试的拒绝/中性未知状态，不当作空结果成功；
+   请求 UNKNOWN 继续锁定原 intent，重查同一幂等键，不提前切卡片状态。
 
-验证：受限既有 SDK 独立 message-edit.AGX058 快照，共享 source/test tsc 均 0，
-调度消费 54/54 通过，菜单/历史 14/14 通过。SDK-only 放宽 Cron 字段互斥，
-新增混合 YAML 用例真实失败 1 项；原字节恢复 cmp 0 后 54/54 再通过。
-原 gen.sh --check 四侧和 Dart 同源文案均 PASS；TS 往返 33/33、Dart 往返
-28/28 通过。原兼容比较相对 contracts-v0.1.0 无破坏性变更，266 个 schema、
-匹配 3 个历史 schema。首次 Vitest forks 启动超时，0 项执行；改用既有 threads
-单 worker 后得到上述真实结果。一次 gen --check 调用遗漏 Rust/Go PATH
-导致格式差异，补齐既有工具 PATH 后同步检查通过，没有改生成物迁就检查。
+原执行接缝仍为
+`core/crates/platform-core/src/governance.rs::Semantic::from_key` 的现有
+`automation.publish_version/enable/disable/delete` 解析及
+`core/crates/platform-core/src/automation.rs::ACTION` 的 `automation.run`；
+本批没有重写 Temporal。暂停等既有详情动作原样保留。
 
-日志位于既有 `message-edit.AGX058`：`workflow-cron-ui-restored.log`、
-`workflow-cron-ui-mutation.log`、`workflow-cron-ui-retry.log`、
-`workflow-cron-contracts-restored.log`、`workflow-cron-dart.log`。
-本批没有 full/build/deploy；因 Data 剩余空间不足，Core 与 Go 编译/往返暂未执行。
-未获已核验的隔离 Temporal namespace，真实 Create/Describe exact、触发日期、
-运行历史端到端尚未验收；不能拿纯转换断言替代。发布必须先 Core 后客户端，
-旧 Core 不接受新的 Cron 形状。多步骤及其条件/超时/Delay 仍为后续真实恢复项。
+使用现有受限 SDK 独立 `message-edit.AGX058/apps`：
+共享 source/test 两套 tsc 退出 0；原 Automation/Workflows 78 项加新增菜单
+10 项共 88 项通过，其余 165 项按明确 filter 跳过。
+新检查实际覆盖中文原菜单、选定旧版本 form/YAML、复制边界、
+显式版本/委托启用、单次运行/停用/删除治理消费、UNKNOWN 同键、撤权和迟到读取。
+SDK-only 删除 fresh canManage 检查后，撤权用例真实失败，1 failed / 9 passed、
+退出 1；按正式字节恢复 cmp 0 后，两套 tsc 与 88 项再次退出 0。
+首轮失败是新检查误把原中性 ReadFailure 当 alert，以及英文断言拼写不符；
+只修夹具，未改变产品失败语义。唯一词条源新增两条菜单文案，
+原 `gen-platform-i18n.py` 生成和 `--check` 均退出 0；
+独立候选不夹带并行 Members 词条。
 
-## 2026-10-07：原设置 Communities / Invites 的共享接线
-
-权威为 REQ-24、DD-53 与既有 DD-83 邀请管理。只读上游
-`/volumes/kailo/.references/buzz` 固定
-`779af8886caae1317b4de962082429867ab61503` 的
-`desktop/src/features/settings/ui/SettingsPanels.tsx::SettingsSection`、
-`renderSettingsSection` 及同目录 `SettingsView.tsx::settingsNavGroups`
-证明原 Communities 分组内有 `community-members` / Invites 的 Ticket 入口。
-本批复用已恢复的 Sidebar、设置布局和原 `TenantInvitations`，不另造页面、
-身份、权限目录或邀请写接口；没有恢复不存在真实消费者的 hosted-communities。
-
-影响面为共享设置导航与邀请页面的同一次读取、Web SettingsPane / PlatformApp、
-Desktop SettingsPanels / SettingsView / SettingsScreen / AppShell。入口只在原
-`/api/v1/invitations` 成功读取后出现，403 隐藏；读取失败显示原错误与重试，
-不伪装为空列表。窗口重新获得焦点复用原 reload，没有新增轮询或第二权限请求。
-新增分组名称只加入既有 TS / Dart 同源中英词条；Mobile 无组件宿主改动。
-
-副作用保持原 `/api/v1/actions` 准入、审批、回执及 UNKNOWN 幂等意图。
-设置页关闭、切换设置分类或读取 403 不清空邀请 hook。Web / Desktop 均以
-真实 tenantId、tenantPrincipalId、platformSessionId 为设置实例 key；换会话
-替换实例，退出由既有认证宿主卸载。Desktop 原 NativeBootstrap 配置变化先
-回到 loading 并卸载子树，ActiveCommunityProvider 仍按 relayUrl / devicePubkey
-隔离；读取故障不能作为旧未决动作已失败的证据。隐藏设置不处理 Escape、不强制
-展开应用侧栏，不渲染原响应式侧栏 portal；无初始会话时显示真实读取状态。
-
-实现后窄验：共享源码与测试 TypeScript 检查退出 0，原 Members 8 项与
-Invitations 14 项通过；新增设置用例所在 worker 启动超时，整条命令退出 1，
-不计为新增设置验收。Web TypeScript 检查退出 0，随后 SettingsPane、
-ProfileSettings、PlatformApp 三个测试 worker 均启动超时，0 tests，退出 1。
-随后只执行 Desktop TypeScript 检查，退出 0；包含隐藏设置副作用和初始会话
-读取状态修正，没有安装依赖或另起项目构建。
-没有提高超时、改产品规避错误、安装依赖或重跑 full。两宿主保留各自锁定依赖树，
-消费同一份本批共享源码副本，不通过跨树软链接混用 React 类型。
-
-原日志位于 Data 证据目录
-`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/projects-directory.wiWDv3/`：
-`settings-invitations-shared.log`、`settings-invitations-hosts.log`、
-`settings-invitations-desktop.log`。
-新增设置正反行为检查尚未取得实际结果，不能以已有 22 项替代；本批没有构建、
-部署或浏览器验收，不声明线上设置入口已恢复。
-
-### 同批资源恢复后的实际行为回执
-
-没有换 SDK、安装依赖或提高超时。原设置文件独立运行实际 20 项通过，退出 0
-（`settings-invitations-behavior-restored.log`）。随后 SDK 私有源码同时故意把
-导航的成功读取判断改成任意读取状态，并给邀请控制器增加随 active 变化的 key：
-新增两项用例分别真实失败，退出 1（`settings-invitations-behavior-mutation.log`）。
-两文件从正式输入原字节恢复、cmp 0 后，设置全部 20 项再次通过；后续命令因
-工作目录层数误写而未运行 Web，整条命令退出 1，如实保留
-`settings-invitations-behavior-final.log`，不称该组合命令全通过。
-
-Web 初轮实际 12 项通过、4 项失败：PlatformApp 旧测试 mock 缺少已恢复的
-NativeApplicationEntries，且管理面 mock 未透传真实 children；原邀请已经由
-共享 MembersPane 持有，宿主不再另挂第二邀请页。仅修对应原夹具，不改变产品。
-另一个外观用例触发原 5 秒超时，没有增加超时。修正后以准确目录运行原三个
-Web 文件，SettingsPane 6、PlatformApp 6、ProfileSettings 4，共 16 项通过，
-退出 0（`settings-invitations-web-final.log`）。Canvas 的 jsdom 提示仍保留，
-未为消除此提示安装包或修改头像产品行为。
-
-本批最终窄验边界为三处 TypeScript 检查、共享设置 20 项、原邀请/成员 22 项、
-Web 16 项及上述真实负向/还原；没有 full、产物构建、部署或浏览器验收。
-
-## 2026-10-07：原线程布局设置共源与 Web 实际消费
-
-REQ-24 / DD-53 的原设置恢复继续消费只读 Buzz
-`779af8886caae1317b4de962082429867ab61503`：
-`desktop/src/features/settings/ui/AppearanceSettingsControls.tsx::ThreadLayoutSetting`、
-`desktop/src/features/channels/lib/threadViewModePreference.ts::useThreadViewMode`
-与 `desktop/src/features/channels/ui/FocusThreadDrawer.tsx::FocusThreadDrawer`。
-三个实际源码移入共享 TS，Desktop 原路径改为导出或注入实际主题；原设备键
-`buzz.channels.threadViewMode`、默认 split、SVG 预览与原面板呈现保持同一实现，
-没有新偏好存储、合同、权限或后端写接口。
-
-影响面是两端外观设置、原桌面线程及 Web ChannelPane / ChannelThreadPane。
-Web 现有面板此前固定 `isFocusMode: false`，本批真正消费原设备选择，而非
-只增加设置按钮。窄屏仍消费原 auxiliary overlay 判据，不引入另一断点。
-切换 focus / split 使用相同组件位置和回复子树，不重建原未决回复意图；
-打开作者资料隐藏线程时不让隐藏线程处理 Escape 或夺回资料面板焦点。
-原成员、scope、流撤权和发布回执判断完全沿既有调用，不借设置获得读取权限。
-空或非法设备偏好维持上游 split 行为，持久化拒绝保留原内存选择；这些 UI
-偏好不替代业务准入。消息、回复正文与用量权威未改变。
-
-实现后首次 shared tsc 指出提取后的 cn 路径和严格数组索引问题，精确修正后
-共享源码/测试 tsc 与 Web tsc 通过，共享 settings 21 项通过。Web 外观用例
-触发原 5 秒超时，其余 5 项通过；ChannelThreadPane 的 worker 启动超时，
-该串行命令退出 1，不将它计为两端行为全通过。日志为同 Data 目录中的
-`thread-layout-shared.log`、`thread-layout-restored.log`。
-
-SDK 私有副本断开原控件 `onValueChange` 后，新实际消费者用例真实失败：
-预期 focus、实际 split，退出 1（`thread-layout-mutation.log`）。从正式源
-原字节还原并 cmp 0 后，该用例通过（`thread-layout-final.log`）。未改变
-测试超时、安装依赖或运行 full / 镜像构建；此阶段不声明已部署。
-
-随后同一串行命令的 Desktop tsc 退出 0，Web ChannelRead 在 worker 启动前
-60 秒超时、零用例执行，整体退出 1；不能将它计为 Web UNKNOWN 行为通过。
-交叉复核确认 inactive drawer 内层 flex 会影响原分栏宽度，现三层包装均为
-contents，保持回复子树而不增加布局盒；focus 消费原 getThreadPanelLayout
-的单面板宽度，split 继续原拖拽宽度。频道返回文案来自 PlatformApp 与
-InboxDrafts 已有准入查询的 channel.data.name，不新增目录查询或假名称。
-对应原 ChannelRead 用例已补实际拖拽、focus/split 宽度、真实频道名和同一
-UNKNOWN 输入节点/幂等键断言。该最后增量的验证单独记录，不借前轮通过。
-
-最后精确输入同步到原受限 SDK；两宿主各自的已锁定依赖树消费本批共享源码
-副本，没有重装或改变依赖链接。串行 shared `tsc --noEmit`、shared
-`tsc --noEmit -p tsconfig.test.json`、Web `tsc --noEmit`、Desktop
-`tsc --noEmit` 全部完成，组合命令退出 0（session 49329；成功无诊断，
-`thread-layout-reviewed-types.log` 为空）。此时未再次启动 Web worker；
-最终宽度/拖拽/UNKNOWN Web 行为用例仍未验收，不用静态检查替代。
-日志绝对目录为
-`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/projects-directory.wiWDv3/`。
-源码和上述证据仅供合并，未构建、发布或部署，不代表原设置全功能完成。
-
-### 2026-10-07 原有序 Delay → 消息步骤纵向接线（尚未运行期验收）
-
-1. 权威与上游：REQ-23/24、DD-107、03 §7 与 05 §2.9 已恢复原多步骤
-   产品范围；旧单 action 仅是历史格式，不是产品上限。固定 Buzz
-   `779af8886caae1317b4de962082429867ab61503` 的
-   `crates/buzz-workflow/src/schema.rs::Step/ActionDef`、
-   `desktop/src/features/workflows/ui/WorkflowStepCard.tsx::WorkflowStepCard`、
-   `WorkflowDurationField.tsx::WorkflowDurationField`、
-   `workflowDuration.ts::parseDurationSeconds` 是本批原卡片详情、时长输入与
-   滑块复用来源。未增加本地调度器；固定 Temporal Go SDK
-   `626130f1fd9de50cfd90b884a3fb796504f22dc1` 的
-   `internal/workflow.go::NewTimerWithOptions/TimerOptions` 提供持久 Timer。
-2. 影响面：原不可变 AutomationVersion 采用显式 formatVersion=2 与 steps，
-   保留步骤顺序、ID、名称、精确 duration 与末条消息；旧 action 不补字段、不重算
-   摘要。表单与 YAML、复制、版本详情、UNKNOWN 同键请求仍消费同一版本。
-   原 AgentTaskWorkflow / AdvanceAgentTask 增加可选 Delay 引用；原 TaskProjection
-   的 WAITING_TIMER 仍由已有历史/任务页显示，不另存步骤或计时权威。
-   Web/Desktop 复用共享组件；本批没有移动端新增编辑入口。
-3. 副作用与兼容：持久 action 用 POST_MESSAGE_STEPS，避免旧 Core 忽略步骤直接
-   发消息；新 Core 沿原 publication / quota / usage / Capacity-NONE 检查处理。
-   迁移 20261007050000 只扩原 action 约束与三份原 trigger，不增加表或后台通道。
-   旧行与旧 writer 格式保持有效，新格式由旧 Core 拒绝；旧 Worker 不识别 Delay
-   不会得到 TimerFired，因此不能越过步骤。发布需迁移、新 Core/Worker 再新 Web；
-   回滚发现新格式不可变版本时停止，不能删历史或压平版本。
-4. 异常与边界：Core 只认可原 execution chain、当前 Activity 之前的完整 history
-   中同 Invocation/step 的 TimerStarted、精确 duration 与 TimerFired；缺页、循环、
-   不连续或不可读返回 UNKNOWN。取消 Timer 不是完成，下一轮继续同 Invocation 的
-   原取消收尾。零时长按原配置为无副作用步骤。唤醒后仍经原 activity fence、同 AE、
-   tenant 锁、fresh_post_message、当前用量/密钥/binding；发出前再查一次，既有
-   reply intent CAS 与原事件/计量终态证据不变。缺少终态不能重发或显示完成。
-   原生 Timer 返回后同样执行原 ContinueAsNew 检查并累计 eventBase，不能因 Delay
-   分支直接 continue 而跳过历史续跑；续跑前保存 cancelPending，取消后下一轮只
-   收尾原 Invocation，不将取消 Timer 当作允许派发消息的依据。
-
-实际写入后的验证：原受限 SDK（4 CPU / 8 GiB）中四侧原生成退出 0；共享源码与
-测试 TypeScript 检查退出 0；原调度 54 项加新增步骤 2 项共 56 项通过。
-TypeScript 契约往返 34 项、Dart 往返 29 项通过。首次两新增用例分别因旧测试 helper
-假定 label 内含 input、按文本查图标按钮失败；只修夹具为实际 input ID / aria-label，
-未改产品绕过。SDK 私有副本放宽步骤字段以允许未实现 if，并移除 Cron 全名解析，
-两条断言真实失败退出 1；原字节恢复 cmp 0 后首次 worker 启动超时，0 tests、退出 1，
-随后仅两受破坏用例复跑 2/2 通过。未提高超时或重跑 full。
-
-日志目录仍为
+日志位于
 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`：
-`workflow-steps-gen.log`、`workflow-steps-ui-final.log`、`workflow-steps-mutation.log`、
-`workflow-steps-restored.log`、`workflow-steps-restored-retry.log`。
-原 `tools/gen.sh --check` 四侧及同源 i18n 同步检查实际退出 0，日志为
-`workflow-steps-gen-check.log`。首次隔离迁移目标 full-pg 中仅创建本批空库，
-原 sqlx 连接超时退出 1，未执行迁移；空库保留。随后经任务负责人确认原 SDK
-共享的独立 PostgreSQL namespace，仅新建同名本批隔离库继续原迁移入口，
-不修改原网络、其他库或生产数据库。后一次原 sqlx 实际退出 0：100 条成功，
-末条 20261007050000 前进、回退、再前进均通过；automation_version 为 0 行，
-这不是带业务数据的回滚或端到端运行验收。原输出摘要在私有交接目录
-`/volumes/data/kailo/tmp/workflow-steps-20261007.Hhwev1/migration-receipt.txt`。
-
-后端同一受限 SDK 实际完成：Core 步骤校验 3 项、Temporal Timer 证明 2 项、Rust
-契约往返 29 项通过，原命令退出 0。仅在 SDK 放宽不可变 action 投影相等判断和
-TimerFired 的 started-event/timer-id 匹配后，两项真实失败退出 101；两个文件按原
-字节恢复 cmp 0，合并 5 项复跑通过。日志为 `workflow-steps-core.log`、
-`workflow-steps-core-mutation.log`、`workflow-steps-core-restored.log`。
-
-Worker 原 testsuite 的持久计时、取消后收尾、成功/取消后的续跑检查实际通过：
-3 个顶层用例，其中续跑含两个子例；Go 契约 20 个顶层往返用例通过。首跑新增续跑
-夹具遗漏 mock 的第二个 nil 返回值，原 Activity mock 因此失败；修夹具后才记通过。
-续跑用原 SDK SetCurrentHistoryLength(7)，初始 eventBase=11，明确断言继续运行输入
-为 18，并核对固定 Invocation 引用和 cancelPending。私有副本删掉累加后两个续跑
-子例真实失败退出 1，原字节恢复 cmp 0 后上述 3 项和子例全部通过。
-日志为 `workflow-steps-worker.log`、`workflow-steps-worker-checkpoint.log`、
-`workflow-steps-worker-mutation.log`、`workflow-steps-worker-restored.log`。
-窄 clippy 首次因时长上限手写范围比较而退出 101；按同一闭区间语义改用
-RangeInclusive::contains 后，`-D warnings` 与上述 5 项复跑均退出 0，日志为
-`workflow-steps-clippy.log`、`workflow-steps-core-final.log`。Go 三个变更文件
-gofmt 与两新增 Rust 模块 edition 2021 格式检查退出 0。
-未提供独立 Temporal namespace，本批未执行真实
-Temporal 服务上的运行、取消、重启与消息终态验收；不将 testsuite、原 Cron 验收或
-数据库空库迁移冒充这些业务证据。
-本批没有构建、提交、部署或浏览器验收，不声称 Workflows 全功能恢复；原条件、每步骤
-timeout、其它动作、多副作用编排与原模板变量补全仍需真实消费者，未生成假按钮。
-
-## 2026-10-07 原版资料布局与独立头像编辑
-
-实施前四步结论：
-
-1. 权威为 REQ-24、DD-53 与既有资料签名/读回合同。只读核验固定 Buzz
-   `779af8886caae1317b4de962082429867ab61503` 的
-   `desktop/src/features/settings/ui/ProfileSettingsCard.tsx::ProfileSettingsCard`、
-   `desktop/src/features/profile/ui/ProfileAvatarEditor.tsx::ProfileAvatarEditor`、
-   `desktop/src/shared/ui/textarea.tsx::Textarea`。不是重新设计资料页。
-2. 影响面是共享 ProfileSettingsCard、原 ProfileAvatarControls 和两宿主的头像
-   preview 属性。复用已有 MaskedAvatarBadgeFrame、Input、ProfileAvatarEditor；
-   补回原 Textarea 的实际调用。恢复原 192px 头像、编辑角标、独立头像编辑、
-   模式 tabs/动态预览 portal、滚动还原、动画及只读资料/身份 disclosure。
-   两端仍消费同一个 TypeScript 主体，没有 Core、合同、数据库或迁移变化。
-3. 副作用仍交原 onSave：Web 本人 SERVER 经 BFF，Desktop 本机 CLIENT。
-   只在原签名事件读回后更新已保存值；响应丢失或身份不符保持 UNKNOWN，
-   继续同一个冻结请求，后续观察被拒绝不能解除原意图。没有另写保存服务、
-   复制头像存储或把 SERVER 私钥出口放入 Web。既有清空字段语义保留，
-   不恢复上游忽略空值的旧限制。
-4. 无修改点“完成”不产生写请求；上传中和 UNKNOWN 禁止换载荷，未确认保存
-   不关闭头像编辑器。真实身份 key 切换仍由原宿主卸载，迟到结果不写入新身份；
-   权限、暂时故障与结果不明仍沿原六类错误处理。Mobile 没有新增页面，
-   仅两条文案经原生成入口同步 Dart，默认中文/显式英文规则不变。
-
-本批静态与行为输入固定在 `7aa8a4d0348fbe224900043957e974e898040257`
-加本节对应 Profile 增量，未夹带并行 Workflow steps 合同/实现。初次 SDK
-使用旧 agents.tsx 配新生成合同，tsc 报 everySeconds/offsetSeconds 可选，退出 2；
-随后按冻结候选重新同步真实 Cron 基线，未改业务代码来规避诊断。
-
-原受限 SDK 的 `gen-platform-i18n.py --check` 退出 0；共享 source/test tsc
-与 Profile 8 项、Web tsc 与真实 SettingsPane Profile 5 项、Desktop tsc
-全部通过，串行组合命令 session 37566 明确退出 0。
-Web jsdom 明确提示缺少 Canvas getContext，不代表动画录制/图片编码已在浏览器
-验收；没有安装 Canvas 包或用假实现宣称通过。
-
-SDK 私有宿主副本只断开原 ProfileAvatarEditor 的 modeTabsContainer 投递，
-新真实 Web 入口用例实际失败：期望 Emoji、原模式栏槽实际为空，1 failed /
-4 skipped，退出 1（`profile-original-mutation.log`）。没有改测试期望或
-产品默认行为；从冻结共享源码恢复宿主副本并逐字 cmp 0。
-还原后真实 Web Profile 5/5 再次通过，session 52953 退出 0，
-日志为 `profile-original-restored.log`；正式源码始终未施加该破坏。
-
-日志绝对目录为
-`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/projects-directory.wiWDv3/`，
-候选正向输出在 `profile-original-selected.log`。本批没有 full/build/deploy，
-没有新的线上截图或 Windows 安装包验证，也不称原设置全部功能已完成。
-原 Native 私钥备份和账户退出的完整布局不在本切片；未删除其交付要求，
-Web 不得因复用页面而获得本机私钥能力。
-
-### 2026-10-07：SERVICE 读取授权复用原 Resource 权限链
-
-本批基准为 `ec8ae806d3461499fc8bbe5c506b64c9ee4e2b78`。这是实现后的
-变更回执，不是新执行引擎或预写规格；不更改接收方导入状态、内容正文或 native 凭据。
-
-四步结论：
-
-- 权威：`.design/07` §8.2、DD-89 已规定 source Resource 的 `reader` 授予接收方
-  binding 唯一 SERVICE，并要求来源 `share`、接收资源 `update` 和原 owner Approval。
-  复用既有 `resource.grant_read/revoke_read`、原 AE/Approval 和 SpiceDB；不另建授权表。
-  上游证据是 SpiceDB `f7620a59fb61d4b523b02d5c98d7f13dc1f19dce` 的
-  `internal/services/v1/relationships.go::permissionServer.WriteRelationships`。
-- 影响面：ActionCommand 增加可选闭集 `receiverResource {id, version}`，原 Params
-  将它纳入持久化和 parameter hash。未传字段时，原 AGENT 自身 reader 行为及
-  `agentPrincipalId` 投影意图不变。实际接收 binding、generation、release、SERVICE
-  身份由 Resource 目录读取并冻结到同一 AE，不接受调用方指定绑定、租户或密钥。
-  原 `governance_api::parse_action_command` 复用已有结构回写校验，拒绝被生成类型
-  静默丢弃的多余字段和显式 null。四侧类型由原 `tools/gen.sh` 独立一致生成；无新迁移。
-- 副作用：来源和接收方必须同 Tenant，Workspace receiver 只读同 home Workspace
-  或 Tenant 来源；两端 active release/runtime、读边声明、资源版本和身份均复核。
-  原 source Resource 投影 fence、审批、fresh 权限检查和单次派发保留，UNKNOWN
-  只观察原 SpiceDB 结果，不重发 Touch/Delete、不凭无结果释放 fence。撤销只取消
-  同来源与同接收主体的待决 grant，不能悄悄覆盖另一接收方的投影。
-- 异常：空引用、nil UUID、未知字段、非正或超 i32 版本拒绝；变化的版本、binding、
-  generation、owner 或投影冲突拒绝；目录/权限不可核验不降级。源和接收 Resource
-  恰为同一对象时，仅本 AE prewrite 的版本加一可在派发阶段重入，审批原引用不被改写。
-  原六类拒绝、权限和 UNKNOWN 对账沿原 Refusal/AE 路径，不新增成功或失败枚举。
-
-实际证据：原受限 SDK `kailo-agent-receipt-xvkujx`（4 CPU/8 GiB）、既有
-`/cache/rust-target`、Cargo `-j16`。`tools/gen.sh` 与 `--check` 均退出 0；四侧新
-receiverResource/旧字段缺省往返各 1 项通过，TS 同时执行原 test tsconfig 类型检查。
-原 `check.sh` 的合同兼容代码原样执行，得到
-`PASS 相对 contracts-v0.1.0 无破坏性变更（267 个 schema，匹配 3 个历史 schema）`。
-第一次 Core 命令误用文件名作为 filter，输出 `0 passed; 326 filtered out`，不作为验收。
-改用实际 `governance::installation_permission::approval_tests` 后 5 通过、1 ignored；
-原始请求 parser 1 通过。ignored SQL 项另在已授权隔离库 `workflow_steps_hhwev1`
-（100 个迁移、0 个 Resource）显式执行，1 通过；它证明真实查询可解析且缺资源拒绝，
-不是完整业务授予的正向证据，没有创建任何业务对象或写入权限。
-
-在 SDK-only 删除 receiverResource 的 Params 持久化，以及原始入口闭集校验，
-真实得到 `1 passed; 2 failed; 1 ignored`、退出 101。两文件恢复原字节并 `cmp` 退出 0
-后，原模块 5 项、parser 1 项重新通过；`cargo clippy --offline --locked -j16
--p platform-core --bin platform-core -- -D warnings` 最终退出 0。正式源码没有施加负向变异。
-日志在
-`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`
-的 `service-permission-{gen,gen-check,core,core-final,contracts,mutation,restored}.log`；
-兼容结果及独立 SQL 回执在
-`/volumes/data/kailo/tmp/service-permission-20261007.BBCYOq/`。
-
-边界：没有执行 live 授予/撤销、真实 owner Approval→SpiceDB→来源 PEP 全链或部署。
-本批接通 HUMAN 发起的 SERVICE reader 授权，仍不把原 HUMAN 管理动作自动开放给
-Agent；Agent 发起的 Delegation/ToolBinding 交集、接收方自主增量拉取与其 UI
-仍须各自真实接通。接收方停止后 reader 扫除由既有 binding 生命周期负责，本批不冒称
-验证了该清理。现有 UNKNOWN 若无可核验外部结果仍保留未知，不能靠本补丁认定成功。
-
-## 2026-10-07：原审批步骤接入同一版本策略与 AgentTask
-
-比较基准为 `ec8ae806d3461499fc8bbe5c506b64c9ee4e2b78`。本批是原
-Workflows 的 `request_approval` 实现增量，不是新审批服务，也不把源码写入称为已部署。
-权威是 `REQ-23/24`、`DD-107`、`.design/03` §7 与 `.design/06` §9/9.1。
-上游固定 `779af8886caae1317b4de962082429867ab61503` 的
-`crates/buzz-workflow/src/schema.rs::ActionDef::RequestApproval` 与
-`desktop/src/features/workflows/ui/WorkflowStepCard.tsx::WorkflowStepCard`
-已用 `git show` 核验。继续复用既有共享步骤卡片、原 Form/YAML、详情和两个实际宿主。
-
-四步影响结论：
-
-1. 原审批人自由 `from` 不是 Kailo 身份或角色权威。本实现显式选择当前可用的
-   `ApprovalPolicy` 精确 ID/version；它仍不是人名，审批人、阈值和时限完全来自同版本策略。
-   请求说明保存在同一不可变 AutomationVersion 的步骤中，修改说明同样改变版本 hash；
-   子 AE 仅新增 stepId 引用，不另存一份说明或决策。没有放开自由 timeout/from。
-2. 本批四份 schema 变更加生成四侧；ApprovalView 可选 automationStep 是授权查询从
-   同一版本读取的展示投影。原普通版本与头部 approvalPolicy 继续可读，历史 hash 不改写；
-   显式步骤与头部策略同时存在会拒绝。无数据库迁移、新路由、新 Workflow kind 或新队列。
-3. 同 AgentTask 在原 Temporal history 确认前缀 Delay 已触发后启动原 ApprovalWorkflow；
-   没有真实 CONSUMED 证据就不执行后缀 Delay/消息。旧头部审批仍先于所有 Delay。
-   原 fresh permission、撤权、额度、Capacity、审计、消息意图/回执与失败收敛链保持不变。
-4. 缺策略版本、空说明、重复审批、未知动作、未支持的 from/timeout/条件均拒绝。
-   取消/拒绝/到期沿原终态；history/审批结果不明保持 UNKNOWN，不盲重放。
-   Form/YAML/复制读取同一字段；UNKNOWN 保存同一个命令与幂等键。
-
-本切片支持 Delay、一次策略审批、末条 send_message 的顺序组合；这不是产品七动作上限。
-原 send_dm、set_channel_topic、add_reaction、call_webhook、多次副作用/审批、条件和模板
-完整能力仍不在本次验收范围，也没有生成假执行入口或恢复 Buzz 自带执行器。
-
-验证输入是上述基准加本批精确路径。正式工作树的 SERVICE/read-edge 联合生成物未被
-本批私有生成覆盖；私有 SDK 用原 tools/gen.sh 重新生成与本批 schema 匹配的四侧，退出 0。
-shared 源与测试 tsc 均 0，原工作流消费者 58 项与审批页 11 项共 69 项通过；
-两个宿主 tsc 均 0。TS/Dart/Go 的新审批步骤与不可变详情引用往返各 1 项通过。
-SDK 故意使 workflowApprovalPolicy 忽略步骤引用后，新用例真实失败 1 项；原字节
-cmp 0 还原后原 57 项通过，追加非法 YAML 场景后的最终同组结果为上述 69 项。
-
-真实失败没有省略：首次 SDK 缺两个已入库 duration 文件导致 TS2307，补精确基准输入后通过；
-初次 Dart 未投递已有 PUB_CACHE、私有 gen 未投递 npm_config_cache 时分别权限拒绝，
-投递既有 Data 缓存后原入口通过，未安装或修改产品来迁就环境。
-Core 首轮漏导 json 宏编译 101，修正后 automation 25 通过/5 显式 ignored；
-随后 clippy 抓到多余 unit 表达式，已删除而未添加 lint 豁免。
-最终 Core 联验额外包含根线程的容量响应 mapper/事后用例两文件增量，这部分不归本候选；
-审批 25 通过/5 显式 ignored、该 mapper 1 通过、Rust 新合同往返 1 通过，
-clippy `-Dwarnings` 退出 0，联合命令 session 13785 最终退出 0。
-SDK 故意破坏审批步骤位置与双策略拒绝：原检查 23 通过/2 失败、退出 101；
-同时将根 mapper 的 finish_activity 置 false：原检查 0 通过/1 失败、退出 101。
-三文件恢复后各自 cmp 0，重新编译并得到上述最终恢复结果；没有拿旧二进制证明变异。
-
-日志位于 `/volumes/data/kailo/tmp/workflow-approval-20261007.fZc73u/`：
-`selected-generate-shared-restored.log`、`shared-mutation.log`、
-`shared-contracts-restored.log`、`approval-contracts.log`、
-`selected-contracts-hosts.log`、`selected-hosts-restored.log`、`core.log`、`core-restored.log`、
-`core-mutation.log`、`core-mutation-restored.log`。
-复用既有 4 CPU/8 GiB SDK、Data 缓存和 Cargo `-j16`，无 full/build/deploy。
-没有声称线上审批与消息终态贯通，也没有把显式 ignored 的数据库场景计为通过。
-
-## 2026-10-07：原版工作流 add_reaction 接线
-
-此增量基于审批冻结树 `ff14c0961914055412b1da5248a288e708ac2871`，不是该审批树的重写。
-关联 REQ-23、REQ-24、DD-107 与设计 06 原七动作恢复范围；本批新增的是原表情回应，
-没有将原七动作降成单动作产品，也没有恢复 Buzz 自带执行引擎。
-
-实施前四步结论：
-
-1. 权威：固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
-   `crates/buzz-workflow/src/schema.rs::ActionDef::AddReaction` 明确回应实际触发消息；
-   `desktop/src/features/workflows/ui/WorkflowStepCard.tsx::WorkflowStepCard` 保留原 Emoji
-   输入。实际事件直接使用 `crates/buzz-sdk/src/builders.rs::build_reaction`，原 kind 7
-   只有一个 e 标签；`crates/buzz-relay/src/handlers/ingest.rs::derive_reaction_channel`
-   从该目标查 Channel，不另造 h/p 标签。旧 executor 的共享 token/X-Pubkey 回退没有接回。
-2. 影响：AutomationStep 增加 add_reaction/emoji，版本正文及摘要仍不可变；内部
-   ADD_REACTION_STEPS 明确区分旧消息 kind，旧 Core 不会误执行。四侧按同一选定合同生成。
-   原 AgentTask、冻结事件 ID、REPLY_INTENT、UsageEvent/automation.run COUNT 是同一链，
-   不创建模型回合、模型用量或 CapacityLease。新 70000 迁移仅扩原约束/原触发器动作集合；
-   保留旧 writer，存在反应版本时 down 明确停止而不是重解释历史。
-3. 副作用：仍先原动作准入/委托/审批，发布前持久化原 intent/CAS，再做原新鲜 scope/
-   identity/binding/计量关联核验。缺凭据、缺源、撤权或版本漂移不允许发布；查到原事件也
-   不直接完成，必须原 COUNT 计量提交。结果不明只查同一事件，不重放或清账本。
-4. 边界：空 emoji、超过契约与原 builder 字符边界、额外目标字段、未知步骤均拒绝。
-   Schedule/手动没有真实触发消息，不创建伪目标；管理验证、canRun 和运行准入一致。
-   原 Delay/策略审批可以在反应前，UNKNOWN 不前进。签名回执须精确匹配原事件 ID、
-   AGENT author、源 e 引用、emoji 和签名；并发仍只有原 CAS 胜者可投递。
-   超时/缺证据保留 UNKNOWN，确定拒绝才失败，沿既有六类错误和用量收敛处理。
-
-Web/Desktop 共用原表单/YAML/StepCard、列表及详情，不另写第二前端。Mobile 本批只有
-同源生成合同/文案，没有宣称 Mobile 编辑器验收。新增纯 buzz-sdk 路径依赖只锁入一个
-现有源码包；Core Dockerfile、构建 allowlist、原 release archive 同步包含该源码与
-编译读取的 AutomationStep schema，没有构建时补丁或新下载。
-
-实际验证（原 4 CPU/8 GiB SDK，Cargo 16；未运行 full/build/deploy）：
-
-- 原 tools/gen.sh 退出 0；shared 源与测试 tsc 均 0，Web/Desktop tsc 均 0。
-- Workflow/Automation 86 项通过；SDK 移除反应识别后新用例 1 项真实失败，恢复字节
-  cmp 0 后 86 项再次通过，包含表单/YAML及 UNKNOWN 重查同一个意图。
-- TS、Dart、Go 和 Rust 的新 reaction 合同往返各 1 项通过。共享正式生成物仍含其他
-  队友在途合同，本候选使用 ff14 加本 schema 的独立一致生成物，不覆盖联合产物。
-- Core automation 27 项通过、5 个要求独立业务夹具的场景显式 ignored；原 builder
-  签名与精确回执 2 项通过；platform-core/collab-bridge all-targets clippy -D warnings 0。
-  SDK 去掉 emoji 精确回执比较及 Schedule 拒绝，各自新用例真实失败 101；两源文件
-  cmp 0 恢复后重新编译，bridge 2 项、Core 反应 2 项再次通过，最终 clippy 0。
-- 独立 PostgreSQL 容器 kailo-buzz-full-pg-uOp8YM 内新库 workflow_reaction_d86wxe：
-  从空库应用选定输入 101 个 up，70000 down/up 均 0。读取实际生产 CHECK 表达式到临时
-  形状表，原消息/反应正例通过，Schedule 反应与缺 emoji 拒绝，事务回滚；这不是完整
-  权限或实际 Relay/Temporal 联调。没有迁移业务库或修改线上数据。
-
-真实早期失败保留：最初复制的旧隔离库没有 catalog，首个迁移尝试报 schema 不存在；
-随后在本次新空库执行全部原迁移。TS 往返通过后首次 Dart 命令工作目录错误，修正既有
-目录后 Dart/Go 通过。首次临时 SQL 证据命令引号错误，修正原命令后检查通过。
-
-日志根 `/volumes/data/kailo/tmp/workflow-reaction-20261007.d86wXE/`：
-`generate.log`、`lock.log`、`shared.log`、`reaction-ui.log`、`ui-mutation.log`、
-`ui-hosts-restored.log`、`roundtrip.log`、`roundtrip-restored.log`、`core.log`、
-`core-mutation.log`、`core-restored.log`、`migrations.log`、`migrations-restored.log`、
-`action-constraint.log`、`action-constraint-restored.log`。
-Core 窄验另保留根线程已验容量 mapper 和 eb62 的两处 lint 修正作为集成输入；候选没有
-夺取这些改动的提交归属，也不回退它们。生产源码写入与窄验完成，未提交/推送/部署；
-尚未验证真实触发→Relay 反应→计量提交的线上闭环，其他原动作/多副作用执行仍是缺口。
+`workflow-menu.log`、`workflow-menu-final.log`、
+`workflow-menu-mutation.log`、`workflow-menu-restored-final.log`。
+本批未 full/build/deploy，未做新线上浏览器或 Windows 包验收。
+原多步骤可视编排、Webhook、cron 和原完整条件/步骤编辑仍有既定合同与消费者
+缺口；没有用空按钮伪造支持，也不把这组已接通交互称为 Workflows 全功能完成。
 
 ### 2026-10-07：截图 174 的 Workflows 重复层级修复（源码批）
 
@@ -4152,119 +3588,6 @@ SDK-only 删除父按钮 installationLocked 守卫后，UNKNOWN 升级用例真�
 `shared.log`、`shared-restored.log`、`mutation.log`、
 `restored-hosts.log`。未运行 Cargo、full、镜像构建或部署；
 线上截图仍是旧版本，不用本批源码检查替代浏览器和安装包验收。
-
-### SERVICE 读取授权的 HUMAN 管理消费者
-
-本批已直接实现原组件连接管理面中的资源读取授权入口，不增加页面权威或原生数据同步器。尚未执行的检查不计通过。
-
-1. 权威：`.design/07` §8.2、DD-89 要求来源 Resource 的 share 与接收 Resource 的 update，并由接收绑定唯一 SERVICE 读取。现有 SERVICE grant/revoke 后端已提供原 Approval、ActionExecution 与 SpiceDB 消费者；本批补 HUMAN 管理面的真实调用方。读入口只查询原 catalog.resource/绑定/发布/runtime 的引用元数据。
-2. 影响：原 ApplicationBindingsPanel 被 Web/Desktop 共用。本批相对导入 ServiceReadPermissions，不新建独立权限页。原 ApplicationBindingView 增可选 hasReadReceiver，新 metadata page 合同随四侧生成；旧回应缺省时不渲染入口。BFF 读口从实际绑定解析 SERVICE，逐资源 fresh scope 与 share/update 检查，交给原 submitAction 的 source/receiver id+version。Core 不接收客户端提交的绑定 SERVICE 权威、native 凭据或业务正文。
-3. 副作用：hasReadReceiver 只是已批准 manifest 和活动 runtime 的入口提示，不是权限授予。读口与写口各自重核身份、绑定、scope、projection 和权限；没有申请/撤销的旁路。UNKNOWN 保存同一个 command/idempotencyKey，锁选择与返回，并只重查原请求；同步 DISPATCHED 不伪造 workflowId。等待审批仅显示请求回执，结果进入原 TaskDetail。
-4. 边界：空授权页保持真空并可按原 offset 继续；读失败不当空集合；错 scope/错绑定版本/错 SERVICE 页面组合拒绝提交。异步回执受 BFF client 身份代次隔离。源/接收资源并发变化由原资源版本与绑定冻结检查收敛，撤权后的读写 fresh 拒绝。无迁移，无新终态、第二额度或审批权威。结果不明不清意图、不当成功/失败。发布顺序 Core 合同/目录能力先于 Web；旧 Core 没有 hasReadReceiver 时没有假入口。
-
-复用来源：原工程的 ApplicationBindingsPanel、TaskDetail、submitAction、useLoad、scope guard 与 installation_permission::human_scope；不改独立组件管理页面、不删原连接创建/停用/原生页面入口。Mobile 仍不是组件宿主，本批不新增 Mobile 页面。
-
-范围限制：这批界面不证明 Cells→WeKnora 导入端到端已运行，也不替代原生接收服务的连接器、增量、删除及调度。只读隔离库 SQL 验证如执行，只能证明查询类型和缺失对象行为，不能冒充已有业务授权正向结果。
-
-本批基于 root 联合树 `216e3793ef2e26c17ea40b43fdffdb98709b567c`，只添加目录两合同；未夹带同期 Workflows reaction 的半成合同或测试。原受限 SDK 的独立 message-edit 输入执行：四侧 `tools/gen.sh` 与 `--check` 全 0，Dart 文案同源 0，registry 原入口 24 能力/20 kind 0；共享源/test tsc 0；绑定页 19 项（含本批 6 项）通过；新合同 TS、Go、Dart 各 1 项通过。首次身份切换用例误期待旧面板按钮仍在，原 PlatformProvider 实际已卸载旧身份页面，修正断言后通过；第一次跨语言输入误混队友下一批 reaction 用例，已从冻结基准只提取本批 case，未扩大 schema。SDK-only 将 SERVICE 一致性比较改 true，真实 1 项失败，随后原字节还原 cmp 0，再跑原绑定页。
-
-初次 registry 入口缺少旁置设计快照而失败；随后按联合树的设计 pin `86df37823219b4a1cdf094178379cbe929d8e412` 投递只读快照并运行成功。Go 首次未投递既有缓存环境变量而失败，补已存在 GOCACHE/GOMODCACHE/PUB_CACHE 后原用例通过，没有安装依赖或创建第二缓存。
-
-后端未验收：Cargo 串行轮到本批时资源预检发现 Data 只剩 7.4 MiB；同次已启动的命令尚无编译输出，没有 rustc 子进程，立即只向本次 Cargo PID 166358 发送 SIGINT。原 handle 93860 终态 exit 130，父 shell 与 Cargo 均已退出，未重开、未清缓存。Core 定向、Rust 往返、clippy、隔离 SQL 用例均不能计为通过。原隔离 PG 的受控目录与网络已复核；只读预检 `workflow_steps_hhwev1|100|0|0`（迁移/Resource/Binding），未插入对象或改变任何权限。共享 UI 负向还原后最终 19/19 exit 0；原合同兼容检查 271 schema / 3 历史匹配 exit 0；原 rustfmt --edition 2021 --check 0。原始日志在本次独立 service-read-management-20261007.6BOkRl 目录。不得引用父批 full 为本目录代码通过。
-
-2026-10-07 后续后端窄验：Data 恢复 3.9 GiB 后，确认无其他 Cargo/buildx，复用原 1000:1000、4 CPU/8 GiB、等额 memory+swap SDK 与 Cargo `-j16`。候选重基 `e3a5b5b6eda9c13485c1bcf41fb9969f3fd8a4d1`，保留该基准 read-grant、capacity 与主题修正；23 个候选路径与执行副本逐字节相同。Core 目录参数拒绝检查 1 项、既有隔离空库目录 SQL 1 项、Rust 新合同往返 1 项及 clippy `-D warnings` 全部退出 0。SQL 只验证缺失绑定与空资源集的真实查询，不创建业务对象、不授予权限；真实 HUMAN 授权、审批和组件读取端到端仍未验收。
-
-此次环境失败保留：首次 CARGO_HOME 指向非实际挂载缓存，离线检查因缺 `aho-corasick v1.1.5` 退出 101；改回已有 `/usr/local/cargo` 挂载，未下载或清缓存。下一轮共享 target 使用了旧契约编译产物，报告新目录类型缺失；私有生成文件与候选摘要一致且实际包含类型，仅更新该副本文件时间触发重编后通过。首个模块过滤器匹配 0 项，不计通过，随后对刚编译的准确模块运行 1 项并通过。SDK-only 移除 ReadResourceQuery 的 deny_unknown_fields 后，原检查真实失败 1 项、退出 101；恢复原字节 cmp 0，再次编译后同一检查 1/1、退出 0。最终 Data 3.8 GiB，无本批残留编译进程。
-
-后端日志均在 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`：`service-read-management-core-e3.log`、`service-read-management-core-e3-restored.log` 保留首次两项失败；`service-read-management-core-e3-final.log` 保存 SQL、Rust 往返与 clippy；`service-read-management-query-positive.log`、`service-read-management-query-mutation.log`、`service-read-management-query-restored.log` 保存准确目录参数检查及破坏/恢复结果。没有 full、镜像构建、发布或部署，不把本次局部通过写成全量验收。
-
-### Web 原导航位置在重新认证后保留
-
-线上 46 版本截图 176 点击审计后回到频道、177 重点后才进入审计，作为现有缺陷线索而非本次发布证据。实际源码中 Web 已有 TanStack createBrowserHistory，却只注册根页与邀请页；PlatformApp 的 tab、chosen 和 chosenConversation 仅在组件状态，正常 onSessionEnded 重新载入同一 URL 必然丢掉这些定位。本批直接让已有页面消费原路由，不缓存认证状态。
-
-1. 权威：REQ-24/DD-53/DD-75 与原 Buzz 页面导航。原版来源为 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/app/routes.ts::routes`、`desktop/src/app/routes/root.tsx::RootRoute` 和 `desktop/src/app/navigation/useAppNavigation.ts::useAppNavigation`；继续同一 TanStack 路由、公开页面路径和 history，不另建路由或监听器。
-2. 影响：只改 Web 宿主 routes、PlatformApp 与对应检查；已有平台、频道、私聊、新消息页面写入 URL，pathless 平台宿主在页面切换时保持挂载。未知 section 在挂载前拒绝，入口只来自既有共享导航闭集。routeTree 用现有 TanStack Generator 生成，没有手改。Web 原 Caddy `/app/*` 的 try_files 已回退 `/app/index.html`，无需新增服务端规则；根页与邀请兑换仍保留。
-3. 副作用：URL 仅保存合法页名、Workspace/Conversation 与消息定位引用，不保存 cookie、身份、secret、ACL 或 command。认证仍是原 BFF session/OIDC；频道参数必须匹配当前授权目录及 isMember，显式失效对象不回退另一个频道。私聊恢复也只从当前目录取得完整对象，不信任 URL 中的业务数据。新会话发送后的目录/导航仍在原确认后路径，不因页面恢复重发 conversation.open 或消息。
-4. 边界：浏览器后退/前进由原 history 处理；完整文档重载恢复相同审计页与 Workspace 引用。目录读取中/失败、不存在目标、受限会话都维持原拒绝路径。Settings 原持续挂载与返回行为保留；页面定位不等于恢复未决写操作，既有草稿/UNKNOWN 权威不搬进 URL。没有改变 Desktop 导航或新增可执行动作。
-
-原 4 CPU/8 GiB SDK 的独立 message-edit 快照执行 Web tsc 退出 0；原 TanStack 路由实际挂载、返回 URL 重载、back/forward、未知页面拒绝、引用白名单 4 项，PlatformApp 7 项与 BFF 11 项，共 22 项退出 0。首次类型检查包含 search 可选字段声明错误，以及 node_modules 中旧 file-package 副本；分别修正宿主类型和同步冻结共享源，未改产品迁就旧依赖。第一轮导航检查发现公共宿主需要在父 route 拒绝未知 section，已修复；另一个失败是断言误把 router 内部去 basepath 的 location 当浏览器 URL，改查实际 history 后通过。
-
-SDK-only 将导航 tab 的 URL section 消费改回 channel，两个原导航用例真实失败，退出 1；原字节还原 cmp 0 后 tsc 与上述 22 项全部通过。日志位于 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/` 的 `web-navigation.log`、`web-navigation-restored.log`、`web-navigation-final.log`、`web-navigation-mutation.log`、`web-navigation-restored-final.log`。本批没有 Cargo/full/build/deploy，没有冒充已在实际浏览器完成新版本 OIDC 返回验收；该项仍须集中发布后按原正常登录路径复验。
-
-## 原版 Workflows 修改频道主题（2026-10-07）
-
-本批以 `b91120ab9da6d84ae4df2434254ab0f7014683c4` 为实现基线，关联
-REQ-24、DD-80/81/106 与 V-SCN-83。设计先独立提交
-`7e3514843ac6a2687e54c14c37fc9bc63da79ad5`，没有以现状代码反改设计。
-固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
-`desktop/src/features/workflows/ui/WorkflowStepCard.tsx::WorkflowStepCard` 保留原 Topic
-输入；`crates/buzz-sdk/src/builders.rs::build_set_topic` 构造空 content、h/topic
-两标签的 9002 事件；`crates/buzz-relay/src/handlers/side_effects.rs::validate_admin_event`
-明确 topic 允许当前频道成员。原 `buzz-workflow/src/executor.rs` 的该 sink 未实现，
-没有把它恢复为第二执行器；Kailo 接原 SDK 和既有 AgentTaskWorkflow。
-
-四步影响结论：
-
-1. 权威仍为不可变 AutomationVersion、原 ActionExecution/Invocation、Temporal
-   history、COUNT 用量及 Relay 的 channels/events。Core 不存频道主题正文副本；
-   Workflows 的 topic 参数与原 message 参数一样属于已冻结定义，不成为频道当前值。
-2. Web/Desktop 使用同一 StepCard、表单/YAML、评审和未知结果重查；主题可以明确清空。
-   Delay/版本化 ApprovalPolicy 前缀照旧，最终动作使用当前频道和 AGENT 实际身份。
-   原 frozen publication intent、同一 event ID、审计和计量结算不变，不创建模型 turn、
-   Agent runtime slot 或伪造线程回复。Mobile 同源契约/词条更新，不增加组件宿主。
-3. 原 Relay 将事件先存入再执行 side effect，会留下“接受事件但主题修改失败”。现在
-   严格纯 topic 的事件与 channels.topic 在原 DB 事务中提交，沿原 membership fence
-   再核实际成员及未删除/归档频道；重复旧事件不重新覆盖后来的主题。额外、重复、
-   未知或混合管理标签不会进入成员例外；不把整个 9002 加入成员白名单，也不让
-   CONTROL 代替业务 actor。已知成员拒绝映射 restricted，数据库不确定仍为错误。
-4. Core 收敛只接受原签名、event ID、实际 AGENT 公钥、频道和精确 topic 的回执。
-   空 topic 有确定语义；缺字段、未知动作和伪造范围拒绝。撤权、租户暂停、审批与
-   额度变化仍经过原 fresh 路径；UNKNOWN 不重签、不换幂等键、不向下个动作推进。
-   新迁移只扩原封闭动作与三处原有约束函数；down 在已有冻结 topic 版本时明确停止。
-
-兼容与发布边界：`automation_step` 增加闭集动作及可选 topic 字段，四侧统一生成；
-旧动作结构不改。旧 Core/旧数据库不能执行此新动作，不能将其解释为 send_message。
-先交付含原子接缝的 Relay，再应用 `20261007090000_automation_topic` 与 Core，最后
-发布共享前端；07 §1 已登记编译期保护，运行期开关无法纠正旧 binary。
-原生系统提示及 39000 广播仍在原 postcommit 路径，现有启动修复只补缺失发现事件，
-并不修复旧 topic 投影。本批证明实际频道值/接受事件一致，不声称广播失败后的
-发现投影自动收敛，也不将源码窄验当作线上 Workflows 成功。
-
-实际验证（既有 SDK 4 CPU/8 GiB，Cargo -j16，Data 持久缓存）：
-
-- 原 `tools/gen.sh` 退出 0；shared source/test tsc、Web/Desktop tsc 均退出 0。
-  最终 b911 原主题检查保留的页面输入运行 4 项通过、254 skipped。
-  SDK-only 禁止空 topic 后原新增用例真实失败 1 项；原字节还原后通过。
-- Core steps 6 项、bridge 精确回执 1 项、Rust topic 往返 1 项通过；
-  platform-core/collab-bridge all-targets Clippy `-D warnings` 退出 0。
-  首轮因 bridge 缺少 Uuid 导入退出 101，补齐真实导入后通过，未绕开类型检查。
-  SDK-only 去掉作者相等校验，回执用例真实失败、退出 101；cmp 0 还原后 1 项通过。
-- TS 契约 41 项、Dart 36 项、Go 新 topic 往返通过；Mobile 同源词条检查退出 0。
-  首次 Dart 因未指定原 `/cache/pub` 缓存退出 1，未运行断言；纠正投递后通过。
-  最后四侧仅 topic 用例再次按精确候选复核，未重复全量。
-- Core 独立 `workflow_topic_20261007` 库实际全迁移及本次 up/down/up 退出 0。
-  原约束实际接受清空/非空主题及旧消息/反应，拒绝缺失/空值/空步骤。回退本迁移后
-  同一 SQL 在 topic 行真实 check_violation、退出 3；重新 up 后通过。
-- 本机原 Rust 1.95 镜像摘要
-  `6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1`
-  以 4 CPU/8 GiB 复用原 relay-rust-target。Relay cargo check 退出 0，纯标签解析
-  1 项通过。独立 `relay_topic_20261007` 库运行原 Relay 迁移及事件/主题事务用例
-  1 项通过。移除实际 UPDATE 后用例真实失败、退出 101；原字节 cmp 0 还原、重新
-  编译后 1 项通过。首轮验证副本缺原 schema.sql 导致 lib-test 编译失败；补齐真实
-  b911 输入后通过。原 1.95 基镜像没有 rustfmt，格式化复用既有 SDK，未安装工具。
-
-日志在 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`：
-`topic-generate.log`、`topic-ui-mutation.log`、`topic-ui-restored.log`、
-`topic-final-pages.log`、`topic-hosts.log`、`topic-core.log`、`topic-core-restored.log`、
-`topic-core-clippy.log`、`topic-bridge-mutation.log`、`topic-bridge-restored.log`、
-`topic-contracts.log`、`topic-dart-restored.log`、`topic-roundtrip-final.log`、
-`topic-db-mutation.log`、`topic-db-restored.log`、`topic-relay.log`、
-  `topic-relay-db-restored.log`、`topic-relay-db-mutation.log`、`topic-relay-db-final.log`。
-未运行 full、镜像构建或部署，未修改业务数据库或原 UNKNOWN 任务。
-
-七动作仍未全部交付：公共 HTTP webhook 尚缺现有 Gateway OpenAPI target 的
-端点/凭据治理与原 DNS 重绑定防护接缝，未开假入口；复杂多副作用编排、其余动作
-与完整模板/条件仍不是本批完成范围。上述缺口保留原交付要求，不删原功能目标。
 
 ### 2026-10-07 委托窗口实测修复与并行批次收口
 
@@ -4363,104 +3686,6 @@ pages 263 项通过；SDK-only 恢复旧选择逻辑后，4 项全部真实失�
 `hosts-restored-input.log`。本批不重复磁盘不足的 full；此前 full 主动停止
 退出 137 的结果保留，不计为通过，也不据本批宣布官方全功能或双端等效。
 
-### 2026-10-07 — 纯主题系统通知同事务（独立增量，PG 专项通过）
-
-基线 `2e2341c1b97efe3a807b71607b6dd65f6f8ee1cb`；不包含另一个未验的
-39000 收敛候选，也未修改 bridge 终态、原 TaskWorkflow 或其他业务组件。
-这里不是新增名为 `system_prompt` 的动作，而是既有 `set_topic` 的原生
-`topic_changed` 系统消息。四步影响如下：
-
-1. 权威为 `.design/09` §3 的纯主题同事务及通知收敛要求，设计提交
-   `7e3514843ac6a2687e54c14c37fc9bc63da79ad5`。固定上游 Buzz
-   `779af8886caae1317b4de962082429867ab61503`，
-   `crates/buzz-relay/src/handlers/side_effects.rs::{handle_edit_metadata,emit_system_message}`
-   在命令接受之后以当前时间签发 40099；通知落库失败不撤销命令，重试也不能稳定
-   对应同一通知。原 `relay_admin_outbox` 强绑 moderation report/action，不能将
-   普通主题命令伪装成管理动作来复用。
-2. 复用原 `buzz-db::event::insert_event_in_transaction`，新增实际调用的
-   `Db::insert_topic_event` 入口，与普通 thread 入口共用原事务实现；topic 命令、
-   Channel 值、Relay 签名的 40099 一起提交。只有纯 topic 进入此通路，原混合管理
-   标签仍走原管理授权/实现。Web SERVER、原生 CLIENT、工作流 AGENT 都经现有
-   Relay ingest；通知 signer 来自该 Relay 自身 key，不是 CONTROL 或业务 actor。
-3. 共用 `buzz-core::channel` 的原 `type/actor/topic` 正文与关联校验，40099 保留
-   原 h 标签，增加原生 `e`/`mention` 源命令引用（不是线程父引用）；时间取原命令的
-   不可变签名时间。同一命令重试保持事件 ID，不同命令即使同秒/同值也不会碰撞。
-   缺少或关联不匹配的通知拒绝进入事务。通知插入失败整笔回滚，接受后的原副作用
-   路径仅 fanout 已持久内容，不再按当前时间创建第二条通知。
-4. 重复命令不重新更新 Channel 或插入通知；空 topic 仍是清空，撤权仍由原锁内成员
-   判定拒绝。事务成功但广播失败时消息仍可原历史查询读回，不以广播成功为终态。
-   桥接仍核验原签名命令、actor、Channel、topic 接受事实，不将提示消息提升为新的
-   终态条件。旧 40099 无源命令关联，仅缺少新关联不能证明旧通知未投递，因此不自动
-   回填旧提示，不重放历史已接受命令，不把既有成功改为 UNKNOWN。
-
-事后用例扩充原 DB 的
-`topic_event_and_value_commit_together_and_duplicate_cannot_reapply`：旧无通知入口
-拒绝纯 topic、两次不同命令只有两条提示、相同命令重复不增量、在 40099 插入处注入
-数据库异常后命令与主题全部回滚，撤权继续拒绝。原 Relay 测试模块增加
-`topic_notification_keeps_original_payload_and_binds_one_command`，检查原内容、真实
-Relay signer、稳定 ID、同秒不同命令、关联错配及篡改签名拒绝。
-
-实际状态：实现后 rustfmt 完成，精确源码 `git diff --check` 退出 0。
-初次 Data 仅余约 384 MiB，按资源约束未编译；主线程释放自己已结束的重复源码后，
-核验 Available 约 30 GiB、Data 2.4 GiB，复用原 4 CPU / 8 GiB Rust 1.95 容器、
-原 target 与隔离 `relay_topic_20261007` 数据库。原
-`cargo test --offline --locked -j16 -p buzz-db --lib topic_event_and_value_commit_together_and_duplicate_cannot_reapply -- --ignored --test-threads=1`
-退出 0：1 passed，含真实 40099 插入异常及事务回滚，未改业务库。
-日志：`/volumes/data/kailo/tmp/topic-notification-20261007.prT0bA/db-positive.log`。
-随后将编译窗口交回 Core，尚未执行 Relay 检查及源码故意破坏/还原，不能将该 PG
-专项当作全部验收通过。未部署；原生 UI 40099 JSON 解析保留额外标签兼容，不重写页面。
-Core 窗口结束后 Data 仅余约 317 MiB，未启动下一编译；源码复核另将新增 Relay
-测试里的 kind 常量改为完整模块路径，避免依赖不存在的导入。该测试声明仍需编译核验。
-
-### 2026-10-07 Inbox 原消息行回复目标接线（源码窄验，未部署）
-
-比较基准 `15041483cef67661527ef53f62be95cba3d4ae47`。本批仅修改 Web
-`InboxThreadPane.tsx`、对应既有测试与本证据段，复用两端已有共享
-`MessageActionBarSurface`、`MessageRowSurface`、`ComposerReplyBanner`，不复制菜单、
-编辑器或另建 Inbox 状态权威。
-
-1. 权威与上游：REQ-24、DD-74/75/81 的原功能保留、共用呈现、Web 本人 BFF
-   发布及结果不明规则。Buzz 固定
-   `779af8886caae1317b4de962082429867ab61503` 的
-   `desktop/src/features/home/ui/InboxMessageRow.tsx::InboxMessageRow` 调用原
-   MessageActionBar 的 `onSelectReplyTarget`；
-   `desktop/src/features/home/ui/InboxDetailPane.tsx::InboxDetailPane` 的
-   `handleSelectReplyTarget` 保留选中/取消、聚焦与回复提示条。Kailo Desktop
-   已保留此消费者，Web 既有线程读写后端已支持 parentEventId，但此前没有行内入口。
-2. 影响面：只补现有 Inbox 详情的真实行操作、提示条、按实际目标隔离的原草稿键，
-   从草稿恢复时保留明确的目标。未选择行时仍使用原选中事件的已锁定 parent；
-   选择行时发送其实际 event ID，不把线程根或 Workspace ID 冒充目标。既有
-   `InboxPane` 的 Principal + scopeKey、`InboxDrafts` 的 Principal + draft key
-   继续控制挂载；资料面板隐藏详情时保留未决编辑器。无 schema、Core、权限、
-   Mobile、i18n catalog 或生成物改动；菜单与复制结果使用已有中英词条。
-3. 副作用：只调用原 `publishMessage`，仍要求实际 operationId/eventId 回执后清理。
-   发送中或 UNKNOWN 不能改目标；UNKNOWN 后遇到 403 等重新准入拒绝不证明原
-   发布失败，保留同键/同目标并维持中性状态。只有对应确认或原明确
-   PUBLISH_REJECTED 才可解除未决意图；不自行重放、改账本或插入假消息。
-4. 边界：空线程、目标未载入、撤权、断流、非 ACTIVE 成员沿既有读取/发布守卫
-   禁止发送；明确恢复的目标不会退回线程根。已准入消息复制复用原 mention
-   clipboard HTML 与实际成员公钥；剪贴板拒绝用原失败提示，不改消息正文。
-
-实际输入先逐文件核对：SDK 的 Web/src、shared/src 以及 Web 真正解析的
-node_modules/@client-kit 源码与基准一致；联合 contracts.ts 单独恢复为该基准，
-再同步本批两个文件。复用 `kailo-agent-receipt-xvkujx` 原 4 CPU / 8 GiB SDK，
-目录 `/evidence/profile-settings-ortsoo.DRR20F/apps/web-client/web`，无安装或下载。
-启动时无其他 Node 验证，memory PSI 为 0、IO full avg10 约 4.72%；Data 约
-102 MiB，因此仅同步小文件，原始日志先写 tmpfs 后保留至下列目录。
-
-- `./node_modules/.bin/tsc --noEmit` 退出 0。
-- `./node_modules/.bin/vitest run src/platform/ui/InboxThreadPane.test.tsx --pool=threads --maxWorkers=1`
-  退出 0：6 passed，含原线程读取/显式草稿/撤权/作者入口与新增行回复、UNKNOWN。
-- 仅 SDK 将 parentEventId 改回线程根，新行回复用例实际失败：预期 `bbbb…`，
-  实际 `aaaa…`，退出 1；另删除 UNKNOWN 的既有意图记忆，403 后取消按钮错误出现，
-  对应用例实际失败、退出 1。正式源码未被破坏；两次恢复后 cmp 退出 0，最终
-  同文件 6 passed、退出 0。
-
-原始日志目录：`/volumes/data/kailo/tmp/inbox-reply-20261007.zEGjgQ/`，文件
-`positive.log`、`mutation.log`、`unknown-mutation.log`、`restored.log`。
-这是宿主行为与类型窄验，不是浏览器端到端发送验收；未运行全量、Cargo、Go、镜像
-构建或部署，不将本批声明为完整 Inbox 功能已交付。
-
 ## 原通知设置试听与双语消费
 
 本增量依据设计01 REQ-24：保留原设置完整交互，Web/Desktop共用主体，中文默认且
@@ -4535,15 +3760,8 @@ playwright-cli 正常登录线上 b911 后，打开 Agent 详情和创建版本�
   原 HTML required 校验。长正文滚动不带走操作栏；没有加入新的限额或权限条件。
   服务错误仍沿原六类映射，UNKNOWN 不变成成功/失败。本次不解除后端发布缺口。
 
-实现后在原 pages 检查追加表单关联、固定操作栏和单标题断言；最终原文件
-263/263 通过。仅 SDK 把 footer 移入正文滚动区，对应用例真实失败，退出 1；
-原字节还原并 cmp 一致后，原提交用例再次通过。初次断言误把原 Dialog 全屏
-外层滚动区也视为正文，已改为检查弹窗内实际正文；未修改原 Dialog 来迁就断言。
-精确已验 pages 文件 SHA-256 为
-`bfbc636e348f8cb59a6efe74aaafba0fec1b78fef36e7291657042759f0b1b38`，
-共享 agents、TS 词条与 Dart 生成物也与候选 index 摘要一致。
-原始日志随下节 Workflows 的三处故障注入合批保留。本批尚未发布，
-也未完成全部页面、中英状态或 Windows 视觉等效验收。
+实现后在原 pages 检查追加表单关联、固定操作栏和单标题断言；检查结果另按实际
+运行追加。本批尚未发布，也未完成全部页面、中英状态或 Windows 视觉等效验收。
 
 ### 2026-10-07 Workflows 原版模板变量交互
 
@@ -4576,56 +3794,6 @@ playwright-cli 正常登录线上 b911 后，打开 Agent 详情和创建版本�
 `/dev/shm/workflow-agent-restored.log`；此前类型及工作流交互日志为 Data 原目录
 `message-edit.AGX058/workflow-agent-ui-final.log`，其旧 pages 三项失败不计通过。
 本批未安装依赖、未执行 full/Cargo/镜像构建或部署，未拿组件检查冒充线上截图验收。
-
-### 原设置返回控件与 Escape 宿主联动
-
-权威是 REQ-24、DD-75 与 `V-REQ-24`，不是增加新的快捷键设计。已核对固定
-Buzz `779af8886caae1317b4de962082429867ab61503` 的
-`desktop/src/features/settings/ui/SettingsView.tsx::SettingsView`：原设置包含
-返回应用按钮和 Escape 关闭；`desktop/src/app/useSettingsShortcuts.ts::useSettingsShortcuts`
-保留 Cmd/Ctrl+, 切换；`desktop/src/shared/hooks/useEscapeKey.ts::useEscapeKey`
-通过 `escapeSurfaces` 让背景快捷键让步并尊重内层 defaultPrevented。
-
-当前真实缺口是 Web 只有 Cmd/Ctrl+, 能返回，缺少原返回按钮和 Escape；Desktop
-则保留另一份按钮与 Escape 监听。现从原控件提取 SettingsBackButton，两端使用
-同一主体；共享 useSettingsShortcuts 调用已提取的原 useEscapeKey，仅设置可见时
-注册。Web 将按钮绑定已有 settingsReturn，不另造路由历史；Desktop 删除重复
-实现。Web 快捷键表仅补已真实接通的 Escape，不把仍无消费者的搜索等写成可用。
-
-影响仅共享设置呈现/按键处理、Desktop SettingsView、Web SettingsPane 及它在
-PlatformApp 中的一个回调连接。无新依赖、配置、存储键、契约、状态权威或网络
-写入；复用原中英文词条，无新 catalog/Dart 生成增量。设置隐藏而不卸载的既有
-宿主行为不变，故返回不能清除待确认邀请或另造重试请求。权限/身份仍由原宿主
-与 BFF 决定；LifecycleRestricted/文档专用宿主不安装应用设置快捷键。
-
-边界：关闭状态不占用 Escape，原 Radix 前景弹窗先关闭，内层拒绝 Escape 时
-设置仍保留；背景 mark-as-read 通过原 escapeSurfaces 让步。StrictMode 及切换
-可见状态释放监听，重新打开保留同一 DOM 输入/未确认意图。当前只改变导航呈现，
-不把 UNKNOWN 转成成功，不触发副作用或另外的错误分类。
-
-2026-10-07 定向验收：基线 `48f65ef2a52b271cfe0ef884d0fb8c6423802142` 加本批
-8文件，固定候选树 `8cfef4ab167004d6e48be4e4e086f15fb4d627bb`，既有 SDK
-`kailo-agent-receipt-xvkujx` 实际4 CPU/8 GiB，私有小型 tmpfs 源输入
-`/dev/shm/settings-return.nexyAQ`。执行前无其他该容器任务，宿主可用内存约28 GiB，
-不新建镜像、不下载依赖、不占用生产数据库。
-
-- shared `tsc --noEmit -p tsconfig.json`、`-p tsconfig.test.json` 均退出0；
-  `vitest run test/settings-shortcuts.test.tsx --pool=threads --maxWorkers=1`
-  13/13通过，包含真实Radix嵌套弹窗、拒绝Escape、原返回按钮中英及同一输入保持。
-- Web `tsc --noEmit` 退出0；原 `SettingsPane.test.tsx` 6/6通过，核对真实返回
-  回调、快捷键表9项和已有Workspace通知CAS边界。
-- Desktop `tsc --noEmit` 退出0。
-- SDK单次破坏：将 `useEscapeKey(onClose, open === true)` 改为永久启用，旧隐藏
-  设置错误占用Escape，用例真实1失败/12通过、退出1；按正式源原字节恢复、SHA一致，
-  原13项再次全部通过、退出0。
-
-原日志在宿主 `/volumes/data/kailo/tmp/settings-return-20261007.obe2T8/`：`shared.log`、
-`web-restored.log`、`native-restored.log`、`mutation.log`、`restored.log`。
-首轮工具输入错误也保留：`web.log` 是私有快照用源码symlink造成开发与Web宿主
-React Ref类型不一致（两项TS2322）；改为真实file依赖布局的同源文件后恢复。
-`native.log` 是私有快照缺原collaboration依赖根链接导致tsc未启动，补既有链接
-后通过。未改产品源码迁就检查、未安装新依赖。本批没有full、镜像、部署或实机
-截图验收，尚未恢复的其余设置仍是交付缺口。
 
 ### 独立服务原生页面回到两端主内容区
 
@@ -4752,392 +3920,6 @@ Cookie验收。前述HTTP Desktop Cookie阻断和真实binding/业务场景未�
 GOAL 0 issues。该增量没有运行 full；在 Data 剩余约349MiB时没有再启动打包或
 冷构建。完整 full、真实部署与每页浏览器截图仍需后续批次实际通过，不记为本批完成。
 
-## HTTP 资料头像保存修复（2026-10-07，REQ-24）
-
-本次权威仍为 REQ-24 的原版资料编辑和双宿主共享要求；原证据为 Buzz
-`779af8886caae1317b4de962082429867ab61503` 的
-`desktop/src/features/settings/ui/ProfileSettingsCard.tsx`，符号
-`ProfileSettingsCard`、`saveProfile`、`handleAvatarEditorDone`，已重新读取固定 Git 对象。
-主线程线上发现 HTTP 非安全上下文中 `crypto.randomUUID` 不存在，点头像 Done
-未调用保存宿主，且既有 try 之外的异常只触发重新展开编辑器。
-
-影响面只有共享 `profile-settings.tsx` 的请求构造和既有 profile 回归：Web
-`SettingsPane` 的 `client.updateProfile` 与同 Event 回读、Desktop 原 mutation
-均继续消费同一组件。复用既有 `governance.newIdempotencyKey` 的安全随机 UUIDv4，
-将请求构造纳入原 try/catch/finally；不新增随机算法、不降级到 Math.random，
-不改变 BFF、签名、权限、契约或原服务端副作用。构造失败在宿主调用前明确显示原
-failed 文案并保留草稿；已发送后的 UNKNOWN 仍冻结原请求与幂等键，不释放编辑锁。
-确认回读之前不关闭头像编辑器，不把其它 pubkey 或过期宿主回执当成功。
-
-以 `edac76e72bc8c1283ea85640d1c00112b44a1c1e` 为比较基准，先改实现再追加两项
-事后验证：禁用 randomUUID、设置非安全上下文后，😀 原 emoji URL 可提交合法
-UUIDv4 并等待宿主回读再关闭；getRandomValues 抛错时零保存调用、可见错误、
-草稿保留，随机源恢复后同一编辑器可正常保存。原八项 UNKNOWN、身份、迟到回执
-及复制交互检查一并保留。
-
-既有 `kailo-agent-receipt-xvkujx` 实际 4 CPU / 8 GiB，检查时内存约 5.4 GiB、
-宿主可用约 26 GiB、无 OOM，单 worker JS 与既有 Cargo 错开重资源操作，未安装
-依赖。私有输入 `/dev/shm/settings-return.nexyAQ/client-kit/ts/platform` 中实际运行：
-`node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json` 与
-`node node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json` 均退出 0；
-`node node_modules/vitest/vitest.mjs run test/profile-settings.test.tsx --pool=threads --maxWorkers=1`
-10/10 通过。私有副本恢复 randomUUID 后新 HTTP 用例实际 1 failed（保存调用 0
-而非 1）；把 failed 状态改回 idle 后错误提示用例实际 1 failed。两次均退出 1，
-随后正式源码原字节还原、cmp 退出 0，最终 10/10、退出 0。
-
-日志在 `/volumes/data/kailo/tmp/profile-http-save-20261007.3TUM3M/` 的
-`profile-http-baseline.log`、`profile-http-uuid-mutation.log`、
-`profile-http-error-mutation.log`、`profile-http-restored.log`。首轮命令尚未运行测试：
-Docker cp 不能投递该 tmpfs 路径且 Vitest 4 不接受 minWorkers，已改为原 tar 输入
-与 maxWorkers=1；不将首轮当作通过。此记录是共享组件 DOM/宿主回调验证，未执行
-真实 PUT、部署或 Win11 验收；没有重跑 full、构建镜像或另起检查脚本。
-
-### 2026-10-07 HTTP 工作流交互与恢复批收口边界
-
-原工作流新增步骤的八处 ID 创建也直接使用既有
-`client-kit/ts/platform/src/governance.ts::newIdempotencyKey`，不增加随机实现或
-更改页面内容。影响范围为共享 AutomationAction 的 reaction、topic、delay、
-message、approval 本地步骤 ID；仍由原表单/YAML和版本保存消费者处理。
-没有修改审批、授权、结果不明或持久状态语义。安全随机不可用时不伪造有效 ID。
-
-原 4 CPU/8 GiB SDK 中，共享 source/test 类型检查退出 0；不提供 randomUUID、
-只提供 getRandomValues 的 HTTP 条件下，原 workflow-actions 16/16 通过。
-将八处生产调用恢复为 randomUUID 后真实 5 failed/11 passed，退出 1；按原字节
-还原且 cmp 0 后再次 16/16、退出 0。首轮新用例错误使用按钮名 Add approval，
-实际原标签为 Add approval request；修正用例后通过，没有修改产品文案迁就检查。
-原件为 Data 的 `codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`
-下 `workflow-http.log`、`workflow-http-baseline.log`、`workflow-http-mutation.log`、
-`workflow-http-restored.log`。四步影响及命令另见同批交接
-`/tmp/kailo-workflow-http.slDqAv/HANDOFF.md`。
-
-本批从 `edac76e72bc8c1283ea85640d1c00112b44a1c1e` 集中合入有序多消息执行、
-头像 HTTP 保存和步骤 ID 修复。保留已提交 iframe、设置返回和其他治理接缝，
-没有重新引入已删除的 Desktop native_page 业务窗口。多消息的四侧生成、迁移、
-幂等、逐次回执和实际反例见 `core/verify/agent-definition.md` 的对应小节。
-源码合并不等于原工作流全部动作或原版全页面已恢复，不以新增按钮作为最终体验。
-
-本轮原文档宿主入口首次因未提供 TMPDIR 退出 2；补齐配置后在全树导出期间因
-Data 空间压力主动终止，退出 143，原入口已清理本次临时输入。随后复用本地既有
-SDK 镜像，以 4 CPU/4 GiB、无网络、只读挂载 apps/设计/GOAL 运行原
-`./tools/check-docs.sh`：七段全部 PASS、退出 0；GOAL markdownlint 退出 0。
-没有修改检查器、构建镜像、修改线上服务或清除依赖缓存。此为文档检查，不是 full。
-本批未部署，真实头像 PUT、多消息 Relay/Temporal 业务及 Windows/Mobile 包仍未验收。
-
-## 原 SettingsView 双宿主整页结构复用（2026-10-07）
-
-本批基准 `edac76e72bc8c1283ea85640d1c00112b44a1c1e`。依据 REQ-24 与用户
-“原版页面、功能不得精简或自创”要求，对照固定 Buzz
-`779af8886caae1317b4de962082429867ab61503` 的完整路径
-`desktop/src/features/settings/ui/SettingsView.tsx`，符号 `SettingsView`、
-`SettingsSectionButton`、`settingsNavGroups`；以及同目录
-`SettingsPanels.tsx::renderSettingsSection`。只读原源码，没有执行上游。
-
-实现前四步与实际变更：
-
-1. 权威与状态：原版已有 Sidebar/Header/Content/Footer、SidebarInset、顶部拖动留白、
-   首帧显示、设置进入时展开侧栏及单一滚动卡片；Native 已移植其结构，Web 仍使用
-   自写 nav，且嵌在普通内容卡片内。本批把现有 Native 原结构搬到共享
-   `settings-surface.tsx::SettingsViewSurface`，两端 `SettingsPage` 同一实现，
-   没有新增用户文案、菜单或业务分区。
-2. 影响面：检索全部 `SettingsPage` 调用；Web `SettingsPane`、`PlatformApp` 与
-   Native `SettingsView` 接到原共享 SidebarProvider。Web 设置改为普通内容区的
-   同层页面，原宿主顶栏在设置页占原留白而非再增加一条高度。Native 仅保留原
-   `getVersion` 薄适配。现有主题、通知、资料和邀请码调用不改，契约及数据迁移不变。
-3. 副作用：设置关闭只隐藏内容，Native 不再用 `active ? render : null` 丢弃
-   当前分区；既有 UNKNOWN/邀请码 intent 不因回到会话被重建。隐藏的普通侧栏在
-   窄屏仍会通过 Radix Portal 弹出，故只在原 Sidebar 增默认 true 的 `active` 宿主
-   参数约束原 Sheet open，复用同一 openMobile，不建立第二导航状态。
-4. 边界：保留原 Escape 前景弹层优先、会话隔离 key、未确认权限不显示邀请码入口。
-   窄屏只允许当前页面一个 Sheet；关闭再打开设置保持同一 draft 节点；已有失败和
-   UNKNOWN 分类不变，不把准入或未确认保存呈现为成功。
-
-实际验证在既有 `kailo-agent-receipt-xvkujx`（CPU 4、memory.max 8589934592）内，
-沿用 `/dev/shm/settings-return.nexyAQ` 与现有依赖，无安装、打包、Cargo 或 full。
-命令使用 `/usr/local/bin/node node_modules/typescript/bin/tsc --noEmit`；共享测试另加
-`-p tsconfig.test.json`。共享源码/测试、Web、Desktop 全部退出0。原 Vitest 命令为
-`node node_modules/vitest/vitest.mjs run <下列文件> --pool=threads --maxWorkers=1`：
-
-- 共享 `test/settings.test.tsx` 23 项、`test/settings-shortcuts.test.tsx` 13 项，
-  最终 36/36 通过。
-- Web `src/platform/ui/SettingsPane.test.tsx` 6 项、`PlatformApp.test.tsx` 10 项，
-  16/16 通过，包含 settings 不再位于普通 main/内容卡片内的结构断言。
-- 私有 SDK 变异：移除 Sheet 的 active 约束，实际得到两个 dialog，1 fail/22 skipped、
-  退出1；隐藏时改成卸载 children，真实 draft.isConnected=false，1 fail/22 skipped、
-  退出1。正式原字节还原后 36/36、退出0，10 个源码/测试路径逐文件 cmp 均0。
-
-日志完整保留在
-`/volumes/data/kailo/tmp/settings-view-original-20261007.rGEoo0/`：
-`settings-page-baseline.log`、`settings-page-web.log`、`settings-page-native.log`、
-`settings-page-mobile-mutation.log`、`settings-page-draft-mutation.log`、
-`settings-page-restored.log`。Native tsc 成功无 stdout，记录为空日志，实际进程退出0。
-
-交付边界：本批是原页面结构与实际既有分区的共享恢复，不是原版全部设置完成。
-原 SettingsPanels 定义16分区，当前接通5分区；Voice、Custom Emoji、Local Archive、
-Channel Templates、Hosted Communities、Agents、Compute、Experimental、Mobile、
-Updates、Moderation 仍需原真实消费者恢复，不能以裸菜单充数或永久排除。
-原 SignOutSection 包含密钥备份、确认擦除与重启，普通平台 logout 不等效，本批没有
-用普通退出替代它。未改变冻结头像修复，未部署、未构建 Win11 包、未做新页面实机截图。
-
-### 2026-10-07 Agent 原版配置选择器
-
-- 权威及原差异：REQ-24、设计03 §7、17 §8。固定 Buzz
-  `779af8886caae1317b4de962082429867ab61503` 的
-  `desktop/src/features/agents/ui/PersonaDropdownField.tsx::PersonaDropdownField`
-  已完整迁入共享 agent-library；逐字比对除来源注释、导入路径外相同。
-  原 `agentConfigOptions.tsx::PERSONA_FIELD_SHELL_CLASS/PERSONA_FIELD_CONTROL_CLASS`
-  与 `AgentDefinitionDialog.tsx` 指令字段结构复用既有原 Textarea。没有重写一个
-  近似下拉框：滚动边界、键盘选择、禁用项、选后关闭和焦点处理仍为原实现。
-- 影响：Web/Desktop 同一个 VersionAction 实际消费五个选择器。runtime/model
-  选项仍来自当前授权目录；reply 来自选中 RuntimeProfile；memory 来自合同枚举。
-  全部治理字段、工具目录、分页、数值上界和固定 footer 保留。没有改契约、数据库、
-  Workflows 段、设置、导航或 Mobile；没有增加第二套配置/默认值权威。
-- 副作用：选择仅改原本地表单，Review 不写，提交仍为冻结 ActionCommand。
-  runtime 切换仍清除旧 reply/capabilities，UNKNOWN 锁定和原请求重查不变。
-  未引入原尚未接通的本地 Harness/provider 密钥配置，不冒充已支持。
-- 边界：空目录或失效引用不自动选择；无权/发布审阅仍由原 fieldset 和 prepare
-  有效性检查拒绝。下拉触发是 type=button，不隐式提交。原六类错误映射不变。
-  这不是整个 AgentDefinitionDialog 百分之百恢复：头像预览、identity 描述计数、
-  Advanced 等仍有接缝缺口，不能为复刻原280字符限制而截断当前合同的已有内容。
-
-实现后在原受限 SDK 以同一候选输入执行 shared source/test TypeScript，均退出0；
-Agent 治理原用例67项、原卡片/弹窗及新下拉交互6项，共73项通过。
-其余 pages196项未运行，不冒称全文件通过。SDK-only 将真实选项回调值破坏为空串，
-组件选择用例与实际创建版本用例均失败，退出1；原字节还原并 cmp0 后73项复跑通过。
-未改正式代码迁就检查，未安装依赖、full、构建、部署或宣称线上原版等效。
-
-原日志在 `kailo-agent-receipt-xvkujx:/dev/shm/agent-native-controls-baseline.log`、
-`agent-native-controls-mutation.log`、`agent-native-controls-restored.log`；
-私有候选和日志副本位于 `/tmp/kailo-agent-native-controls.7PQBJg/`。
-pages 只取 Agent describe 的交互差异，保留基准原主题检查，不夹带正式工作树
-此前已存在的主题规则删除。变更未触及其他队友的 Agent/头像或工作流增量。
-
-### 两批原版控件合并复核
-
-相对已推送 `2359f76da62c7fe53b6bd3b01b2d85bca5dc81ab`，合入上述设置
-结构和 Agent 原控件，保留同一提交的多消息工作流、HTTP 头像与按钮修复。
-根线程核对全部产品 diff 与固定上游 SettingsView，再把选定树
-`925005b5a9dde3cfe7c1b39cc4c03fa26997c4a7` 的共享源码、契约与受影响文件
-投递既有 CPU 4/8 GiB SDK。没有改正式工作树里的其他在途改动。
-
-首次复用旧设置快照时缺上一批 workflow-steps/i18n，tsc 实际退出2；同步选定
-树的完整共享源码后源/测试类型检查均退出0。设置、快捷键、头像和工作流按钮
-四文件62项通过。Agent 检查首次缺宿主 tailwind.config.js，收集阶段退出1；
-投递选定树两宿主原配置后，原定向命令73项通过、196项明确跳过，退出0。
-两次投递失败均保留日志，没有删除断言或修改产品代码掩盖失败。
-
-本批仍是源码检查点：不证明原全部设置/Agent 页面完成，不证明视觉一致，
-没有新的镜像、安装包、部署、截图或 full 通过声明。日志为
-`/volumes/data/kailo/tmp/buzz-shared-ui-integration.g9RXK1/combined-check.log`、
-`combined-restored-check.log`、`combined-agent-check.log`。
-
-追加两宿主合并验证：Web 的 SDK 私有 node_modules 仍是旧包副本，首次类型检查
-缺新控件；复制投递又遇该容器 `/dev/shm` 64 MiB 满。仅将这次私有副本恢复性移至
-`/evidence/buzz-ui-sdk-recovery.QJaNvp/`，未清理共享缓存或产品源码。尝试目录符号
-链接后触发两份 React 类型身份冲突，故改为同一冻结源文件的私有硬链接副本，
-保留各宿主原包解析位置；未改产品 TypeScript 配置绕过。最终 Web tsc、Web 两文件
-16/16 与 Desktop tsc 均退出0（原句柄82181）；日志为
-`combined-web-check.log`、`combined-hosts-restored.log`、`combined-hosts-final.log`、
-`combined-hosts-package-check.log`，前三个失败不作为通过证据。
-
-### 原 Appearance 完整分区共享消费（2026-10-07）
-
-1. 权威与来源：按 `.design/01-产品边界与术语.md` REQ-24 恢复原分区，不新增设置。
-   固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
-   `desktop/src/features/settings/ui/SettingsPanels.tsx::ThemeSettingsCard`、
-   `desktop/src/features/settings/ui/AppearanceSettingsControls.tsx::GlassBackgroundSetting`、
-   `desktop/src/features/profile/ui/AnimatedAvatarControls.tsx::AvatarFramingSlider`
-   是本次共享主体来源；原生玻璃效果仍由
-   `desktop/src/shared/theme/ThemeProvider.tsx::ThemeProvider` 消费。
-2. 影响面：Web SettingsPane 与 Native ThemeSettingsCard 共同消费完整 AppearanceSettings；
-   原主题、活动标签、消息显示、预览和线程布局沿已有真实存储与消费者，语言控制保留既有授权适配。
-   原头像与玻璃透明度共用同一原 AvatarFramingSlider 主体，删除旧 Native 重复控件。
-   ThemeProvider 只共用原玻璃类型与封闭上下界，原生 vibrancy、持久化与竞态处理不变。
-   不新增契约、迁移、目录权威或依赖，也没有新增文案目录。
-3. 副作用：Web 没有原生玻璃 API，呈现原非 macOS 禁用开关与中英文说明，不传假 setter；
-   Native 保留实际支持能力、haptic 与 Linux 原隐藏规则。滑块保留原键盘、指针捕获、重置、
-   compact 与 handleAlwaysVisible 交互；共享头像公开接口保持不变。
-4. 边界：原设置草稿和 UNKNOWN 挂载边界未改；玻璃支持由实际宿主事实决定，不因开关展示
-   伪称原生能力可用。原主题检查只精确验证并剥离该滑块三个已核原版 style 表达式，
-   不放宽其他任意颜色或 style。没有把普通退出等同原私钥擦除。
-
-既有 SDK `kailo-agent-receipt-xvkujx` 的 `/dev/shm/settings-return.nexyAQ`
-（4 CPU / 8 GiB，原依赖）完成本批，无安装、构建、Cargo 或 full。
-命令为 `/usr/local/bin/node node_modules/typescript/bin/tsc --noEmit`，共享测试类型另加
-`-p tsconfig.test.json`；共享源码/测试、Web、Desktop 类型均退出0。
-Vitest 使用 `node node_modules/vitest/vitest.mjs run … --pool=threads --maxWorkers=1`：
-
-- 共享 `test/theme-appearance.test.tsx` 10 项与既有 `test/profile-settings.test.tsx` 10 项，20/20 通过。
-  Profile 的已冻结 HTTP 修复只作为回归输入，本批没有再改该文件。
-- Web `src/platform/ui/SettingsPane.test.tsx` 6/6 通过。
-- 原 `test/pages.test.tsx -t 'own theme|semantic colours'` 2 项通过、261 项明确跳过；
-  没有以此声称整个页面测试文件通过。
-- SDK 故意把 Shift 步长改为1、把滑块原 CSS 变量键改为 `color`，实际3项失败、退出1：
-  玻璃回调期望75却为66，头像期望60却为51，原样 style 断言拒绝变更。
-  正式原字节还原 cmp0 后20项及主题2项再次通过，退出0；12个候选源码/测试输入逐字节相同。
-
-日志位于 `/volumes/data/kailo/tmp/appearance-original-20261007.QMf3ad/`：
-`appearance-original-shared.log`、`appearance-original-web.log`、`appearance-original-native.log`、
-`appearance-original-style.log`、`appearance-original-mutation.log`、`appearance-original-restored.log`。
-Native tsc 无 stdout，日志为空但实际进程退出0。
-
-本批只完成原 Appearance 分区的共享实现与上述定向验证；未运行 macOS 原生玻璃效果、
-Win11 包或浏览器实机验收，未构建、未部署。原16分区中仍只有5分区接通，前段列出的
-11分区仍属恢复范围，不能将本批描述为完整设置全部交付。
-
-### 同批契约与 Core 交叉复核（2026-10-07）
-
-合并基准为 `419016af72a5743e468872798c277db4aa4a0a5d`，只选择原 Appearance、
-Agent 头像读投影与 Wren HUMAN/原生 Deploy 的候选增量，不覆盖其他未提交工作。
-四侧统一生成保留上批 formatVersion 3 消息序列；可选 avatarMediaPaths 只是
-已授权 Version 的当前 Community 精确媒体读投影，非 secret 或任意 URL 代理。
-Wren 原生 HUMAN 准入仍复用既有身份映射、ActionExecution、Temporal、审批与额度，
-Deploy 仍由原生 deploy_log 持有意图与终态，缺失证据不重发、不当作失败。
-
-ADR-03 契约实际往返发现 quicktype 的 Dart 后端对可选 Map 缺省强制解引用；
-旧响应没有 avatarMediaPaths 时真实报 `Null check operator used on a null value`。
-沿原 `tools/gen.sh::_optional_fields` 对已声明 nullable 的 Map 增加读写缺省处理，
-不手改生成类型，不影响必填 Map，不把缺省伪造为空映射。相同样例同时检查
-字段存在与旧响应缺省，四侧语义一致；原版本内容与 configHash 均未修改。
-
-已有 `kailo-agent-receipt-xvkujx`（4 CPU / 8 GiB），本地依赖与缓存、offline npx，
-Cargo 保持 `-j16`。在私有冻结 SDK 上实际运行：
-
-- `cargo check --offline -j16 -p platform-core`：退出0。
-- `cargo test --offline -j16 -p contracts --test roundtrip`：39通过。
-- `go test ./internal/contracts`：退出0。
-- `npm test`（既有 TS contracts 包）：44通过，包含测试类型检查。
-- `dart test test/roundtrip_test.dart`：39通过。
-- 原 `tools/check.sh::step_contract`：四侧生成同步；相对原
-  `contracts-v0.1.0` 的277个schema、3个历史匹配无破坏性变更，退出0。
-  标签从正式仓库生成bundle并在私有SDK导入，未伪造基线；仅直接调用既有步骤，
-  不声称执行全量入口或依赖安装。最终日志 `contracts-compat-final.log`。
-- SDK 中故意从 TS 序列化结果删除头像映射，真实断言失败、进程退出1；
-  原字节恢复 `cmp` 退出0，上述四侧检查再次通过。
-
-初次私有最小导出遗漏 Cargo workspace 的 Buzz 依赖，再次遗漏 Core 原 ExtMcp proto，
-均退出101；补齐同一冻结树的原输入后通过，未改产品构建规则绕过。
-这些失败及 Dart 首次失败全部保留于
-`/volumes/data/kailo/tmp/native-human-integration.sUGZYG/`：`contracts-check.log`、
-`contracts-roundtrip.log`、`contracts-map-restored.log`、`avatar-map-mutation.log`、
-`combined-core-contracts.log`、`combined-core-contracts-restored.log`。
-这是源码与协议交叉验证，不是全量门禁、页面截图、Windows/Mobile 安装或部署验收。
-
-### 2026-10-07 原 Agent 头像／身份模块与两宿主真实传输
-
-本批不是新画头像表单。完整移植固定 Buzz
-`779af8886caae1317b4de962082429867ab61503` 的
-`desktop/src/features/agents/ui/AgentCreationPreview.tsx::AgentCreationPreview`、
-`AgentCreationPreview.utils.ts::isAvatarFileDrag`、
-`AgentDescriptionField.tsx::AgentIdentityFields`；简介三个纯函数来自
-`desktop/src/features/agents/lib/agentDescription.ts` 的
-`MAX_AGENT_DESCRIPTION_CHARS`、`agentDescriptionCharacterCount`、`clampAgentDescription`。
-表单双栏来自同 commit 的
-`desktop/src/features/agents/ui/AgentDefinitionDialog.tsx::AgentDefinitionDialog`。
-原上传、拖放、图片 URL、清除、表情、颜色与自定义 HSV 控件保留；只适配已共享依赖、
-两端媒体 Host 与中英词条，不增加头像上传服务、Agent 注册表或直连模型配置。
-
-四步影响结论：
-
-1. 权威：REQ-24、DD-53、`.design/03` §7 的 Definition／不可变 Version／Installation
-   继续适用。编辑写入仍为既有 `agent.version.create/update`，发布、审批、权限、额度、
-   历史版本 hash、安装固定版本均未改。原 Advanced 的 sessionPolicy、respondTo、env、
-   namePool 等尚无对应真实消费者；本批没有制造可见但无效的选项，不称完整 Agent 恢复。
-2. 影响面：同一个 `VersionAction` 消费原 `AgentCreationPreview`／`AgentIdentityFields`，
-   Web/Desktop 的 `AgentDefinitionsPane` 仅注入各自既有 `uploadProfileAvatar`。
-   Web 上传头仍冻结本人 pubkey，Desktop 仍冻结 Community／signer。
-   `AgentVersionView.avatarMediaPaths` 是可选的读投影；Core 原 `agent_version::read`
-   完成 Asset／父 Resource 投影、fresh read 和内容 hash 校验后，按 ACTIVE Tenant
-   Community 复用 `web_profile::avatar_media_paths`。无映射即省略字段，不迁移历史内容。
-   已安装 Agent 卡片消费其真实固定版本头像；Definition 没有借用另一版本的身份。
-3. 副作用：上传只写原 Blossom blob，不发布本人 profile、不直接改 Agent 身份；只有
-   原 Action 写入版本引用。上传期间锁 Review／关闭，结果不明仍保留原冻结命令。
-   Web 只将服务端授权映射及本次受认证上传回执映射为同源媒体路径，不从任意 URL
-   拼认证代理。Native 不使用 Web 的 BFF 映射。Web Host 在真实 Tenant＋Principal
-   key 变化时整体卸载，上传映射不跨身份留存；没有全局缓存或第二语言权威。
-4. 异常：本人 profile 读取失败时，当前两宿主整个 Agent 页封闭并提供原重读动作，
-   不制造上传身份；这是当前 Host 的实际依赖。原上传 hook 拒绝非图片 MIME，旧版本
-   头像读投影缺省不伪造可信代理。简介载入与修改其他字段不截断历史字节；只有用户
-   真正编辑简介时，按原 280 Unicode scalar 规则截取并显示原计数器。
-
-实现后的实际检查使用既有 4 CPU／8 GiB receipt SDK、原依赖，无安装或新构建：
-
-- 共享源码／测试 `tsc --noEmit` 均退出 0；
-  `vitest run test/agent-library-dialogs.test.tsx test/pages.test.tsx -t Agent --maxWorkers=1`
-  实际 114 passed，160 skipped（筛选跳过不能算通过）。
-- Web `tsc --noEmit`、Desktop 同原 tsconfig 的 `tsc --noEmit` 均退出 0。
-  Web 头像 Host 3 项及现有 PlatformApp 导航 10 项通过，覆盖授权映射、真实上传头、
-  身份拒绝、scope 重挂丢弃缓存与原路由参数。宿主 SSR fixture 只将 Agent 页的模拟
-  移到新增 Host 边界，头像真实消费者由独立 Host 用例检查。
-- SDK 私有副本去掉简介 clamp 与上传等待保护，两个对应检查都真实失败，exit 1；
-  正式原字节复制还原并 `cmp` 退出 0 后，四项定向检查重新通过。
-  首轮缺 `@emoji-mart/react` 时复用已存在的原 Emoji Mart wrapper，没有安装另一套。
-  首轮 Desktop 本地 `.bin/tsc` 指向已不存在的旧路径，改调用同 SDK 既有共享 TypeScript
-  可执行物检查原 Desktop tsconfig；没有改产品配置消除诊断。
-
-日志位于
-`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`：
-`agent-identity-shared.log`、`agent-identity-final-rest.log`、
-`agent-identity-mutation.log`、`agent-identity-restored.log`。
-`agent-identity-final.log` 记录 Web 2 项通过后 Desktop 可执行路径失败，不能当全链通过。
-Core／四侧合同由主线程在同批联合检查，结果随主线程回执；这里不重复全量检查。
-本批未构建、部署或更新 Windows/Mobile 包，未执行新版真实浏览器头像保存验收；
-不能据源码专项声称全量原版页面等效或生产就绪。
-
-合并后再以同一冻结输入交叉运行共享与宿主检查：共享源码/测试类型、Web 类型、
-Desktop 原 tsconfig 类型均退出0；共享 pages 265、settings 23、profile 10、
-Agent dialogs 9、appearance 10，共317项全部通过，Web三个宿主文件19项全部通过。
-日志为 `native-human-integration.sUGZYG/combined-ui.log`。此轮没有筛选跳过；
-jsdom 的 scrollTo 未实现及 reduced-motion 提示保留，不当作浏览器视觉验收。
-私有SDK同步时 `cp` 因契约包本来指向同一文件退出1，核对同一文件后跳过冗余复制；
-只同步实际独立宿主包，没有改产品解析配置。原已迁入共享实现的两份Native控件仅在
-SDK中恢复性移到 `/evidence/combined-ui-old-controls.*`，正式候选按原迁移记录删除。
-未运行本批 `tools/check.sh --full`，没有发布镜像、安装包或新版页面截图。
-
-## 原 Agent Definition Advanced 交互恢复（2026-10-07）
-
-比较基准 `8d3fcd04e91ed856e30a616a01754aa75b4574c9`。
-本批只恢复已有 AgentVersion 表单消费者，不修改 Host、头像上传、合同或运行权限。
-四步实施结论：
-
-1. 权威是 REQ-24、DD-53 与 `03` §7 的 immutable AgentVersion / RuntimeProfile。
-   固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
-   `desktop/src/features/agents/ui/AgentDefinitionDialog.tsx::AgentDefinitionDialog`
-   提供默认收起、Required 标记、ChevronDown、AnimatePresence 与 reduced-motion 行为；
-   `desktop/src/features/agents/ui/PersonaAdvancedFields.tsx::PersonaAdvancedFields`
-   提供原 Parallelism 输入壳、数字输入行为。
-   `desktop/src/features/agents/ui/agentConfigOptions.tsx::ADVANCED_FIELDS_MOTION_TRANSITION`
-   的动画数值原样复用。
-2. 影响面只有共享 `VersionAction` 的现有字段呈现及其两宿主调用。
-   并行度写入仍是 `ActionCommand.agentVersionContent.parallelism`，
-   Core `agent_version.rs::runtime_profile`
-   与 `agent_installation.rs::supports_effective_field` 所在既有链不改。
-   字段与摘要格式不变，没有迁移；原 version、Installation pin 和 UNKNOWN 不改。
-3. 收起不重置父表单字段；再次展开保留真实值。发布只读状态仍能展开查阅，
-   内部 fieldset 保持禁写。Required 标记与原提交校验共用 `advancedValid`，
-   含目录上限、回复策略、timeout、memory、Tool 引用，收起不能绕过准入。
-   原 Parallelism 的可选值和固定上限改为既有合同的必填及运行时上限，
-   不显示原宿主无法兑现的 inherited default 或静默 clamp。
-4. 最小闭环是默认收起→展开真实字段→修改→收起/展开值保留→原 review→同一 AE。
-   reply、timeout、memory、triggers、capabilities、Tool 选择和分页均保留在原内容接缝。
-   本批没有为 envVars、sessionPolicy、namePool、effort 伪造字段：当前
-   `runtime_profile_directory.schema.json` 的真实消费者不支持它们。
-   原 Definition/Installation 详情和其余高级功能仍未完整恢复，不声称全模块等效。
-
-验证使用既有 `kailo-agent-receipt-xvkujx`，实际 CPU4/8GiB，Data 2.8GiB；
-检查前无在途工具链。只同步既有 message-edit 私有输入，无安装、Cargo 或 build。
-首次 `tsc` 因新模块 Input 引用到不存在的 profile 路径退出2；修正为既有
-`composer/shared/ui/input` 后，共享源码与测试类型均退出0。
-`vitest run test/pages.test.tsx test/agent-library-dialogs.test.tsx -t Agent --maxWorkers=1`
-实际117项通过、160项按范围跳过，退出0。包括原 Tool 分页/不可用引用、
-immutable 发布/UNKNOWN，以及新增英中展开、收起保留值、上限与只读展开检查。
-SDK 内故意把默认收起改为展开：英中2项真实失败，退出1；正式字节复制还原、
-`cmp` 退出0后对应4项恢复通过，退出0。
-日志位于 Data 的 `codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`：
-`agent-advanced.log`（首次失败）、`agent-advanced-final.log`、
-`agent-advanced-mutation.log`、`agent-advanced-restored.log`。
-jsdom 的 scrollTo 提示保留，不当作真实浏览器截图。两条新中英文词条由主线程
-与并行 CustomEmoji 合批生成 Dart；本专项不重跑四侧合同或全量检查。
-本批未构建、部署、更新 Windows/Mobile，未增加实际生产就绪完成度。
 ## Pulse 原版紧凑输入与实际宿主接线（2026-10-07）
 
 本节相对 `8d3fcd04`，只包含 Pulse 输入的共享布局、现有两端 Composer
@@ -5169,6 +3951,8 @@ jsdom 的 scrollTo 提示保留，不当作真实浏览器截图。两条新中�
    展开；结果不明不清除草稿或生成新键；跨 scope 沿现有 PulseScope key 卸载。
    自动补全仍用真实目录和原键盘操作，不改变同名用户校验。顶层 Pulse 补全位于
    表单下方，回复保持原上方位置；Native 回取消直接消费原 onCancel。
+   上游 Pulse 自带 overflow-hidden 会剪裁该绝对定位菜单，仅菜单打开时在同一
+   表单置 overflow-visible，关闭后恢复原样；不改变页面布局或创建另一 picker。
 
 实现后的范围用例已写入既有 `pulse.test.tsx` 和 Web `Composer.test.tsx`：
 真实 Tiptap focus/blur、紧凑发送、下方提及、UNKNOWN 草稿、确认后收起，以及
@@ -5177,89 +3961,6 @@ UNKNOWN→观察拒绝→真实确认的同键保护和中文分享回执。源�
 尚不作为用例已运行、打包、部署或浏览器验收的证据；统一 SDK 窄验由主线接续。
 本批没有启动全量检查、安装依赖、Cargo 或发布构建。
 
-## 原 CustomEmoji 设置及本人签名发布（2026-10-07，源码候选）
-
-基准 `8d3fcd04e91ed856e30a616a01754aa75b4574c9`。本批恢复原设置中的完整
-CustomEmoji 管理分区，不把新增一个入口等同全部设置或所有表情交互完成。
-Web/Desktop 使用同一原 `CustomEmojiSettingsCard`：上传、文件名建议、名称规范化、
-替换本人条目、删除本人条目、他人成员只读列表；原布局、样式、文案语义保留，中英同源。
-
-动手前四步与实际影响：
-
-1. 权威：`REQ-24`、`DD-75`、`SS-BUZ-GOVERNANCE`。上游
-   `779af8886caae1317b4de962082429867ab61503` 的
-   `desktop/src/features/custom-emoji/ui/CustomEmojiSettingsCard.tsx::CustomEmojiSettingsCard`、
-   `desktop/src/shared/api/customEmoji.ts::unionCustomEmoji`、
-   `desktop/src/shared/lib/remarkCustomEmoji.ts::remarkCustomEmoji`、
-   `desktop/src/shared/ui/markdown/InlineEmojiPopover.tsx::InlineEmojiPopover` 与
-   `crates/buzz-sdk/src/builders.rs::build_custom_emoji_set` 是复用来源。
-   `crates/buzz-relay/src/handlers/ingest.rs::required_scope` 保留原 UsersWrite 与作者签名检查；
-   运行期 `BUZZ_MEMBER_EVENT_KINDS` 仍须匹配交付的 kind，详见 07 §1。本批没有改 live 配置。
-2. 影响：新增两个 BFF JSON Schema，四侧由原 `tools/gen.sh` 生成；旧 schema 不变。
-   Core 新 GET/PUT `/api/v1/custom-emoji` 消费本人 SERVER signer；Native 命令捕获
-   CLIENT signer/Relay，旧自己拥有的签名集读改写，未把全社区 union 写成本人集合。
-   Core 复用原 `web_profile` 的 publish_attempt、审计及对账，不存表情正文或第二注册表。
-   原消息 Markdown 复用签名 NIP-30 标签，Web 图像只经当前作用域 BFF hash 路由。
-3. 副作用：发布前持久化原意图、重新检查 session/tenant/principal；读回必须是本人且
-   eventId 完全匹配。ACK 后读回失败仍 UNKNOWN，保留同一个幂等键、名称及上传草稿。
-   Native 用既有 unconfirmed holder，重入只观察已签事件；社区表情变更不能令 UNKNOWN
-   消息变成另一条签名消息。原所有非 emoji 路由、媒体、提及与线程标签仍参加意图比较。
-4. 边界：空集、规范化碰撞、同时间 URL 决胜、本人/他人分离、非法签名、错作者、
-   ACK 无终态、读回被撤权均按原组件事实处理。旧客户端不调用新端点，旧请求不变；
-   历史 `contracts-v*` 结构兼容检查结果见下方收口回执；不把新增样例往返冒称全部版本兼容。
-   现有 SQL 集成用例仍显式 ignored，未拿无数据库的单测代替实际发布/对账演练。
-
-实际验证日志位于 `/volumes/data/kailo/tmp/custom-emoji-20261007.16Wu6U/`：
-
-- 原 `tools/gen.sh` 四语言及 Dart 文案生成退出 0：`generation.log`。输入仅基准完整
-  schema 加两个新增 schema；未混入其他队友随后追加的 timeline/AgentAdvanced 词条。
-- Shared 源码与测试 tsc 退出 0；CustomEmoji 8 + 原 Profile 10 = 18 通过：
-  `shared-final.log`。首轮两个导入/严格类型问题和三项错误的测试按钮名称已修正，
-  失败原日志仍保留。没有修改原按钮文字来迁就测试。
-- Web/Desktop tsc 均 0：`web-first.log`、`native-ts-first.log`。
-  Web 原设置 6 + Markdown 8 = 14 通过：`web-tests.log`，包含表情图只走 BFF、外部地址不加载。
-- SDK 私有副本移除 ACK 后 UNKNOWN 保护：1 fail/7 pass；原字节恢复后 18 pass，见
-  `shared-ack-mutation.log`、`shared-final.log`。
-- Core 签名/本人集回读 1 pass；原 profile 4 pass/1 ignored（需要隔离 SQL）；Rust
-  新合同 1 pass；clippy `-D warnings` 退出 0：`core-first.log`、`core-final.log`。
-- Core 私有副本移除签名检查：1 fail/退出 101；恢复字节后首次因 tar 旧 mtime 命中
-  变异缓存仍失败，随后 touch 同一已恢复源强制重编，1 pass。原 SDK 表情相关 6 pass
-  （含本批 2 项），见 `core-signature-mutation.log`、`core-signature-restored.log`、
-  `core-signature-recompiled.log`。SDK 首次缺固定上游 NIP-MP fixture，补入同基准原文件后通过。
-- TS/Dart/Go 新合同各 1 通过：`contracts-restored.log`。首次误用不存在的 tsx loader
-  失败，改回项目原 Node strip-types 入口；未安装依赖。Rust/Go/Dart 格式化退出 0：`format.log`。
-- Native Rust **未验收**：旧容器祖先 rust-toolchain 触发 rustup 下载探测，立即停止该
-  单一进程；显式已有 Rust 1.90/离线热缓存后实际编译停在缺 `glib-2.0 >= 2.70`，
-  退出 101：`native-rust-first.log`、`native-rust-explicit.log`、`native-rust-cached.log`。
-  没有安装 GTK/WebKit、打包或借类型检查声称 Native Rust/Win11 验收。
-
-未完成范围明确保留：原 emoji-mart 自定义分类、自动补全图片节点及反应选择器消费
-尚未恢复；本批完成的是管理分区和已接通的文本 shortcode 消息呈现/签名消费，不能
-宣称 CustomEmoji 在原版全部使用场景 100% 等效。Native Rust 系统依赖阻断、真实
-双身份 Relay 操作/撤权/崩溃恢复与浏览器视觉验收仍未运行；无 full、无部署、无安装包。
-
-实现后完整候选复核与兼容收口：47 个选定文件的全部差异已读取，未改其他队友的
-时间线、Pulse 或 Agent Advanced 输入。复核修复 `useEmojiSettings` 的 StrictMode
-effect 清理重放：setup 必须重新标记当前 scope，否则已缓存列表的首次保存会误判
-已卸载而成为 UNKNOWN。SDK 原样回退这处修正后，新回归 1 failed/8 skipped，退出 1；
-没有改变 UNKNOWN 的旧意图、签名回读或撤权边界。
-原字节还原后共享源码/测试 tsc 均退出 0，CustomEmoji 9 + Profile 10 = 19 全通过。
-媒体边界按实际消费者区分：Web 消息内表情不请求外部 origin；原管理分区仍可展示
-Relay 已签名旧集合中的外部公开图片，不把消息路径的限制泛称所有原生设置图片。
-
-原受限 SDK 内以真实 `contracts-v0.1.0` 对象（剥离 commit
-`9d168919af69dd9b22596f08dda6caf4ededcc74`，历史根 `apps/contracts`）执行
-`tools/check.sh` 原 `step_contract`，不运行依赖安装及 full：
-`source <(head -n -1 tools/check.sh); step_contract; exit "$FAIL"`，bash 的 `$0`
-明确传原入口绝对路径，以保持原工作目录解析。实际输出为四侧生成同步 PASS，
-相对历史 tag 无破坏性变更 PASS（279 个 schema，匹配 3 个历史 schema），退出 0。
-这是原检查提供的历史结构比较，不是所有已发布客户端反向解析新类型的运行演练；
-两个新类型在该历史 tag 不存在，旧协议字段未改变。
-
-日志同上述目录：`contract-compatibility-restored.log`、`shared-strict-nine.log`、
-`shared-strict-mutation-applied.log`、`shared-strict-restored-final.log`。
-最初 source 命令转义错误、过时 Vitest 参数及第一次投递未覆盖实际副本均保留失败日志；
-未将那些运行计入修正后的验证。没有再启动 Native Rust 或安装系统依赖。
 ## 原 virtua 补丁的三处依赖锁与发布输入（2026-10-07）
 
 相对 `8d3fcd04`，本次只收口主线抽取原 Timeline 所需的依赖、导出和打包输入，
@@ -5315,70 +4016,6 @@ patch-idempotent.log、patch-mutation.log、patch-restored.log。
 Node24 Alpine 的实际 postinstall、完整 npm ci、镜像构建/部署没有运行，仍未验。
 仅构建输入声明已对齐，未刷新或伪造 source/artifact digest。此批未运行 full。
 
-## 原消息时间线的 Web/Desktop 共源迁移（2026-10-07）
-
-本批相对 `8d3fcd04e91ed856e30a616a01754aa75b4574c9`，复用固定 Buzz
-`779af8886caae1317b4de962082429867ab61503` 的原时间线模块，不以另一套
-Web 列表代替原版滚动、缓冲与日期布局。执行和内容读取仍保留两端宿主边界。
-
-四步影响结论：
-
-1. 权威为 DD-74/DD-75、SS-WEB-01/SS-WEB-RELAY 与用户原版一致性要求。
-   原源码定位为 `desktop/src/features/messages/ui/MessageTimeline.tsx::MessageTimeline`、
-   `desktop/src/features/messages/ui/TimelineMessageList.tsx::VirtualizedTimelineRows`；
-   实现位于共享 `react/messages/timeline`。Native 只保留图片预加载、剪贴板、
-   消息行和原生调用适配，Web 保留 BFF 媒体读取、治理动作和消息正文消费者。
-2. 影响两端真实 ChannelPane、共享虚拟列表、分页/缓冲/日期辅助模块、virtua
-   原补丁及中英文词条。旧 Native 路径重导出同一实现，不保留第二份函数体。
-   宿主列表插槽保留原 scope key，外层滚动容器也保留原频道 key。仅移除内层
-   key 的检查仍通过，因此不把内层 key 单独缺失声称为已证实的跨频道缺陷。
-   没有新增数据库模型、权限权威或工作流，也没有修改事件合同。
-3. Web 不获得 Relay 私钥或平台凭据；消息与附件仍经原 BFF。发送结果不明的
-   原意图不清空、不重放，不把列表刷新当作发送完成。Native 图片预加载不搬到
-   浏览器，避免共享呈现抽取扩大浏览器网络访问边界。
-4. 保留原空态提交、历史前插、向上滚动锚定、底部新消息缓冲及跳至最新行为。
-   没有 `historyExhausted` 证据时不伪造“已到频道起点”，不显示假的首日边界。
-   Web 仍有原生窗口/线程摘要消费缺口；不能简单补 parentId 后过滤掉孤儿回复。
-   本批没有把此缺口标记完成，也没有删除该交付要求。
-
-验证边界：共享原辅助算法与 scope 生命周期共 62 项实际通过；Web Composer
-23 项、Pulse 7 项通过。Pulse compact 状态被主动破坏时 2 项失败，UNKNOWN
-403 保留意图被破坏时 1 项失败；恢复原字节后上述 30 项重新通过。共享、Web
-和 Native TypeScript 曾分别通过，但不替代最终合并输入复验。相关原始输出在
-`/volumes/data/kailo/tmp/timeline-shared.SEF8hh/`，失败日志保留，不能把复合命令
-最后一个退出 0 当成日志内前面失败步骤通过。
-
-浏览器候选预览实际失败：临时 Vite 对链接的 CommonJS
-`use-sync-external-store/shim` 没有提供浏览器模块导出，页面进入错误边界。
-两张失败截图已打开检查；静态拦截、临时配置与唯一 Vite 进程均已恢复/停止。
-这不是视觉验收通过，也不是线上部署。Windows 安装、Mobile 设备以及整批
-`tools/check.sh --full` 尚未通过，不宣称原版全功能、三端等效或生产就绪。
-
-主线归并：此前 main `73ca493b716eddb6f672155b4a606d62f12adfbe` 至上述
-`8d3fcd04` 的 67 个既有提交已快进并普通 push 到远端 main；工作文件未覆盖，
-未提交增量未混入。该 Git 收口没有触发部署，不改变历史失败与未验收状态。
-
-集中合并输入复验：候选 `50813e16b5f7ceb40e2407f0de249e212344b624`
-的选定源码导入既有 4 CPU/8 GiB SDK，运行共享源码及测试 TypeScript、Web
-TypeScript、Native TypeScript，均退出 0；共享十个测试文件 99 项与 Web 四个
-测试文件 48 项均通过，整条 `set -e`/`pipefail` 命令退出 0，日志为
-`combined-ui-final.log`。原 Profile/Pulse 检查仍输出 act/scrollTo 环境警告，
-未隐去警告或把这些检查当成真实浏览器操作。
-
-此前 ChannelRead 的新消息缺行来自 jsdom 的 `offsetParent=null`：原 virtua
-明确忽略这种元素的 ResizeObserver 测量，使可视区尺寸保持 0。补齐真实可见
-父节点测量后，迟到消息与连续消息的原断言均通过；没有修改生产缓冲逻辑。
-线程宽度检查改核原 sessionStorage 持久值，日期边界按无起点证明/跨日事实检查。
-两层频道 key 同时移除后，scope 用例真实退出 1；还原字节 cmp 退出 0，62 项
-共享时间线检查再次通过。Mobile 词条沿原生成器从共享目录生成，原 --check
-实际输出 `PASS: Mobile platform and reason catalogs match the shared TypeScript source`。
-
-文档原入口最终退出 0：`docs-final-restored.log`。首次 SDK 快照缺主文档和链接
-目标、npm cache 未沿原入口投递，第二次缺原 markdownlint 配置，均明确失败；
-补入同一提交的实际输入并使用原 `/cache/npm` 后通过，没有修改检查规则。
-整批 full 未重跑：当前 Data 余量约 2.2 GiB，前次 full 的退出 1/137 不作废；
-本次是已集中窄验的源码阶段提交，不是通过全部发布门禁的 release。
-
 ### 2026-10-07 Web 原生频道窗口读取补齐
 
 四步影响结论：
@@ -5417,6 +4054,90 @@ CustomEmoji 发布增量。没有改 ChannelPane 或共用时间线，也没有�
 `core-window.log`、`core-range.log`、`core-mutation.log`、`core-restored.log`。
 未运行 full、真实浏览器/Relay 联调、
 镜像构建或部署；不得把服务端专项通过当作前端已消费或上线验收。
+
+## 2026-10-07 原版系统行与回应模块共源专项
+
+权威为 REQ-24、DD-53、DD-74/75：本轮只恢复原系统消息与回应呈现，
+不创建反应存储、身份目录或写端点。固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/messages/ui/MessageReactions.tsx::MessageReactions`、
+`useReactionHandler.ts::useReactionHandler`、
+`useQuickReactionEmojis.ts::useQuickReactionEmojis` 和
+`desktop/src/shared/lib/emojiName.ts::emojiDisplayName` 已逐文件读取，
+迁入共享 `react/messages/reactions`。完整保留原 pill、hover、键盘入口、
+计数动画、布局稳定后的表情粒子与快捷表情排序；复用已有 EmojiPicker、
+AnimatedCount、EmojiBurstProvider、Popover，不复制一套同义组件。
+
+四步影响结论：
+
+1. 呈现来自真实 TimelineReaction，不新增服务端或客户端权威；原系统行
+   消费 membership payload、实际身份/owner 与相同反应组件，两端同源。
+2. 宿主只注入已准入 custom emoji、媒体解析与明确 scope。没有媒体 resolver
+   不请求原 Relay 图片；没有 scope 不读写旧全局快捷表情偏好。
+   既有 Timeline 类型仅保留原投影字段，不变更跨语言契约。
+3. 可选 onToggleReaction 缺失时保留只读 pills、隐藏新增回应动作。
+   未接通治理发布不能冒充已恢复写能力；UNKNOWN 保留原 pending 锁与中性文案，
+   不发第二次写入，未来实际发布仍须宿主提供原意图对账。
+4. malformed/未知系统 envelope 不作为正文显示；公开删除只显示公开原因，
+   不显示已删除正文、举报者或私有证据；重复加入后离开的原合并规则保留。
+   本轮无新工作流、迁移或业务状态。
+
+实现后在现有 `kailo-agent-receipt-xvkujx`（实际 4 CPU/8 GiB）使用独立
+shared-only 快照，不覆盖队友现场、不安装依赖。预检 Data 余量 1.3 GiB；
+容器 tmpfs 不足，使用原 `/evidence/system-reactions.adukG2` 小输入与既有
+锁定依赖。首次执行因 .bin 的 workspace 相对依赖链接缺失退出 1，补齐同一
+既有根依赖链接后，反应 14 项通过，系统行因新文件 i18n 路径多一级未载入。
+主线修正路径、显式 Provider locale 和非本人被加入文案后，原 membership 分支
+不展示 owner chip 的测试夹具改为实际 topic_changed 作者分支；不改产品布局。
+
+`vitest run test/reactions.test.tsx test/system-message.test.tsx --pool=threads
+--maxWorkers=1` 实际 21 项通过（System 7、Reaction 14）。SDK-only 三处破坏：
+UNKNOWN 解锁、删除行显示完整 payload、跳过重复加入/离开合并，分别命中，
+合计 3 failed/18 passed，退出 1。三文件原字节恢复且 cmp 均为 0 后，同命令
+21 passed、退出 0。包括中文默认、英文切换及显式宿主英文覆盖设备中文。
+日志在 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/system-reactions.adukG2/`
+的 `baseline.log`、`baseline-restored.log`、`source-corrected.log`、
+`baseline-final.log`、`mutation.log`、`restored.log`。
+共享类型检查由频道队友同批执行，此处不重复声称类型或完整门禁通过。
+本专项未运行 full、构建、部署或真实 Relay 写入验收。
+
+## 2026-10-07 原 V2 消息线程读取闭合
+
+四步影响结论：
+
+1. REQ-24、DD-39/74/75 要求保留原线程读取。固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `crates/buzz-relay/src/api/bridge.rs::query_events_authed` 在原 depth_limit
+   分支调用 `crates/buzz-db/src/store/thread.rs::get_thread_replies`，返回原
+   已可读线程元数据关联事件，并保留 auxiliary 与同秒 event_id 复合游标。
+   V2 常量来自 `crates/buzz-core/src/kind.rs::KIND_STREAM_MESSAGE_V2`。
+2. 原 Web 主窗口已显示 V2；但 Core 的 channel_message_event、线程返回
+   kind 闭集未接受 V2，打开此消息的原线程会被 Core 自己拒绝。此次只在
+   web_transport 的签名读取层将 V2 映射既有 Stream 读取语义，同一
+   thread_message_kinds 被查询与回应校验实际消费，不建第二消息投影。
+3. 不增加任何签名写 kind：message_kind(Stream) 仍为 9，原编辑/删除
+   mutation_target_matches 不接受 V2。用户态已读按真实 event ID 查证，本来
+   没有 kind 9 限制，故不改。消息作者读取与原 parent 查证复用相同验签，
+   不借此放宽 workspace/conversation scope 或本人 SERVER 身份。
+4. 读取只接受精确 Channel、有效签名和原 NIP-10 root；错误 root、跨
+   Channel、无签名/篡改、系统行冒充线程回复都拒绝。空尾页终结分页；
+   同秒 ID 继续前向 keyset，不吞掉 V2 回复或把孤儿正文伪装成父消息。
+
+SDK 仍为原 `kailo-installation-scope-sdk-e4agxd` 4 CPU/8 GiB、
+`/evidence/workspace-creator.eqWSX8` 和 `/cache/rust-target`，Cargo `-j16`。
+首次窄验退出 101：旧窗口快照缺已提交 CustomEmoji 模块，随后从固定
+`53ad340097fd802f85d4e31aa3a3eaad12cf423e` 同步 14 个必要已提交依赖路径，
+不读取工作树尚未提交的其他 Core 变更。第二轮 29 passed/1 failed/1 ignored：
+唯一失败是新增用例把 ForumComment 常量误写为 45002；生产代码始终调用
+上游映射并实际返回 45003。修正夹具后 30 passed/1 ignored，退出 0。
+SDK-only 将 V2 读取别名禁用，新根读取与线程页两个用例实际都以 503 失败，
+退出 101。原字节还原且 cmp 为 0 后，相同 web_transport 范围实际 30 passed、
+1 ignored，原 `cargo clippy --offline --locked -j16 -p platform-core --bin
+platform-core -- -D warnings` 退出 0，联合恢复命令退出 0。
+本次没有创建库、执行迁移、full、镜像构建或部署，线上验收仍需新产物投递。
+原始日志位于 `/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/workspace-creator.eqWSX8/`
+的 `v2-thread.log`、`v2-thread-restored-input.log`、`v2-thread-corrected.log`、
+`v2-thread-mutation.log`、`v2-thread-final.log`，首失败与修正输出均保留。
 
 ### 2026-10-07 原回应发布与实时投影接线
 

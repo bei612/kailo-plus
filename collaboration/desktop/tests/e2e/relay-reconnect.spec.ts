@@ -708,3 +708,64 @@ test("reconnect backfills more missed channel messages than the live subscriptio
     )
     .toBe(true);
 });
+
+test("an unacknowledged send is resent as the same event after reconnect, never twice", async ({
+  page,
+}) => {
+  // Relay 存下了事件但 OK 没回来就断线：结果不明
+  await installMockBridge(page, { dropSendMessageAcks: 1 });
+  await page.goto("/");
+  await page.getByTestId("channel-general").click();
+  await expect(page.getByTestId("chat-title")).toHaveText("general");
+
+  const message = `unknown outcome ${Date.now()}`;
+  await page.getByTestId("message-input").fill(message);
+  await page.getByTestId("send-message").click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (text) =>
+          (
+            (
+              window as Window & {
+                __BUZZ_E2E_SIGNED_EVENTS__?: Array<{ content: string }>;
+              }
+            ).__BUZZ_E2E_SIGNED_EVENTS__ ?? []
+          ).filter((event) => event.content === text).length,
+        message,
+      ),
+    )
+    .toBe(1);
+  await disconnectMockWebsockets(page);
+
+  // 结果不明：不说成功也不说失败，草稿保留
+  const state = page.getByTestId("composer-send-outcome");
+  await expect(state).toHaveText(
+    "Delivery not confirmed. Your text is kept; sending it again unchanged will not post it twice.",
+  );
+  await expect(state).toHaveAttribute("data-outcome", "unknown");
+  await expect(page.getByTestId("message-input")).toContainText(message);
+
+  // 重连后续流：Relay 已存储的那条随补齐回到时间线
+  const rows = page.getByTestId("message-row").filter({ hasText: message });
+  await expect(rows).toHaveCount(1, { timeout: 15_000 });
+
+  // 原样重发：同一个已签名事件，Relay 只回 duplicate:，时间线仍只有一条
+  await page.getByTestId("send-message").click();
+  await expect(page.getByTestId("message-input")).not.toContainText(message);
+  await expect(state).toHaveCount(0);
+  await page.waitForTimeout(1_000);
+  await expect(rows).toHaveCount(1);
+  const signed = await page.evaluate(
+    (text) =>
+      (
+        (
+          window as Window & {
+            __BUZZ_E2E_SIGNED_EVENTS__?: Array<{ content: string }>;
+          }
+        ).__BUZZ_E2E_SIGNED_EVENTS__ ?? []
+      ).filter((event) => event.content === text).length,
+    message,
+  );
+  expect(signed, "重发不得重新签名").toBe(1);
+});

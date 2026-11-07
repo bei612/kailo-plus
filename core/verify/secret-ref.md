@@ -579,6 +579,339 @@ BuildKit 与 cgroup 中恢复 Core。随后将部署引导及直接建 Tenant �
 原有 16 个子 namespace 不属于本轮登记清单，未删除，也不据此声称
 生产 Tenant 销毁已闭合；本轮删除的四个测试 namespace 中的密钥不可恢复。
 
+### Stage 2 SecretRef 生命周期缺口逐项对照（2026-09-29）
+
+对照本文件 L267–269 与 L296、L329 列出的四项缺口，按设计是否已定义逐项核对：
+
+| 缺口 | 设计依据 | 现状 |
+| --- | --- | --- |
+| 孤儿 KV 路径收敛：SERVER HUMAN 写入后未绑定 | `DD-86`、`V-SCN-70` | 已实现，本日修正两处使其无法终结的缺陷，见 `native-identity.md`「V-SCN-70 孤儿版本终结的复核」 |
+| 孤儿 KV 路径收敛：归位副本切换被拒 | `DD-85`、`V-SCN-69` | 已实现（`secret-ref-rehome.md`「复制后被拒与开放」），与上一行共用 `destroy_unreferenced_version_one` |
+| 旧版本销毁：遗留 `platform/` 身份归位后 | `DD-85`、`03` SecretRef 状态机 | 已实现（`RETIRED`），本日补回应丢失注入用例 |
+| 旧版本销毁：HUMAN key revoke/重建后旧 pubkey 的 KV 版本 | `DD-72` 只写「旧版本 destroy」；`09` key revoke/rotate 行只写旧 binding 保留 `REVOKED` 供审计；`DD-70` 的 `SUPERSEDED→REVOKED` 以「固定旧 generation 的在途执行」为前提 | 设计未定义：何时触发、哪些执行算固定旧 HUMAN generation、SecretRef 状态落在何处（现无持久 SecretRef 状态表）、是否为独立 Governed Action，且 `DD-70` 又规定紧急撤销用 `delete` 不用 `destroy`。未实现 |
+| 旧版本销毁：RelayOperatorIdentity 轮换后的旧 KV | `09` RelayOperatorIdentity rotate 行没有销毁步骤 | 设计未定义，未实现 |
+| 孤儿 KV 路径：Tenant CONTROL 写入后落库失败、operator 写入后登记失败 | `DD-86` 只覆盖 SERVER HUMAN；CONTROL 另受 `GAP-BUZ-01` | 设计未定义，未实现 |
+| 服务凭据轮换顺序（`SERVICE_CREDENTIAL`/`DATA_KEY`） | `DD-70`、`DD-93` `secret_schema` | 设计已定义，依赖 ApplicationBinding 与 release `secret_schema`，Core 中尚无该实体，不在本次文件范围 |
+| 各消费端投递（OpenBao Agent template、spawn env） | `DD-71` | 设计已定义，属部署与组件接入面，不在本次文件范围 |
+
+据此 Stage 2「完整 SecretRef 生命周期」仍不能标记完成：前两类已实现项缺真实拓扑运行证据，
+其余各项或设计未定义，或依赖尚不存在的实体。
+
+### DD-113 平台自持 Nostr 私钥的退役与孤儿写入（2026-09-29）
+
+上表中「设计未定义」的三项已由 `DD-113`、`SF-OBA-13` 与 `V-SCN-86` 定下，本节记录实现与
+核验现状。
+
+- 迁移 `20260930120000_platform_key_retirement`：写入意图加 `key_kind`、`operation_id`、
+  `retired_at`，主键改为独立 `id`（OPERATOR 没有 ActionExecution），按类别的未完成唯一与
+  形状、RETIRED 只由 BOUND 进入的约束；binding 加 `private_key_secret_status`（引用为空即
+  为空，REVOKED 时只能是 SUPERSEDED/REVOKED）；存量 SERVER HUMAN/CONTROL binding 与
+  operator identity 按当前 ref 补建 BOUND 意图（operation 由 locator 确定性派生，不指向
+  真实 operation）。回滚移除补建行，存在 CONTROL/OPERATOR 或 RETIRED 意图时拒绝。
+- 共用收敛 `platform_keys`：孤儿 fence→`cas=0`→销毁版本 1→metadata 查证与审计由 HUMAN
+  专用改为三类共用；退役为 `retire_bound_version_one`（不抢占空路径）+ `mark_retired`。
+  `secret_store::owns_platform_key` 把三类 key 限定在各自独占形状，未归位的 `platform/`
+  存量不能借退役或孤儿收敛删除或销毁。
+- HUMAN 撤钥：身份投影在 `REVOKING` 时先 `delete` 并以 `deletion_time` 查证、引用转
+  SUPERSEDED，roster 移出与 `REVOKED` 之后 `destroy` 并查证，意图 RETIRED、引用 REVOKED，
+  审计追加到撤钥 operation；重试按 `REVOKED` 的确定下一版本找回。
+- operator：locator 改为由 pubkey 派生，登记/轮换前冻结意图，同一 key 重投递续用；旧 key
+  在 Relay 以 401/403 拒绝后由下一次引导销毁并记 RETIRED，仍被接受或探针不明时保留告警。
+- CONTROL：Tenant 建立先冻结意图再写，同一 operation 重试续用或 fence 后销毁；另一
+  operation 遗留的由治理对账器在其 WorkflowRef 终态、动作不再 ALLOWED 或另一 CONTROL
+  胜出时隔离销毁；OPERATOR 遗留的在超过准入对账上界后隔离销毁。
+- 未完成退役由 `platform.server_key.retirement_pending` 度量与日志告警。
+
+核验：`secret-store` 单元 14/14（新增独占形状、delete 回应丢失按 `deletion_time` 查证、
+版本 2 不删、已绑定退役不抢占空路径）；`platform_keys` 审计分类 2/2；fmt、clippy
+`-D warnings`、`cargo test --workspace --no-run` 通过。破坏核验：退役改为抢占空路径、
+delete 忽略 `deletion_time`、形状放行 `platform/`、去掉 CONTROL 审计分类，各自使对应
+检查失败，还原后通过。新增集成用例 `human_revoke_lost_responses_converge_by_metadata`、
+`control_orphan_writes_are_reused_or_destroyed`、`operator_orphan_write_is_destroyed_by_reconciler`
+与扩展后的 `server_key_is_revoked_then_reprovisioned` 尚未在集成拓扑运行，本节不构成
+`V-SCN-86` 的终态证据。
+
+补充（同日）：`tenant_lifecycle::verify_tenant_buzz` 把 CONTROL binding 转 `ACTIVE` 的同一句
+UPDATE 同时把私钥引用由 PENDING 转 ACTIVE；`server_key_is_revoked_then_reprovisioned`
+断言夹具 Tenant 的 ACTIVE CONTROL 与 HUMAN 引用均为 ACTIVE（未在集成拓扑运行）。
+`platform_keys` 在 crate 根正常声明。存量补建行的 `operation_id` 取值待设计给出如实表示后
+修改，本节不将其视为已定。
+
+### DD-115 实施补充（2026-09-30）
+
+- 迁移 `20260930120000_platform_key_retirement` 按 DD-115 重写：意图加 `origin`
+  （PROVISIONED/BACKFILLED）、`commit_deadline_at`、`retire_operation_id`；`operation_id`
+  与 `action_execution_id` 可空。约束：PROVISIONED 必有 operation；BACKFILLED 两者皆空、
+  只以 BOUND/RETIRED 存在；PROVISIONED 的 OPERATOR 必有提交截止、其余类别没有；
+  `retire_operation_id` 只挂在 BOUND 上，RETIRED 必有它。存量补建行如实为 BACKFILLED，
+  不再派生 operation；已 REVOKED 的存量 binding 没有可追溯的撤销 operation，不冻结，
+  由 `platform.server_key.retirement_pending` 告警。
+- 退役审计：撤钥（身份投影 REVOKED）、成员撤权投影（REVOKED）与 operator 轮换在各自
+  的同一事务冻结 `retire_operation_id`，退役审计追加到它；孤儿审计仍记意图自己的
+  operation，且只处理 PROVISIONED。
+- 成员撤权投影在 roster 查证后执行 delete 与 destroy 并按 metadata 查证；未完成的由
+  治理对账器补做（binding REVOKED、意图 BOUND、退役 operation 已冻结）。
+- OPERATOR：冻结时 `commit_deadline_at = now() + RELAY_OPERATOR_COMMIT_WINDOW_SECONDS`；
+  登记与轮换的事务只在截止前、未 fence 时提交；对账器以截止为终态判据。引导遇到另一
+  把 key 的过期意图时以同一 fence 实现销毁后继续，未过期则给出截止时刻并退出。
+- 对账器只读 LIST operator 前缀，按 metadata 仅对恰为版本 1 的无引用、无意图 locator
+  补建 BACKFILLED 并退役；版本大于 1 或不可判定的不落状态、告警。platform 策略原已对
+  `metadata/*` 授予 `list`，无需改动。
+
+单元：secret-store 15/15（新增 operator 前缀只读列出与层数上界）；把层数上界放宽后该
+检查失败，还原后通过。fmt、clippy `-D warnings`、`--bins`、`--no-run` 通过。新增或
+改动的集成用例（`membership_revocation_retires_server_keys`、
+`unrecorded_operator_locators_are_backfilled_and_retired`、OPERATOR 截止判据，及
+`membership_projection`、`web_transport` 中直接驱动 Tenant 撤权的用例补 WorkflowRef 夹具）
+尚未在集成拓扑运行。
+
+### 接手复验与当前生命周期边界（2026-09-30）
+
+以 `0ec5e552` 之后接手的工作树运行既有 `core/verify/run-integration.sh`：
+`secret-store` 单元 **15/15**、真实 OpenBao 的
+`wrapped_delivery_and_secret_ref_boundaries` **1/1**、`tests/server_keys.rs` **7/7**、
+`tests/secret_ref_rehome.rs` **6/6** 均通过。原始日志为
+`/volumes/data/kailo/tmp/codex-integration-20260930.log`；身份与归位的逐项结果分别见
+`native-identity.md`「接手复验」与 `secret-ref-rehome.md`「接手真实拓扑复验」。
+
+因此，09-29 缺口表中平台自持 HUMAN、CONTROL、OPERATOR 的「设计未定义、未实现」
+已被 `DD-113`、`DD-115` 及其实现替代，不再作为当前结论。旧 DD-113 实施段落所记
+「由 locator 派生存量 operation」也已撤回：当前存量意图为 `BACKFILLED`，原 operation
+为空，退役事实挂在真实的 `retire_operation_id` 上；提交时限只属于 `PROVISIONED` 的
+OPERATOR。不得把历史段落当作当前迁移合同。
+
+本轮证明列出的平台自持私钥与归位用例条件，不覆盖存量补建意图的归位退休事务或
+迁移前 SWITCHED 历史任务的兼容收敛；相关代码与核验阻断见 `secret-ref-rehome.md`
+「独立复核」。不证明尚无消费端的 `SERVICE_CREDENTIAL`、`DATA_KEY` 轮换与组件投递
+已经交付，也不证明生产规模积压、全部破坏核验或发布镜像已验收。
+OpenBao 版本淘汰只先淘汰 metadata，后续旧数据清理失败返回 warning
+（`SF-OBA-13`）；退役终结必须来自显式 `destroy` 后对版本 1 的 metadata 查证，
+不能用 `max_versions` 或删除 metadata 代替。
+
+全套命令退出 **0**，35 个本轮测试 namespace 已离线清理、前后集合相等，Core 恢复后
+独立 `/healthz` 检查为 **HTTP 200**。实际恢复镜像和显式未运行项见 `native-identity.md`
+同日记录；本轮没有删除历史保留 Tenant，也没有修改只读 `.references`。
+
+上述核验当时，`20260930120000_platform_key_retirement` 与
+`20260930130000_intent_action_scope` 存在旧 Core 前进兼容问题：旧意图 INSERT 未提供
+新增必填的 `key_kind/origin` 与 PROVISIONED 的真实 operation，旧 binding INSERT 未提供
+SecretRef 状态，旧 REVOKED UPDATE 也未同步状态，分别与必填字段和新增 CHECK 冲突；
+后续 HUMAN 部分唯一索引不能作为旧 `ON CONFLICT (action_execution_id)` 的冲突目标。
+隔离空库迁移与当前源码门禁通过不证明运行中旧 Core 兼容。2026-09-30 用户明确当前
+只交付全新 Compose 开发环境，无线上旧版、历史数据保留或旧数据库恢复；该兼容问题
+在当前交付中无适用对象，不作为开发或发布阻断（`06-工程基线规范.md` §5）。不修改
+已应用迁移 checksum，不补造 operation 或意图；上述历史 PASS 保持其实际条件范围。
+
+### 删除完成判据的独立源码复核（2026-10-01）
+
+当前 `core/crates/secret-store/src/lib.rs::version_one_removed` 将任何非空
+`deletion_time` 判为版本已移除；`delete_bound_version_one` 的前置查证命中时直接返回
+`Ok(())`，不再发送 delete。因此自动删除时间仍在未来且版本未销毁时，当前实现
+会误报第一段撤钥完成。这是 `DD-113` 的实现缺陷，不是上游能力缺口。
+
+`SF-OBA-13` 已纠正：OpenBao@`735723da5628148f232497a48a35a137b6512103` 的
+`openbao/internal/builtin/logical/kv/path_data.go::versionedKVBackend.pathDataRead`
+仅在删除时间早于服务器当前时间或 `destroyed=true` 时返回该版本的 404；未来时间
+仍进入读取数据分支。本次用固定 commit 的 `git show` 读取并核对了该分支，未取私钥值。
+
+本次只修改事实与核验记录，未改上述实现、未运行未来删除时间的业务核验，也未登记
+修复完成。此前回应丢失、过去删除时间与销毁版本的 PASS 不能覆盖这一输入条件；
+Stage 2 私钥生命周期仍不能据历史结果关闭。
+
+### 未来删除时间的生产判据修正（2026-10-01）
+
+本次已直接修正 `SecretStore::version_one_removed`（`DD-113` (3)、`SF-OBA-13`）：
+metadata 的 `current_version` 必须恰为 1；`destroyed=true` 保持确定成功，空
+`deletion_time` 保持未完成。非空删除时间不再自行解释时钟，而使用原有受超时约束的
+HTTP client 读取 `data/<path>?version=1`：200 表示版本仍可读，返回未完成并继续原有
+delete；只有 404 携带版本 1 的已删除或已销毁 metadata 才确认完成。401/403 返回
+`Refused`；其他状态、传输错误、坏体或版本不符均不形成删除完成证据。没有新增依赖、
+配置、业务状态、API 或第二套删除执行器，也没有读取或持久化私钥正文以作比较。
+
+固定上游为 OpenBao@`735723da5628148f232497a48a35a137b6512103`，亲核
+`.references/openbao/internal/builtin/logical/kv/path_data.go::versionedKVBackend.pathDataRead`
+的未来时间 200、已生效删除或销毁 404 分支，以及
+`.references/openbao/sdk/logical/response.go::RespondWithStatusCode` 的实际响应编码；
+同 commit 的
+`.references/openbao/internal/builtin/logical/kv/path_data_test.go::TestVersionedKV_Patch_CurrentVersionDeleted`
+检查了 404 响应的 `data.metadata.deletion_time`。本次只以 `git show` 读取这些源码，
+未在 `.references` 执行或构建任何代码。
+
+既有生产调用方保持原语义：`supersede_server_human_key` 未取得证明则返回 503，
+不提交 `SUPERSEDED`；`retire_bound_key` 保持 `Retirement::Pending`，不提交
+`RETIRED`。Web 的 SERVER 托管私钥使用此链路，Desktop/Mobile 的 CLIENT 本机持钥
+没有新增 OpenBao 调用。没有修改身份、权限、审计、租户作用域或退役流程的权威。
+
+先改生产逻辑，之后维护原有
+`lost_delete_response_is_resolved_by_deletion_time` 检查及其原有 helper：未来时间
+2099-01-01 的 metadata 与数据 200 不能省略 delete；delete 回应丢失后由数据 404
+及同版本 metadata 查证。未新增检查脚本、用例或夹具。实际结果：
+
+- `cargo fmt -p secret-store -- --check`：退出 0。
+- `cargo test --locked -p secret-store --lib`：15 passed，0 failed，退出 0。
+- `cargo clippy --locked -p secret-store --all-targets -- -D warnings`：退出 0。
+- 临时仅将生产判据恢复为原来的 `destroyed || !deleted.is_empty()` 后运行上述已有
+  lost-delete 检查：退出 101，实际请求数 1 而非 5，明确捕获了省略 delete 的错误。
+  随即还原生产修正，同一检查退出 0；再次全量 15/15、fmt、clippy 均退出 0。
+
+编译前实查现有编译进程、CPU 与内存 pressure；执行使用 systemd cgroup 的 8 GiB、
+CPU 400%、swap 0，未调低 Cargo jobs，复用
+`CARGO_TARGET_DIR=/volumes/data/kailo/core-target-debug`。原始结果：
+`/volumes/data/kailo/tmp/codex-secret-delete-check-20261001.log`、
+`/volumes/data/kailo/tmp/codex-secret-delete-broken-20261001.log`、
+`/volumes/data/kailo/tmp/codex-secret-delete-restored-20261001.log`。
+
+变更前使用 apps 源码根与同引擎 CLI 实际执行了 context、query 和窄 upstream impact；
+File 与检查函数的 UNKNOWN 以实际注册及源码调用补证，未按零影响放行。该回执只有
+ADR-07 文档 drift，按本批负责人明确授权作窄修复依据，不称全量 fresh 审查。
+本轮没有运行真实 OpenBao 未来删除时间的业务集成、更新运行镜像、部署或提交；
+单模块结果不代表 Stage 2 全部生命周期或一期发布已验收。
+
+### 同一修正的镜像内复核（2026-10-01）
+
+按 `AGENTS.md` 规则 22 与 `07-运行与运维基线.md` §2.1，本轮使用检查镜像内的
+工具链复核上述已完成修正；前一节的宿主结果只保留为当时事实，不作为本轮镜像
+门禁通过依据。没有再次修改生产逻辑、增加用例、夹具、脚本或依赖。
+
+实际执行镜像为
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+`tools/check.Dockerfile` 配方 SHA-256 为
+`0fe3b87a1f6c3b050ced75c841b6962f7e352848a0fb0f9b1dfd1f4ca91b5bf7`。
+镜像内实际版本：Cargo 1.90.0、rustc 1.90.0、rustfmt 1.8.0-stable、clippy 0.1.90。
+被检查的生产文件 SHA-256 为
+`08d895104a97bebaf7a63c6632b4ab1a2e264231f19212f6970ea04aa98904a6`，
+`core/Cargo.lock` SHA-256 为
+`66130752293c1c29fecf0c7579236535599cb148f944d1ef37c1bcc94bfbc93a`。
+
+执行前由现有 `tools/container-safety.sh` 实查构建进程、CPU 与内存 pressure。
+启动前回读 Docker `HostConfig`：NanoCpus 为 8000000000，Memory 与 MemorySwap
+均为 17179869184 字节，即 8 CPU、16 GiB 内存且不增加 swap；不是只限制外层 shell。
+`apps/core` 只读挂载；依赖缓存与独立的 `/cache/secret-target` 均来自
+`/volumes/data/kailo/check-cache`，不与主线的 Rust target 共用输出目录，未调低 Cargo
+jobs。镜像内实际执行结果：
+
+- `cargo fmt -p secret-store -- --check`：退出 0。
+- `cargo test --locked -p secret-store --lib`：15 passed、0 failed，退出 0。
+- `cargo clippy --locked -p secret-store --all-targets -- -D warnings`：退出 0。
+- Docker wait 与整个启动命令均退出 0；本次检查容器退出后正常删除，不删除卷或其他容器。
+
+原始输出位于
+`/volumes/data/kailo/tmp/codex-secret-delete-container-restored-20261001.log`。
+第一次镜像执行中上述三项检查及 Docker wait 已退出 0，但临时启动命令的 EXIT
+清理引号错误产生 `rm: missing operand`，使外层命令退出 1；该失败保留于
+`/volumes/data/kailo/tmp/codex-secret-delete-container-20261001.log`，没有称为整体通过。
+实查并删除该任务自己的已退出容器后，仅纠正本次临时启动命令，以同一镜像和相同
+源码重新运行，取得上述整体退出 0；没有修改产品脚本、权限或宿主配置来绕过失败。
+
+真实 OpenBao 的只读服务检查确认本地实例 running、healthy、initialized 且未 sealed。
+运行镜像标注的源码版本为 `ccc04f0952a84846330def323da1db6f8416a79e`，不冒充设计
+固定版本 `735723da5628148f232497a48a35a137b6512103`。以 `git show` 和 `git diff`
+核对两者的 `internal/builtin/logical/kv/path_data.go` 与 `sdk/logical/response.go`，
+这些文件的差异为空；此结果只证明已读源码分支一致与服务健康，不证明业务调用完成。
+现有 `wrapped_delivery_and_secret_ref_boundaries` 集成入口不调用
+`delete_bound_version_one`，且没有证明可安全使用的未来删除时间既有对象；本轮未
+创建新身份、密钥或核验数据，也未删除运行中的 SecretRef。真实 future deletion
+HTTP 业务链仍未验收，未部署修正，未以本模块结果关闭 Stage 2 或一期发布门禁。
+
+### 同一修正的真实 OpenBao 与成员撤权闭环（2026-10-01）
+
+本轮在上述生产修正之后补齐真实业务 HTTP 证据（DD-70/72/113/115），不新增密钥
+轮换动作、检查脚本、种子脚本、用例或夹具。主线统一构建并投递的 Core 实际 image 为
+`sha256:69aaf4a2762431246aa311da210e0efe1bf494966aa8d2a748bcf90258ef1e44`，
+BFF `/healthz` 实查 HTTP 200；当前 `core/migrations/*.up.sql` 的 36 个版本全部在
+`_sqlx_migrations` 中成功应用，无缺失。没有自行构建、重启其他服务、修改只读
+`.references` 或接触旧 Kubernetes。已有 OpenBao 运行版本与固定源码的边界保持上一节
+登记的事实，不把运行镜像 revision 冒充设计固定 commit。
+
+只使用本轮创建的独立业务 Tenant。部署引导调用现有容器内
+`platform-core bootstrap-tenant`；登录使用已登记原生客户端的授权码与 PKCE S256，
+管理动作经 AgentGateway 原生入口进入同一 BFF。没有伪造 issuer/subject header，
+没有使用用户 password grant、手写 ALLOWED ActionExecution 或直接写数据库授权。
+只读数据库查询用于查证 operation、状态与引用，不是推进入口。
+
+完整执行链与实际输出：
+
+1. 现有部署引导先创建 Tenant，等待其 `ACTIVE` 后，只在其独立 KV mount 短暂设置
+   原生 `delete_version_after=24h`，随后经同一引导开通第一位管理员。HUMAN 身份由
+   既有 `MEMBERSHIP_PROJECTION` 创建，独占 locator 仅写版本 1。
+2. 原生 metadata 实查 `current_version=1`、`destroyed=false`、
+   `deletion_time=2026-10-02T08:24:05.522225713Z`；在该未来时间生效前，版本 1 的
+   数据 GET 实际为 HTTP 200，binding 与 SecretRef 均为 `ACTIVE`，意图未 `RETIRED`。
+   数据响应只在受控进程内读取并丢弃，私钥正文未输出、未入库或保存到核验日志。
+3. 立即把自己的 mount 配置原样恢复为 `0s`，GET HTTP 200 再查证恢复。已有版本的
+   未来删除时间仍保留；本轮没有把该设置作用于其他 Tenant 或部署级 mount。
+4. 创建一位独立临时 IdP 用户；第一位管理员经 `tenant.member.invite` 签发邀请，
+   第二位用户经现有 `/api/v1/invitations/redeem` 兑换；返回 HTTP 200、`INVITED`、
+   `WAITING_APPROVAL`。第一位管理员通过 Temporal 审批，第二位成员取得 `ACTIVE`
+   会话，再经现有 `tenant.admin.grant` 获得管理员角色。邀请明文、口令与访问令牌
+   只存在于进程内存，不出现在本记录或原始日志中。
+5. 第二位管理员提交 `tenant.member.revoke`，目标为第一位管理员。实际返回
+   HTTP 202、`WAITING`、`NOT_DISPATCHED`、`WAITING_APPROVAL`；在第一位管理员
+   独立批准之前，旧版本数据 GET 仍为 HTTP 200。批准实际经现有审批 HTTP 入口，
+   不是直接推进投影、伪造审批或变更权限策略。
+6. 撤权投影执行原有 HUMAN 退役链。OpenBao audit 中，这个 locator 的
+   `kv/delete/...` 与 `kv/destroy/...` 各有一组相同 request ID 的 request/response，
+   `operation=update` 且 response 无 error；没有只凭最终 `destroyed=true` 推断
+   delete 曾经执行。原生数据读取随后实际返回 HTTP 404，响应 metadata 的版本为 1、
+   `destroyed=true`，metadata 读取仍保留 `current_version=1`。
+7. `BuzzIdentityBinding`、其 SecretRef 与成员关系均为 `REVOKED`；意图实际
+   `retired_at=2026-10-01T08:26:53.78189+00:00`，`retire_operation_id` 恰为本次
+   成员撤权 operation。该 operation 的 Core audit 实查包含 `RETIRED`；业务 Workflow
+   为 `MEMBERSHIP_REVOCATION`、`TERMINAL`，TaskProjection 为 `COMPLETED`、
+   `observation_gap=false`。第一位用户再次访问会话为 HTTP 403；第二位管理员的
+   同 Tenant 会话仍为 HTTP 200。
+
+这证明未来非空删除时间不会使本次生产调用省略原生 delete，并且已取得确定删除与
+销毁证据后能够完成既有退役消费者。它不要求等待未来时间自然到期，也不新增等待状态。
+未对真实 OpenBao 注入传输中断、500、坏 JSON 或权限拒绝；这些错误的生产 fail-closed
+分支仍以此前已完成的源码核对与镜像内既有检查为证据，不把本次顺利链扩写成故障覆盖。
+本次没有使用单元结果代替真实 HTTP，也不宣称 Stage 2 全部能力或一期生产就绪已验收。
+
+本轮对象与证据引用如下，保留审计链，不复制私钥或其他上游正文：
+
+| 对象 | 本轮实际引用 |
+| --- | --- |
+| Tenant | `0db49e83-f4de-4751-9674-41c79759967d`，slug `secret-delete-011635b6c9fc47239c78` |
+| 第一位成员 | membership `5f49ba9f-5bf2-47f3-aba5-0fac002a297c`；principal `5c7e0515-8afb-4474-b828-c0ebd1e17ce2`；已撤权 |
+| HUMAN 私钥意图 | `0e89d653-a6c9-4d70-abe5-a8302b7149c8` |
+| HUMAN SecretRef locator | `tenants/0db49e83-f4de-4751-9674-41c79759967d/kv/buzz-human/provision/0b51f978-5165-489d-a7b3-e18ae0bbd454`，版本 1，已销毁 |
+| 第二位临时 IdP 用户 | `secret-delete-9bc49f92047542c0aac6074a0ce371a3`；subject `84c9028a-4e47-4fbf-931f-05cb6319dddc` |
+| 第二位成员 | membership `5d265a25-b45a-4a8d-adf2-c83b8f16a8f2`；principal `74fc4d27-8f7b-4569-b947-4eb1d3ef7461`；保留 ACTIVE 管理员 |
+| 邀请 | `a36225ee-6a5b-4801-8ac8-23946777544c`；admit ActionExecution `0f7079ef-dbda-4697-bae1-b43decef8760` |
+| 撤权 ActionExecution | `2169ba95-412a-4825-83f6-7a63be5d0c29` |
+| 撤权及退役 operation | `8f4f0b82-9605-4db1-ae92-2418a1c272d8` |
+| 原生 delete audit request | `76b52bba-212e-a686-45b8-8c3dca695a4d` |
+| 原生 destroy audit request | `04331459-89fd-54fa-21d7-9c0412610b1c` |
+
+原始成功结果：
+
+- `/volumes/data/kailo/tmp/codex-secret-future-business3-20261001.log`：引导完成、
+  未来时间版本可读及自己的配置恢复，整个命令退出 0。
+- `/volumes/data/kailo/tmp/codex-secret-future-business4-20261001.log`：真实 PKCE、
+  邀请、两次审批、角色授予、撤权、原生 delete/destroy、终态与访问拒绝，整个命令退出 0。
+- `/volumes/data/kailo/tmp/codex-secret-future-business-core-audit-20261001.log`：
+  同 operation 的 12 条 Core audit 与确定 TaskProjection 终态，只读查询退出 0。
+
+执行前使用已有 `tools/container-safety.sh` 实查并发与压力；本轮一次性运维命令运行在
+systemd scope 的 2 GiB、CPU 200%、swap 0 中，只调用现有 Compose 产品二进制和实际
+HTTP，不执行宿主 Cargo/Go/Node，也不新增仓库脚本。Core 构建和 SDK 门禁的镜像内
+资源限制由各自执行记录证明；本 scope 不被写成运行中全部 Compose 容器都有资源限制。
+
+两次准备命令的错误均保留，不写成通过：首次命令误把现有 bootstrap 的 `PENDING`
+退出码 3 当作失败，Tenant 已由原生命周期建立；第二次命令误以为原生 mount 配置的
+`delete_version_after` 是整数秒，实际是 Go duration 字符串，引发 TypeError 且该次
+finally 未确认恢复。随后只对本轮 namespace 恢复 `0s` 并以 GET 200 确认，再按真实
+字符串形状原样恢复，取得上述成功记录。失败输出分别在
+`/volumes/data/kailo/tmp/codex-secret-future-business-20261001.log` 与
+`/volumes/data/kailo/tmp/codex-secret-future-business2-20261001.log`；没有为这两处
+调用错误修改产品、生成新工具或创建第二个 Tenant。
+
+`tools/registry/capabilities.yaml` 中 `lifecycle.tenant_delete` 仍为 `exposure: none`、
+无 actions/routes，因此本次未宣称经产品删除 Tenant，也没有直接删库、清审计或销毁
+仍在使用的第二位管理员与 CONTROL 私钥。上述临时 Tenant、第二位 IdP 用户、有效
+管理员和审计引用保留在本地开发环境，边界与引用已经逐项登记；自己的原生自动删除
+配置已恢复。这一保留不影响旧 Kubernetes 或其他项目，也不被写成已完成 Tenant 清理。
+
 ## 2026-10-12 ActionToken 首键生产与原 Agent 投递接线
 
 本批四步影响结论：

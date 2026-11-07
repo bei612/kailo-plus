@@ -1797,6 +1797,11 @@ async fn verify_storage_absence(services: &Services, request: &DeletionRequest) 
             .media
             .list_prefix_versions_page(&prefix, None, None, 1)
             .await?;
+        if page.is_truncated {
+            return Err(transient(
+                "logical verification did not reach a terminal storage page",
+            ));
+        }
         if let Some(entry) = page.entries.first() {
             return Err(transient(format!(
                 "logical verification found a retained target object version: {}@{} ({})",

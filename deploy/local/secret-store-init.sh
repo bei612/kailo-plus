@@ -145,7 +145,9 @@ ns auth list -format=json 2>/dev/null | grep -q '"approle/"' \
 
 # Core 的 platform 策略：只给遗留 Buzz 身份版本的 destroy 路径；调用者仍须
 # 经过 DD-85 的治理冻结、旧 generation 终态查证与版本 metadata 回读。
-# operator、其他 secret 与 Tenant 子 namespace 没有此能力。
+# operator 只有 relay-operator/ 下的 destroy：DD-113 (4) 在 Relay 已拒绝旧 key
+# 之后销毁其独占 locator 的版本 1，或收敛未登记的孤儿写入，均按 metadata 查证。
+# 其他 secret 与 Tenant 子 namespace 没有此能力。
 ns_stdin policy write platform-core - <<POLICY >/dev/null
 path "${OPENBAO_KV_MOUNT}/data/*" {
   capabilities = ["create", "update", "read"]
@@ -157,6 +159,9 @@ path "${OPENBAO_KV_MOUNT}/destroy/buzz-human/*" {
   capabilities = ["update"]
 }
 path "${OPENBAO_KV_MOUNT}/destroy/buzz-control/*" {
+  capabilities = ["update"]
+}
+path "${OPENBAO_KV_MOUNT}/destroy/relay-operator/*" {
   capabilities = ["update"]
 }
 POLICY
@@ -193,7 +198,7 @@ tenant_parent auth list -format=json 2>/dev/null | grep -q '"approle/"' \
   || tenant_parent auth enable approle >/dev/null
 tenant_parent_stdin policy write platform-tenant-provisioner - <<POLICY >/dev/null
 path "sys/namespaces/*" {
-  capabilities = ["create", "update", "read", "sudo"]
+  capabilities = ["create", "update", "read", "delete", "sudo"]
 }
 path "+/sys/mounts/${OPENBAO_KV_MOUNT}" {
   capabilities = ["create", "update", "read", "sudo"]

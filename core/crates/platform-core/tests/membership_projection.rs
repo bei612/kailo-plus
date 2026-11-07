@@ -206,6 +206,9 @@ async fn run(
     // 4. 撤权：roster 移除，且该 pubkey 随即发不出消息。
     //    成员是 CLIENT 托管，Core 手里没有它的私钥；撤权仍然成立，
     //    因为执行点是 roster（DD-75、.design/10 §4）。
+    // DD-115 (2)：撤权使 SERVER 私钥到期的 operation 来自该版本的 MEMBERSHIP_REVOCATION。
+    common::seed_membership_revocation_ref(pool, f.tenant, f.control_principal, f.membership, 1)
+        .await;
     project_until_ok(http, e, token, f, 1, "ABSENT").await;
     let roster = reader.roster(http, Scope::Relay).await.expect("读 roster");
     assert!(

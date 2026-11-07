@@ -681,6 +681,7 @@ export const platformMessages = {
   "platform.appearance.sampleDescription": { en: "Highlights from this release: refreshed conversation layout, quicker link handling, and readability improvements.", "zh-CN": "本次更新：焕新会话布局、加快链接处理并提升可读性。" },
   "dm.chooseRecipient": { en: "Choose a recipient to start a message", "zh-CN": "选择收件人以开始聊天" },
   "dm.verifyPerson": { en: "Verify {name}", "zh-CN": "核验{name}的身份" },
+  "dm.verifyPublicKey": { en: "Verify {name} public key", "zh-CN": "核验{name}的公钥" },
   "dm.messagePerson": { en: "Message {name}", "zh-CN": "发送消息给{name}" },
   "dm.messagePeople": { en: "Message {count} people", "zh-CN": "向{count}人发送消息" },
   "dm.moreParticipants": { en: "+{count} more", "zh-CN": "+{count} 人" },

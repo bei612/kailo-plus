@@ -132,16 +132,6 @@ Main processes terminated with: code=exited/status=0
 
 本节仅记录客户端实现与编译证据。没有运行真实社区删除，没有运行故障注入、审批重投或终态双证据验收；没有以编译成功声称 Core、Worker、部署私有 transport 与 tenant.delete 全链已经验收。
 
-## 同一冻结清单的共享 CAS 保留证据（2026-10-02 UTC）
-
-原生 `buzz-deletion::build_inventory` 现从目标 Community 的历史 sidecar 与 Git pointer 版本解析实际引用对象，将对象数量、字节数与规范化 key/version/size 摘要写入既有 `FrozenInventory.retained_cas`，随原生 inventory digest 冻结。缺少该证据的历史序列化仍可读取，但不能通过原生批准或执行校验；既有 `retention_pending` 检查点携带同一份保留证据。不以全桶量、前缀删除量或固定零替代归属证明，不物理回收共享 CAS。
-
-Relay 原来的 Git manifest 解析、校验与 hydrate 实现已移至 `collaboration/crates/buzz-core/src/git_manifest.rs`，原 Relay 路径删除并登记在 `remove_paths`；Relay 与删除引擎都消费这份实现，没有第二套解析器。固定上游依据仍为 `779af8886caae1317b4de962082429867ab61503` 的 `crates/buzz-relay/src/api/git/manifest.rs`、`crates/buzz-db/src/store/deletion.rs`、`crates/buzz-deletion/src/lib.rs`。
-
-两次资源受限 SDK 的原始输出分别为 `/volumes/data/kailo/tmp/codex-tenant-delete-native-compile-20261002.Twor9o/sdk-verify.log` 和 `/volumes/data/kailo/tmp/codex-tenant-delete-parser-mutation-20261002.Y4ZqWK/restored-and-final-native.log`，实际均 `sdk_exit=0`。前者原生既有检查合计 295 passed、267 ignored，Relay all-targets 编译通过；后者在最终缺证据拒绝修正后重复执行原 deletion 检查，17 passed、9 ignored。同目录 `mutated.log` 中原解析器检查面对临时 Data 副本中的错误 guard 实际退出 101，恢复字节后通过；工程源码未写入该错误。详细范围、失败和跳过记录见 [Core 销毁证据](../../../core/verify/tenant-deletion.md)。
-
-这些日志验证当时冻结源码的窄实现，不是本提交候选的集成验收，也不是实际 S3/数据库 Community 删除正向链验收。上述核验时新共享 CAS 证据尚未构建部署；随后候选构建事实见下节，仍未部署、未开放用户删除入口，不以源码合并、编译或原生 `retention_pending` 单独宣布 Stage 3 完成。
-
 ## 候选 Relay 工件来源收口（2026-10-02 UTC）
 
 在候选目录 `/volumes/data/kailo/tmp/codex-delete-commit-candidate-20261002.KBSv5P` 使用原 `tools/build-upstream.sh collaboration-relay`、原 Dockerfile 和已有 `kailo-core-data` builder，实际 helper 退出 `0`。最终三个原生二进制编译完成，镜像经官方入口 load、tag、push、record；未改业务源码或构建配方，未重启任何运行服务。registry authority 仅从正式 `deploy/local/.env` 的非密 `REGISTRY_HOST` 取得，没有投递或输出整份环境文件。

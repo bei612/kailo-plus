@@ -10,7 +10,7 @@ design:
   facts: [SF-OMT-06]
   seams: [SS-OMT-AUTH]
   blockers: []
-  entities: []
+  entities: [OpenMeterBinding]
 
 validation:
   scenarios: []
@@ -19,13 +19,15 @@ validation:
       ref: metering/fork/verify/core-authentication.md
     - dimension: 安全边界
       ref: metering/fork/verify/core-authentication.md
+    - dimension: 部署与运行
+      ref: metering/fork/verify/core-authentication.md
 
 implementation:
   owners: [team-platform]
-  paths: [metering/app/common/server.go, metering/app/config/server.go, metering/cmd/server/wire_gen.go]
+  paths: [metering/app/common/server.go, metering/app/config/server.go, metering/cmd/server/wire_gen.go, core/crates/platform-core/src/openmeter.rs, core/crates/platform-core/src/tenant_lifecycle.rs, deploy/local/compose.yaml, deploy/local/.env.example, deploy/local/bootstrap.sh, deploy/local/init-local.sh]
   surfaces: []
   schemas: []
-  migrations: []
+  migrations: [core/migrations/20261001020000_openmeter_binding.up.sql, core/migrations/20261001020000_openmeter_binding.down.sql]
 
 runtime:
   routes: []

@@ -6,6 +6,34 @@
 
 ## 当前使用与恢复范围（2026-10-09）
 
+- 2026-10-10 23:05 UTC：Web 已限定替换为固定源码树
+  `252cf1239c04717370df803dec302aba354a8e32` 的共享页面，实际容器与普通 SSO
+  浏览器读回的 build-info 均为
+  `sha256:e2fd03703af893438467954c20bf5aef154ad0b29d0914ac79143f1d624f4415`。
+  同阶段 AgentGateway 已限定更新；Core、Worker、Windows 与 Mobile 未随之更新。
+  真实频道线程、Inbox 草稿、工作流及设置已有局部实拍；默认频道刷新丢失线程、
+  Agent 会话接口返回 404 均保留为失败，后续路由修复不能算进这个镜像。
+  Agent 安装元数据不等于原版 Working/Transcript；三个业务组件尚无有效绑定，
+  左侧不伪造入口。知识库执行对账的源码及定向正反验证不等于已部署或业务验收。
+  当前全量门禁未通过，不称生产就绪、完整还原或三人双 Agent 稳定协作完成。
+  来源、实际部署及未覆盖范围见 [Web 发布记录](web-client/fork/verify/baseline-build.md)、
+  [24 张实拍与失败边界](core/verify/web-e2fd-visual-readback.md)、
+  [默认频道路由修复](core/verify/default-channel-route.md)、
+  [模型网关及真实模型路由](model-gateway/fork/verify/admin-authentication.md)和
+  [知识库执行对账](knowledge/adapter/verify/native-read.md)。
+
+- 2026-10-10 源码增量：原 Wren 问数已接入当前 HUMAN 的 SQL 准入与原任务
+  子执行对账；未确认结果沿原重试核验同一请求，不另发新任务。Cells 原删除/
+  清空回收站已接原生逐项 ACK 与既有 Core 控制元数据准入，延迟子任务执行前的
+  平台撤权复核仍未闭合，release/binding 不激活。既有 Agent 安装详情新增
+  Web/Desktop 共用的 Session/Invocation 元事实读取，不是原完整 Transcript 或
+  Working 面板。本批没有部署、安装包或新页面截图验收；侧栏不会用写死入口
+  冒充三个业务组件已可用。定向正反验证和剩余缺口见
+  [Wren 原任务接入](data-query/fork/verify/native-integration.md)、
+  [Cells 原生操作](file-storage/fork/verify/native-identity.md)、
+  [Session 读取](core/verify/agent-session-query.md)及
+  [两端共源消费](core/verify/agent-session-ui.md)。全量门禁、实际业务与部署分别验收。
+
 - 2026-10-09 15:43 UTC：仅 Web 更新为固定
   `4c099a5f9b508f7df47b9fc923fe37ab7375aa70` 的共享 Profile 修复。
   实际容器 healthy，镜像与容器内 build-info 已读回核对；入口仍为
@@ -204,23 +232,6 @@
   动作、三组件真实 binding、自动同步、三人双 Agent 稳定协作和全部页面双语
   验收未完成，Windows/Mobile 包未更新，最近完整检查仍为退出 1。
   原始输出及发布边界见[本次发布回执](web-client/fork/verify/release-20261007-b911.md)。
-
-- 2026-10-07 组件读取与 Web 导航集成：组件连接管理面的资源读取授权、Cells
-  源读取与 WeKnora 导入的原生回执、原用量对账消费者已合入同一源码批。Web
-  恢复原 TanStack URL 导航，页面刷新按地址重新加载目录及对象，不持久化身份
-  或复制权限。两端共用的管理页面、已有动作与上批工作流恢复没有删减。
-  这不是已部署声明：三组件真实 binding、跨组件导入及 OpenMeter 终态仍需
-  现场验收；自动 Connector 不包含在本次单文件读取交付中。结果及明确跳过项
-  见[恢复检查点](core/verify/buzz-restoration-checkpoint.md)。
-
-- 2026-10-07 后续源码集成：原工作流策略审批步骤与 Cells→WeKnora 单文件
-  读取导入合批，保留已推送的 SERVICE 资源授权及容量等待修复。四侧重新生成、
-  同步和历史契约兼容检查通过；TS 37、Dart 32、Rust 32 项往返及 Go 契约包
-  通过。源码集成不代表部署：读取批次终态/用量收敛、自动同步和三组件完整
-  binding 仍未闭合，未注册未完成入口。完整工作流七动作、三人双 Agent 稳定
-  协作、全页面中英及 Windows/Mobile 验收仍未交付。实际失败、恢复与证据边界
-  见[本批记录](core/verify/buzz-restoration-checkpoint.md)。线上版本仍为下述
-  `46fcd1a68b92962c37b7ac8eb37fb3411f223d7b`，不能用本批源码替代安装包或线上验收。
 
 - 2026-10-07 01:38 UTC：固定源码 `46fcd1a68b92962c37b7ac8eb37fb3411f223d7b`
   的 Core、Worker、Web 已集中构建、推送镜像并实际部署；Core health 200、Web
@@ -1895,13 +1906,3 @@ AgentDefinition 与 Tenant 删除公开入口仍关闭；AgentVersion、Installa
 Core 原打包遗漏编译期实际消费的 `contracts/api/action_submission.schema.json`：现有 `.dockerignore`、`core/Dockerfile` 和 `tools/release.sh` 已补齐同一文件的上下文、COPY 与归档输入，不修改合同正文或治理行为。Runtime 五项配置仍走原 `start-core.sh`，全缺省关闭、半份和畸形拒绝；没有生成默认 profile 或宣称 Installation ACTIVE。四步影响结论及原失败见 [Agent 记录](core/verify/agent-definition.md)。
 
 本次原库 50 条迁移、末条回退再前进、SQLx、44 枚举约束和原范围验证通过；实际部署 `.env` 预检仍 SKIP，三项显式演练 ignored，未安装 gitleaks。Win11 unsigned 包仍未安装运行或业务验收，Mobile 签名仍阻断。本回执是私有候选检查，不是 release、提交、部署或业务验收；本节追加后仅运行原文档快路径，不重复 full。
-
-### 2026-10-07 共享页面恢复批状态
-
-Workflows 的 reaction 动作、原版页面标题与刷新布局、Agent 页面布局和审计
-动作双语文案已进入集成批；Web/Desktop 使用同一份共享 TypeScript，Mobile
-文案仍由同源目录生成。当前线上不是该批，不将源码检查通过当作页面已发布。
-联合契约、兼容和共享页面结果、故意破坏检查对象后的失败及还原结果，见
-[恢复检查点](core/verify/buzz-restoration-checkpoint.md)。最近一次完整检查仍
-退出 1，三人双 Agent 稳定协作、组件真实联调、Win11/Mobile 与全部页面双语
-视觉验收未完成。访问时以已部署版本为准，不用历史章节推断当前功能完成度。

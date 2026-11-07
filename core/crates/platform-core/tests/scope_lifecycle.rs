@@ -197,23 +197,7 @@ async fn teardown(
         );
     }
     let retired = common::retire_relay_community(e, pool, tenant).await;
-    for sql in [
-        "delete from projection.workspace_buzz_binding where workspace_id in
-             (select id from identity.workspace where tenant_id = $1)",
-        "delete from projection.task_projection where workflow_id in
-             (select workflow_id from projection.workflow_ref where tenant_id = $1)",
-        "delete from projection.workflow_ref where tenant_id = $1",
-        "delete from admission.action_execution where tenant_id = $1",
-        "delete from projection.tenant_buzz_binding where tenant_id = $1",
-        "delete from identity.buzz_identity_binding where tenant_id = $1",
-        "delete from identity.workspace where tenant_id = $1",
-        "delete from identity.principal where tenant_id = $1",
-        "delete from identity.tenant where id = $1",
-    ] {
-        if let Err(e) = sqlx::query(sql).bind(tenant).execute(pool).await {
-            eprintln!("夹具清理失败：{sql}\n  {e}");
-        }
-    }
+    common::purge_tenant_rows(pool, tenant).await;
     if let Err(e) = sqlx::query("delete from identity.principal where id = $1")
         .bind(initiator)
         .execute(pool)

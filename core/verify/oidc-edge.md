@@ -153,6 +153,38 @@ set-cookie: agw_oidc_t_ee32d8ac206f2fbc.<事务id>=<redacted>; HttpOnly; SameSit
 
 结论：此前记录的“同站跨源页面可触发不读 JSON 的 POST”在网关层关闭；本源浏览器请求照常（Web 走查另行复验）。
 
+## 接手复验：BFF 注销入口的三类来源拒绝（2026-09-30）
+
+运行网关镜像为 `sha256:6b8a47a36ab1d090fb9b1924e8e946dafb45b937f02507c36b2bf2e493d746be`；
+只读核对容器挂载配置，浏览器两条 route 的 `csrf` 均存在。由当前部署的
+`BOOTSTRAP_USER` 经 IdP 登录，不新增用户或 Tenant；口令和 cookie 仅在内存使用，
+没有打印、入库或写进证据文件。本源 `GET /api/v1/session` 为 200。
+
+携带该浏览器取得的真实 cookie，用 Node HTTP 向部署的浏览器网关端口发送三次
+`POST /api/v1/logout`，Host、Origin 和端口均从当前部署配置取得，不直连 BFF、
+不自报身份 header。每次请求后通过只读 SQL 查询原 `platformSessionId`，没有以
+再次 GET 新建会话来代替查证：
+
+| 来源头 | HTTP 与正文 | 原会话状态 |
+|---|---|---|
+| 同站其他子域 Origin、`Sec-Fetch-Site: same-site` | 403 `CSRF validation failed` | ACTIVE |
+| 另一来源 Origin、`Sec-Fetch-Site: cross-site` | 403 `CSRF validation failed` | ACTIVE |
+| 错误 Origin，不带 `Sec-Fetch-Site` | 403 `CSRF validation failed` | ACTIVE |
+
+原会话为 `2003242a-db6a-4895-a300-3569dffc45b1`，三次拒绝及最终查询均为 ACTIVE；
+内联诊断退出 0。正向注销已有同日当前 Web 走查的 REVOKED 证明，见
+`web-client/fork/verify/web-surface.md`「完整源码树上的接手浏览器复验」。
+
+先前用 Playwright `route.continue` 改来源头的尝试不计作负向证据：它返回 200 并
+撤销了种子用户当时的会话。随后在无有效动作正文的 `/api/v1/actions` 上只读
+观察 CDP 网络头，实际 Origin 仍是 PUBLIC_ORIGIN、响应为 422，证明请求改头
+未生效；不能把该工具用法错误写成产品的 CSRF 缺陷。种子用户重新登录后的
+真实 cookie 用于上表精确 HTTP 核验，不覆盖其它主体的会话或权限。
+
+未执行媒体与撤回的有效对象负向核验：当前种子主体没有现有 Workspace，
+`projection.approval_projection` 实际为 0 行。没有为补证新建夹具，也没有用
+不存在的对象声称业务入口已验收。`V-SCN-85` 仍不整体关闭。
+
 ## 2026-10-12 原 IdP 引导消费已校验 issuer 地址
 
 本批基于 `c1011eb611c448648094cea8d234dc11f7fe5c64`，落实 DD-02、

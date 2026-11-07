@@ -8,12 +8,10 @@ import 'package:client_kit/shared/platform/platform_text.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/modal_presentation.dart';
 
-String appearanceModeLabel(ThemeMode mode, {String? locale}) =>
-    platformText(switch (mode) {
-      ThemeMode.light => PlatformMessageKey.platformThemeModeLight,
-      ThemeMode.dark => PlatformMessageKey.platformThemeModeDark,
-      ThemeMode.system => PlatformMessageKey.platformThemeModeSystem,
-    }, locale: locale);
+String appearanceModeLabel(ThemeMode mode, {String? locale}) => platformText(
+  platformThemeModeKey(PlatformThemeMode.values.byName(mode.name)),
+  locale: locale,
+);
 
 String accentColorLabel(int index, {String? locale}) =>
     platformText(switch (accentColors[index].name) {

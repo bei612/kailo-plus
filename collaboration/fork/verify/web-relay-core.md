@@ -10,7 +10,8 @@ NIP-42/NIP-98/NIP-44，也不提交 raw signed event 或任意 Relay filter。
 ## 顺序是固定的
 
 1. 以网关投影的 issuer/subject 重新解析身份并取 active PlatformSession；
-2. Workspace 必须 `ACTIVE`，且该 HUMAN 有 active WorkspaceMembership；
+2. Workspace 与 Tenant 必须 `ACTIVE`，且该 HUMAN 满足 `03` 的 Workspace scope：
+   active WorkspaceMembership 或 fresh 管理资格；两侧 Buzz binding 必须 ACTIVE；
 3. 以该 HUMAN 的 `BuzzIdentityBinding` 代签发布。
 
 反过来做——先签名再查 scope——就会在 Relay 上留下一条本不该存在的事件，
@@ -76,7 +77,7 @@ Workspace → 出 Tenant」。原先那个顺序现实里不会发生，拿它�
 「看不见」和「不存在」在对账时是两件事。
 
 `msg:` 形式不绑定具体 Channel：它指向一条事件，而该事件所属的 Channel 由 Relay
-决定。可见性因此退到「该 HUMAN 至少有一个 active WorkspaceMembership」。更细的
+决定。可见性因此退到「该 HUMAN 至少有一个经共用 scope guard 准入的 ACTIVE Workspace」。更细的
 判定要按 event 反查 Channel，那是 stream 面闭合之后才有的能力——这里不写一个
 恒为真的检查冒充它。
 
@@ -102,7 +103,11 @@ Community 的绑定同样靠 Host 头：Relay 在 WS 升级请求上按 Host 绑
 | generation 对不上 | 重新取 snapshot，而不是从猜测的位置接着读；且服务端给出自己的 generation，不回显调用方的 |
 | 撤权后开流 | `403`，流建不起来 |
 
-`generation` 由 principal + channel + WorkspaceMembership 版本三者的摘要构成。
+`generation` 由 principal + channel + 真实准入依据及其 Core 版本的摘要构成。
+成员路径使用真实 WorkspaceMembership ID/version；从未加入的管理者使用
+Workspace version；已有非 ACTIVE 成员关系的管理者还包含真实成员 ID/version。
+管理资格每次请求与 stream 再准入均 fresh 检查，不捏造 membership version，
+也不把全局 SpiceDB revision 当作稳定 generation。
 放 principal 进去是必要的：同一个 Channel 上不同人看到的 scope 一样，但撤权只
 影响其中一个，而撤权必须让那个人的旧 generation 失效。重新授权创建新 membership
 version（`.design/10` §4），因此旧 generation 必然对不上——客户端拿不着一条本不该
@@ -110,6 +115,15 @@ version（`.design/10` §4），因此旧 generation 必然对不上——客户
 
 用摘要而不是原样拼接：generation 会出现在 URL 与客户端存储里，原样拼会把
 principal 与 channel 的内部 ID 散出去。
+
+2026-09-30 的这项源码修复复用 `web_transport::workspace_admissions`，由列表、
+Relay transport、用户状态和 stream 共用。同 Tenant 的真实 HUMAN、HumanIdentity、
+TenantMembership、PlatformSession 均须 ACTIVE 且会话未过期；ACTIVE 成员路径不依赖
+SpiceDB，非成员需完整 fresh workspace.manage。已有非 ACTIVE 成员行时还需
+fresh tenant.manage，残留 workspace admin 不能绕过撤权；未知枚举或不完整授权结果
+拒绝，不能返回貌似完整的部分列表。管理资格不伪造 Relay roster 或代签身份。
+此改动尚未部署，以上历史实测不证明本次 manage-only 官方登录及 NIP-42 链路已通过；
+旧 generation 下次开流会重取 snapshot，尚未在运行环境复验该变化。
 
 `live` 帧是历史与增量的分界（NIP-01 的 EOSE）。客户端据此知道「追平了」，在此
 之前不必把每条事件都当成新消息去提示。

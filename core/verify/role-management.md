@@ -94,6 +94,28 @@
   再次受限构建成功，`dist/buzz-desktop/Buzz_0.5.23_amd64.deb` 的实际 SHA-256 为
   `c2349b05821540e12441b08d4e5a27bd449162efee4cc69e6f6b343905ee9b75`。
 
+## 接手复验：多角色审批计数（2026-09-30）
+
+在 `0ec5e552` 之后的未提交工作树，执行已有核验：
+
+```text
+cd apps/worker
+go test ./workflows -run '^TestMultiRoleRequirementsCountDistinctApprovers$' -count=1 -v
+--- PASS: TestMultiRoleRequirementsCountDistinctApprovers (0.03s)
+PASS
+ok apps/worker/workflows 0.042s
+```
+
+命令在 CPU 200%、内存 2 GiB 的 cgroup 中运行。该用例使用 Temporal SDK 的
+Workflow 单元环境，验证同一人满足多个角色仍只计一名审批人、换 Update ID 不会重复计数、
+只满足另一角色的第二人不能补足 Tenant admin 要求、第二位不同的 Tenant admin
+批准后才进入 APPROVED，最后为 CONSUMED 且保留三个不同决定。
+它补齐 `V-SCN-37` 的已有 Worker 单元结果记录，不证明生产角色分配或真实 Worker
+升级后的在途执行，也不代表整个场景关闭。
+
+同日 `core/verify/run-integration.sh` 在真实 Core、SpiceDB、Temporal 拓扑中退出 0，
+`tests/role_management.rs` 为 1/1（61.81 秒）；该结果与上述 SDK 单元证据分别记录。
+
 ## 已知边界
 
 - 引导需要部署者进入 Core 容器；平台内没有 Tenant 创建入口（`.design` 未定义发起方）。

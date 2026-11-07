@@ -1,5 +1,5 @@
 import { act, useState } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ThemeSettingsControls } from "../src/react/theme-settings-controls";
 import { AppearanceSettings } from "../src/react/appearance-settings";
 import { GlassBackgroundSetting } from "../src/react/glass-background-setting";
@@ -17,6 +17,10 @@ import { click, render } from "./render";
 
 let dark = false;
 let listeners: Set<(event: MediaQueryListEvent) => void>;
+// Prepare the real default theme module before budgeting the UI interaction.
+// No fake palette or loading result: useAppearance still loads and applies it.
+// This suite does not measure cold module loading or production startup time.
+beforeAll(async () => { await themes.loadThemeData("buzz"); });
 beforeEach(() => {
   localStorage.clear();
   document.documentElement.removeAttribute("style");

@@ -198,8 +198,10 @@ GitNexus 刷新索引后，`governance_reconcile::pass` 的 upstream impact 为 
 `tenant_bootstrap::ACTION_KEY` 的图风险为 UNKNOWN，文本检索确认它只被该模块的
 引导记录与审计引用，故仅将同一常量开放给对账筛选。变更面是 Core 的四个选批查询、
 两个只承载轮转时间的可空数据库列与一条部署引导逾期度量；没有新 API、Workflow、
-契约字段或三端入口。旧 Core 忽略新增列，可在前进迁移后继续运行；回退迁移只在
-新 Core 已停止或回退到旧版后执行，否则新 Core 查询将因缺列失败并停止本轮对账。
+契约字段或三端入口。本节旧 Core 兼容结论仅适用于
+`20260928120000_governance_reconcile_fairness` 的两个可空轮转列：旧 Core 忽略新增列，
+可在该前进迁移后继续运行。回退该迁移只在新 Core 已停止或回退到旧版后执行，否则
+新 Core 查询将因缺列失败并停止本轮对账；此结论不适用于 DD-113/115 的后续迁移。
 
 原选批按不可变的最老 `created_at`/`updated_at` 取固定 `LIMIT`：持续返回
 `PRECONDITION` 或 `PENDING` 的老记录可让其他 Tenant 的健康动作永久得不到机会。
@@ -228,6 +230,97 @@ GitNexus 刷新索引后，`governance_reconcile::pass` 的 upstream impact 为 
 `cargo test -p kailo-core --no-run` 在 12 GiB/400% cgroup 中退出码 0。
 这些证据覆盖 SQL 轮转和编译，不代表真实 Core/Temporal/OpenBao 故障链已闭合；
 本文件前述孤儿版本的受治理清理仍是生产阻断。
+
+## V-SCN-70 孤儿版本终结的复核与两处缺陷修正（2026-09-29）
+
+权威为 `DD-86`、`.design/03` 的 `ServerKeyProvisionIntent` 状态说明与 `V-SCN-70`。设计把
+孤儿版本终结定义为**原 ActionExecution 的对账收敛**：在原动作、Principal 与意图锁下持久
+FENCED，以 KV v2 `cas=0` 争取版本 1、只销毁版本 1，metadata 同时查证 `current_version=1`
+与版本 1 `destroyed=true` 后，同事务记 DESTROYED 并在原 operation 追加对账审计。设计没有
+为此另设 ActionDefinition 或用户入口；准入即原动作的既有准入，本节不新增动作。
+
+上文「没有经过治理且经 OpenBao metadata 查证的孤儿版本销毁入口」写于该收敛实现之前。
+实现（`server_keys::fence_and_destroy_provision_intent`，两条建钥入口共用，经
+`governance_reconcile` 周期驱动；OpenBao 侧为 `secret_store` 的
+`destroy_unreferenced_version_one`，与 `DD-85` 归位副本销毁同一函数）已存在，复核发现两处
+缺陷，均会让意图永远停在非终态：
+
+- 终态审计的分类只取自 `catalog.action_definition` 内连接。`identity.key_provision` 没有
+  ActionDefinition（入口自声明 `client_keys::AUDIT_CLASS`，与 `record` 一致），部署引导的
+  成员动作同样没有；OpenBao 版本已销毁，DESTROYED 事务却必然失败，意图永久 FENCED。现按
+  `governance::AuditClass` 的既有约定取分类：有定义取定义，托管身份取
+  `client_keys::AUDIT_CLASS`，成员入口取对应成员关系的 `AuditClass::core`；分类不明时在
+  fence 之前即拒绝（不 fence、不销毁，意图开放由 `platform.server_key_provision.overdue`
+  告警）。
+- 直接建钥意图的对账没有「另一 binding 胜出」判据（成员初建意图的对账有）：此人已有另一条
+  非 REVOKED 的 SERVER 身份时，重驱只得到 409 并返回 PENDING，永不 fence。现与
+  `membership_projection::reconcile_member_key_intent` 同一判据先行判定；引用本意图 locator
+  却未终结的 binding 属不一致，保持开放并告警。
+
+另在销毁前加入与归位副本销毁相同的 audit device 前置（`service_api::audit_gate`，`DD-70`）；
+审计不可用只暂缓，意图保持 FENCED。
+
+终结与失败：每轮对账重入同一函数；metadata 查证是唯一终结条件，结果不明、版本大于 1、
+仍被 binding 引用、Tenant `DELETING/DELETED`、OpenBao 拒绝均保持 FENCED/开放，超出准入对账
+上界由 overdue 度量与日志告警，不换 locator、不追加版本、不删意图。
+
+核验（受限 cgroup，8–10 GiB、400%）：`cargo fmt --all -- --check`、
+`SQLX_OFFLINE=true cargo clippy --workspace --all-targets -- -D warnings`、
+`cargo test --workspace --no-run` 均退出 0；`cargo test --workspace --bins` 25 通过、1 忽略。
+新增单元检查 `server_keys::tests::orphan_destroy_audit_uses_entry_class_without_definition`
+与 `orphan_destroy_audit_refuses_unknown_entry` 2/2；把无定义入口的分类分支删去后前者失败，
+还原后通过。无新迁移，无新增 `sqlx::query!` 宏。
+
+新增真实服务用例 `tests/server_keys.rs::orphan_provision_intents_are_fenced_destroyed_and_audited`
+以持久事实构造「写入意图已冻结、写入已落盘或在途」，交给 Core 既有治理对账器收敛：
+Tenant 暂停、成员撤权、竞争（无写入时 fence 的 CAS 先占版本 1，迟到的原写入 `cas=0`
+须得 400）、另一 binding 胜出四类均须 DESTROYED、metadata 查证、原动作
+`ABORTED/TARGET_STATE_CONFLICT`、原 operation 恰一条 `RECONCILIATION/DESTROYED` 审计且胜出身份
+不变；反例为钉定 locator 已被 binding 引用（两轮对账后不 fence、版本 1 未销毁）与 metadata
+版本 2（保持 FENCED、两版本均未销毁、原动作仍 UNKNOWN）。本节提交时该用例尚未在集成拓扑
+运行，因此本节不构成 `V-SCN-70` 的终态证据，上文的生产阻断结论维持到该用例在新 Core
+镜像上通过为止。预期的破坏核验：去掉直接意图的 binding 胜出判据时「binding-won」超时；
+恢复旧的内连接分类时四类收敛全部超时。
+
+## 接手复验：平台托管身份与孤儿收敛（2026-09-30）
+
+核对基线为 `0ec5e552` 之后接手的未提交工作树，不是该提交原样的发布产物。本轮没有新增
+身份动作、夹具或状态机；复验的是上一节已经实现的 `DD-86`、`DD-113`、`DD-115`。
+`core/verify/run-integration.sh` 在 8 GiB、400% CPU 的 cgroup 中执行，Cargo 缓存位于
+`/volumes/data/kailo/core-target-debug`。日志为
+`/volumes/data/kailo/tmp/codex-integration-20260930.log`。
+
+真实本地拓扑中的 `tests/server_keys.rs` 为 **7 passed、0 failed、0 ignored（74.70 秒）**：
+
+- `orphan_provision_intents_are_fenced_destroyed_and_audited`：暂停、撤权、CAS 竞争、另一
+  binding 胜出四类收敛，以及仍被引用和版本 2 两个不销毁反例通过；原动作、metadata 与
+  原 operation 的审计均按用例查证。上一节「尚未在集成拓扑运行」只代表其记录时点。
+- `human_revoke_lost_responses_converge_by_metadata` 与
+  `server_key_is_revoked_then_reprovisioned`：软删除、销毁回应丢失后的查证和旧身份退役后
+  新身份建立通过；回应丢失请求的发起边界见 `secret-ref-rehome.md` 的代理说明。
+- `membership_revocation_retires_server_keys`：成员撤权后的平台自持私钥退役通过。
+- `control_orphan_writes_are_reused_or_destroyed`、
+  `operator_orphan_write_is_destroyed_by_reconciler`、
+  `unrecorded_operator_locators_are_backfilled_and_retired`：CONTROL 的续用或销毁、
+  OPERATOR 截止判据、只读 LIST 补建及退役通过。
+
+同轮 `tests/native_client.rs` 1/1、`membership_projection.rs` 1/1、
+`membership_lifecycle.rs` 1/1、`identity_rerun.rs` 2/2 通过。这些是 Core/Relay 真实服务链的
+证据，不替代 Desktop/Mobile 安装包的注销、断线恢复或撤权后发送观察。
+
+本次正向复验补齐了 `V-SCN-70` 的真实服务终态证据；接手后尚未重新运行本增量的五项
+破坏核验，不据此宣称整个场景或 Stage 已关闭。全套脚本退出 **0**，Rust/Go 检查均通过，
+35 个本轮测试 Tenant namespace 已离线清理，运行前后 namespace 集合相等；Core 重新
+投递凭据并恢复后独立检查 `/healthz` 为 **HTTP 200**。恢复镜像为本地构建
+`sha256:1685e9da1d2f847a5da87a48c1dbcee4b3a57d1a7a0cbda65ebb5a7cf2e0712a`，
+没有由此更新发布 provenance 或宣称已发布。续跑、Relay 停机及独立空库引导的三个
+显式 ignored 用例没有在此命令中运行。
+
+DD-113/115 的 `20260930120000_platform_key_retirement` 与
+`20260930130000_intent_action_scope` 对旧 writer 的不兼容结论保持其原实验范围；
+2026-09-30 用户明确当前只交付全新开发环境，没有线上旧版或历史数据保留要求。
+按 `06-工程基线规范.md` §5，旧 writer 兼容无适用对象，不再作为当前开发或发布阻断。
+当前身份链仍须用本次源码、空白初始化后的数据库和实际发布产物验证，历史 PASS 不替代它。
 
 ## 门禁
 

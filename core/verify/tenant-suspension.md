@@ -1,6 +1,6 @@
 # 业务 Tenant 暂停与恢复核验
 
-对应 `DD-96`、`.design/06` §7.2 第 1–2 步、`.design/03` §2（PlatformSession、RelayOperatorIdentity）与 §6（`TENANT_ONLY` 的唯一例外）、`.design/10` §5、`SF-BUZ-43`、`SS-BUZ-OPERATOR`、`V-SCN-31` 的暂停部分。Tenant delete、TenantLifecycleSnapshot 与 `access_mode=LIFECYCLE_RESTRICTED` 受限会话随 Stage 3 交付，本记录不涉及，代码中也不预建。
+对应 `DD-96`、`.design/06` §7.2 第 1–2 步、`.design/03` §2（PlatformSession、RelayOperatorIdentity）与 §6（`TENANT_ONLY` 的唯一例外）、`.design/10` §5、`SF-BUZ-43`、`SS-BUZ-OPERATOR`、`V-SCN-31` 的暂停部分。本记录不声明 Stage 3 删除验收；TenantLifecycleSnapshot 与受限会话的当前实现及关闭入口见 [Tenant 删除实现记录](tenant-deletion.md)。
 
 ## 动作与准入
 

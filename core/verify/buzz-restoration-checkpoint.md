@@ -83,6 +83,49 @@ BFF/Relay、检查与原回执不冒作视觉模块。原样呈现/共享迁移�
 `core/verify/message-author-label.md`；旧失败必须保留，新版截图要另存并逐张打开。
 本段未构建、部署、发送消息、改权限或更新三端安装包，未改变完整 full 门禁。
 
+## 2026-10-12 01:38 UTC 现网 Inbox 筛选／完整线程边界
+
+固定原版仍是 Buzz `779af8886caae1317b4de962082429867ab61503`。复用已有完整
+分类清单与正常 SSO 会话，不重扫全仓、不构建或部署。原会话过期后正常跳转 IdP，
+沿既有受控匿名 FD 登录成功；没有注入 Cookie 或回显凭据。实际
+`/app/platform-build-info.json` 返回 200，buildId 仍为
+`sha256:1fe5c137da245352680e90626a67aef906cd4bee1bb9b7964b2c080964c0653e`，
+即 9d718 部署，不是当前分享／Projects／提醒源码的新版本。
+
+官方 `desktop/src/features/home/ui/InboxFilterMenu.tsx::InboxFilterMenu` 有八类。
+现网实际菜单只有全部、提及、线程、Agent、草稿；项目／提醒已有后续源码但未部署，
+needs_action 仍缺 46010／40007 的真实生产接缝。原版没有独立私聊筛选，不能把
+本轮最初拟检查的“私聊筛选”误记缺项。实际提及为空，线程筛选返回 13 个行入口；
+没有为制造验收数据发送消息或创建项目。
+
+点可见消息正文 `KAILO-46-20261007-0154`，右侧从原选中线程切到该消息的根与回复；
+再点原 `desktop/src/features/home/ui/InboxDetailPane.tsx::InboxDetailPane`
+的完整线程入口，现网 URL 定位 messageId `ceda643f9a5a892d4bd29869e8bbf35eb68b9f090775aa31a55fe9f5f78a9a75`、
+threadRootId `535a813b6d91817ccf7f8a6a7e61a5dffd7c3c567caa306e805ac21a0fc3a939`。
+但同次实际出现 33 个 HTTP 429：author-profile 30、STREAM 父查询 2、channel 1。
+因此导航引用和可见内容成立，不代表全部 fresh 读取成功；不能用缓存仍可见把
+429 抹成通过，也未提高预算或循环重试。原 console L4-L36 位于
+`/volumes/data/kailo/tmp/web-profile-frame.QTuuqK/.playwright-cli/console-2026-10-11T21-15-45-061Z.log`。
+
+本轮图片仍在 `/volumes/data/kailo/tmp/buzz-official-live-20261011.dPGaZF`，全部
+实际打开复核：`16-inbox-live-filter-menu.png`、`19-inbox-selected-real-message.png`、
+`20-inbox-full-selected-thread.png`。19 显示真实选中消息根与回复，20 显示原完整线程；
+不把这些当新版源码、Windows 或 Mobile 验收。保留两张中间图 17/18，但它们
+是在一次 overlay button 自动点击尚未结束时取得，不作为新消息切换证据。
+该自动点击最终报告 30 秒 TimeoutError（CLI 外层 exit 0 不代表操作成功），
+上层正文拦截指针；随后用户可见正文实际点击成功，不能据这次定位器失败宣称
+整行不可点击。首次 build-info 脚本还出现 URL 未定义，改用浏览器 fetch 后才
+取得上面的 200；未把脚本错误当服务失败。
+
+既有全量四类边界随实际源码收窄，而非重写旧统计：Tasks/Reviews 列表、精确
+Issue/PR 详情、这两类分享打开与授权回读已入库，不能再全称缺失；完整
+`ProjectDetailChrome`／`WorkspaceTabs`／`ProjectChannelHome`、Git／CommitDetail、
+selection→Agent、Activity／Repositories 分类、updated 排序、工作项写操作仍
+沿原模块保留缺项。项目正文／来源／分享与提醒源码未部署的部分仍没有新版
+实拍证据。旧 562156a 的 3281 项是固定证明队列，不是本轮确认缺失的功能数量。
+本轮只补实际操作证据，没有改产品源码或公共暂存；429 根因及当前已提交 Core
+是否覆盖该问题需另按对应输入核对，不能用本轮旧部署反推新源码失败。
+
 ## 2026-10-12 00:44 UTC 现网频道搜索快捷键与源码边界
 
 本段对应固定官方 Buzz `779af8886caae1317b4de962082429867ab61503`；源码回读
@@ -1582,185 +1625,6 @@ generic；后续实际 DOM 可进入任务，不为该探针错误修改导航�
 history 或新部署的端到端验收。未新建镜像、未修改线上旧 UNKNOWN，没有新的
 `check.sh --full` 退出 0。
 
-### 审批步骤与独立组件读取导入合批（2026-10-07）
-
-本批基准为 `f2afb73c86e263d6a0e3d4c027dce8b26af3adb4`，保留已入库的
-SERVICE 资源授权及容量等待修正；合并审批候选
-`ff14c0961914055412b1da5248a288e708ac2871` 与读取导入候选
-`b2d1dafe140b2ae892447c35f8193cf7503efac1`，不夹带下一批授权页面、表情
-工作流动作或读取终态收敛实现。权威、四步影响、上游 commit/path/symbol 及
-各模块正反验证分别见 `web-client/fork/verify/web-surface.md` 的审批步骤记录
-与 `knowledge/adapter/verify/native-read.md` 的 Receiver read batch 记录。
-
-共享文件通过私有 index 合并，原正式工作树及其他队友未提交内容未覆盖。
-四侧往返文件保留 SERVICE 权限、审批步骤、receiver read grant 三组消费者；
-生成代码没有将文本合并成功当成正确性证明，而是从最终联合 schema 使用
-原 `tools/gen.sh` 重新生成。沿原生成器的 Mobile 文案仍与共享 TypeScript
-同源，没有新增一份 Web 或 Desktop 页面实现。
-
-既有 4 CPU/8 GiB SDK、Data 缓存与 Cargo `-j16` 下实际执行：
-
-- 原四侧生成及 `gen.sh --check` 均退出 0；中英文 Mobile 文案同步检查通过。
-- TypeScript 类型检查及往返 37 项通过，Dart 往返 32 项通过，Go 原契约包
-  退出 0，Rust 往返 32 项通过；联合命令 session 37397 最终退出 0。
-- 原 `tools/check.sh` 的 contract 子步骤实际退出 0：四侧生成同步，270 份
-  schema 相对 `contracts-v0.1.0` 无破坏性变更，匹配 3 份历史 schema。
-  该旧 tag 的覆盖很窄，不将此结果扩称全部历史业务兼容或生产验收。
-- 第一次独立容器 contract 子步骤的生成同步退出失败，历史兼容部分通过；
-  缺少生成器诊断，不能据此断言业务生成代码有错。第二次按照原检查入口
-  投递可写 HOME/XDG/Data 缓存，启动前回读 cgroup 4 CPU/8 GiB 与运行 UID，
-  同一 schema 与生成字节下整个子步骤通过，session 57818 最终退出 0。
-
-原始联合日志在
-`/volumes/data/kailo/tmp/combined-import-approval-20261007.ULg0qp/`：
-`combined-contracts.log`、`combined-compatibility.log` 与
-`combined-compatibility-restored.log`。SDK 仅做原工具格式化；没有修改权限
-或产品代码来迁就执行环境。实现后的变异与逐字还原证据沿上述两个模块记录。
-
-本批是源码集成，不是发布或入口开放。新 SERVICE_READ 的终态、用量和过期
-对账消费者尚未闭合，组件 binding 未注册，不将令牌发放当成读取/导入成功。
-自动 Connector、完整工作流七动作、三人双 Agent 稳定协作、Windows/Mobile
-及全页面双语视觉验收仍未完成；本批未构建镜像或部署，完整检查尚无新退出 0。
-线上仍为固定 `46fcd1a68b92962c37b7ac8eb37fb3411f223d7b` 的 Core/Worker/Web。
-正常浏览器会话刷新后频道再次显示已同步，实际截图并查看
-`168-live-46-channel-current.png`，位于原 Playwright 目录；不把该频道截图
-当成所有页面或双端已与上游等效。
-
-该候选 tree `216e3793ef2e26c17ea40b43fdffdb98709b567c` 随后实际运行一次
-原 `tools/check.sh --full`，session 83127 最终退出 **1**，原始输出保存于
-`/volumes/data/kailo/tmp/tmp.yhqa10gcNh.check.log`。Core 主程序 296 项通过、
-38 项隔离数据库用例 ignored；其余 Cargo、Go、Dart、Workflow replay 通过。
-未投递 DATABASE_URL，实际迁移演练明确 SKIP；不将迁移文件成对称作数据库演练。
-完整入口使用只读正式 Git index，报告 242 份 schema/3 历史匹配；上面的独立
-contract 子步骤使用私有候选 index，报告 270 份/3 历史匹配，两者枚举范围
-不同，不将完整入口的计数当成私有候选新增 schema 的覆盖证明。
-
-本次失败中的源码静态项原因为测试模块后仍声明函数、已全字段初始化仍使用
-Default，以及两个文件格式。只移动 `list_own_audit` 声明位置、删除测试中的
-冗余初始化并格式化，不修改鉴权、SQL、Workflow、状态或错误分类。
-修正后 SDK 内 workspace/all-targets `cargo clippy -- -D warnings` 退出 0
-（session 4035），四个涉及文件的 `rustfmt --check` 退出 0。
-
-共享 TS 原命令诊断为 549/551 通过，两项主题检查失败。
-对应恢复的原样源码为 Buzz `779af8886caae1317b4de962082429867ab61503`：
-`desktop/src/features/settings/ui/ProfileSettingsCard.tsx::ProfileSettingsCard`、
-`desktop/src/features/settings/ui/AppearanceSettingsControls.tsx::ThreadLayoutDiagram`、
-`desktop/src/features/workflows/ui/WorkflowDurationField.tsx::WorkflowDurationField`。
-原检查误把属性过渡、头像内容颜色、宿主变量 SVG 与进度宽度当作第二主题，
-且漏登记两端已有的 sidebar-border 映射。修正原检查的精确表达式识别，
-没有删改产品样式、动画或开设通用颜色豁免；同时要求两个宿主的实际映射。
-SDK 单独把头像颜色改为字面量、将 Web sidebar-border 改指另一变量，原两项
-检查实际都失败（session 95690，exit 1）；还原后两文件与固定 tree 逐字 cmp 0，
-原 pages 文件全部 250 项通过（session 90981，exit 0）。
-原始诊断和正反结果位于同一合批日志目录，不覆盖完整检查的失败记录。
-
-完整检查其余失败是尚未重新发布的 Web/Desktop/Cells/WeKnora 产物源码摘要
-及追溯摘要不一致，Projects 缺发布摘要；保留真实阻断，不改摘要冒充新构建。
-本批没有发布构建或部署，没有生产就绪声明。
-
-已部署 `46fcd1a68b92962c37b7ac8eb37fb3411f223d7b` 实际补拍并查看
-`169-live-46-tasks.png` 至 `175-live-46-agents.png`：首次任务切换截图仍是
-频道，复查 170 已正常显示任务；171 审批空态、172 审计、173 设备、174
-工作流、175 Agent 均为真实登录会话，不注入假数据或替代认证。
-174 仍有重复标题/刷新，175 仍有技术化说明及多个刷新；172 显示部分
-未识别动作，不能声称 i18n 或视觉细节完全恢复。这些照片只证明所拍页面，
-不证明全部页面、所有状态或 Windows 端同等体验。
-
-后续仅文档快路径 session 32367 在导出源码期间遇到 Data 可用空间不足，
-已向本次导出的 git/tar 子进程发送 TERM，未进入编译，不把该快路径算通过。
-既有完整检查的文档六项通过仍只对应 tree 216e3793；本段新增记录没有新的
-文档快路径成功回执。所有源码、原始失败与截图保留；没有清理共享缓存、
-数据库、镜像或其他任务目录。发布仍受上述真实失败与验收缺口约束。
-
-## 2026-10-07 工作流 reaction、共享页面与审计文案集成
-
-本批以 `e3a5b5b6eda9c13485c1bcf41fb9969f3fd8a4d1` 为底，合入真实
-Buzz reaction 执行链、Workflows 与 Agent 原版布局恢复。相应上游固定版本、
-路径、符号及实现后正反验证在 [Web 面记录](../../../web-client/fork/verify/web-surface.md)。
-没有恢复未经治理的执行器，没有新建 Web 页面主体或第二工作流权威。
-
-审计标签修复的四步结论：权威为既有动作 `conversation.hide`、
-`conversation.reopen`、`pulse.publish`、`identity.profile.publish`，不新增动作；
-Core 写入既有 wire key，共享 `ActionLabel` 读取同源双语词条，Web/Desktop
-及生成的 Dart 文案一致，旧数据无需迁移；只修正显示，不变更授权、派发、
-业务状态、额度和审计正文；空审计保持原空态，未知扩展仍用原未识别标签，
-不伪造成已知动作或成功，原 wire key 保留供核验。
-
-集成 tree `99fd668ddfee2a9ba59ae28650c1bc173beb175f` 的结果：
-
-- 四侧生成与平台文案生成退出 0；TypeScript 往返 38 项、Dart 33 项、Go
-  原契约包退出 0。联合命令首次在已通过 TS 后因错误相对目录退出 1，
-  改为 SDK 绝对目录后 Dart/Go 实际退出 0，没有改业务代码迁就环境。
-- 原 contract 子步骤退出 0，270 份 schema 与四侧生成同步，匹配 3 份历史
-  schema 无破坏性变化；旧 tag 覆盖窄，不扩大为全部历史业务兼容。
-- 共享源码和用例类型检查退出 0，原 pages 文件 255 项通过。首轮错误读取
-  SDK 邻接旧契约包导致类型失败；只修正此私有快照的依赖链接，原失败保留。
-- 审计标签实现后两语言 2 项通过。仅在 SDK 删去 `pulse.publish` 词条，
-  两项真实失败、退出 1；逐字还原后两项通过、退出 0。
-- reaction 的 Core 自动化 27 项、桥接 2 项、Rust 往返 1 项、clippy 与隔离库
-  迁移验证由其冻结候选执行；不能将独立候选结果冒充这棵联合树的全量运行。
-
-原始日志位于 `/volumes/data/kailo/tmp/workflow-reaction-integrated-20261007.8H6gmb/`，
-包括 `contracts.log`、`contracts-dart-go-restored.log`、`compatibility.log`、
-`shared-integrated.log`、`shared-integrated-restored.log`、`action-labels-negative.log`
-与 `action-labels-restored.log`。随后 Agent 页面增量干净三方合入为
-`16eebeace56b7c209255181c29112e32e7f71dc9`，未覆盖上述标签与 reaction。
-
-本批没有构建或部署。线上仍是 `46fcd1a68b92962c37b7ac8eb37fb3411f223d7b`。
-Playwright 真实会话已补拍并实际查看 `176-live-46-audit-action-label.png`、
-`177-live-46-audit-loaded.png`：首次导航主体仍为频道，再点审计后显示审计；
-可见旧版“发布动态”动作仍显示未识别。不能把本批源码验收记作线上视觉通过。
-完整检查最近一次仍退出 1，发布摘要与真实验收缺口保持原记录；不是生产收口。
-
-## 2026-10-07 组件读取管理、原生回执与 Web 导航合批
-
-相对 `c9d8370ee51b47629e27eb011f60cc0e4c9d5732`，固定联合源码树为
-`74084d6d385f83155efc143ede1f5f1e49df16a9`，53 文件 `+3119/-137`。
-SERVICE 资源授权管理、SOURCE/RECEIVER 原生读取回执及 Web URL 导航三批
-集中合并，保留上一批 reaction、原版页面与双语修正，不覆盖共享脏工作树。
-四侧往返检查的并行追加冲突保留两方用例，生成物由原 `tools/gen.sh` 对
-联合 schema 实际生成，不手写合成类型。
-
-四步影响结论：
-
-1. 权威为 DD-89 及既有 SERVICE ActionExecution、ApplicationBinding、
-   Resource、ExternalExecution 和 UsageEvent。业务内容留在两个独立服务；
-   Core 只保存来源、摘要、字节数、版本、回执与用量关联，没有第二数据库或账本。
-2. 原连接管理面列出实际来源/接收资源元数据，写入仍用既有 grant/revoke。
-   接收身份从 binding 推导，浏览器不指定 SERVICE 权威。Web/Desktop 共用页面；
-   Mobile 未增加组件宿主。新增回执 schema 与迁移是加法，旧 adapter 不会提交新
-   回执，不能把其行为称作新读取批次完成；回退拒绝删除已保留的原生证据。
-3. 源服务与接收服务各以自身 binding 客户端提交，Core 重核角色、scope 与冻结
-   binding。双方回执齐全且所需原 OpenMeter 事件已存储才记完成；接收 EE 引用
-   同一用量，不重复计费。UNKNOWN、过期、缺失和重复回调沿原对账，不重放导入。
-4. Web 原 TanStack 路由保存页面定位，不保存身份、权限或写意图。新鲜目录验证
-   URL 中的频道/私聊对象；明确失效对象不改跳默认租户或工作区。共享宿主在导航
-   时保持挂载；路由不存储或重放写意图，原 UNKNOWN 保护不改动。源码追溯和具体
-   反向验证见 [Web 面记录](../../../web-client/fork/verify/web-surface.md) 与
-   [原生读取记录](../../../knowledge/adapter/verify/native-read.md)。
-
-联合树原生成及 `--check` 退出 0，TS 往返 40 项、Dart 35 项通过；原 contract
-步骤退出 0，272 份 schema 与生成物同步，相对旧 tag 匹配 3 份历史 schema
-无破坏性变化。不扩大旧 tag 的兼容覆盖范围。
-原始日志位于 `/volumes/data/kailo/tmp/service-read-integrated-20261007.OnZQt8/`：
-`generate.log`、`contracts.log`、`compatibility.log`。
-
-同一固定联合树 Web 类型检查、导航/宿主/BFF 22 项和组件连接管理 19 项实际
-通过，退出 0，日志为原 SDK `message-edit.AGX058/union-74084-web-bindings.log`。
-Core 读取相关 14 项通过/3 ignored、安装权限 5 项通过/1 ignored、工作流 27 项
-通过/5 ignored、Rust 合同 35 项通过、平台 all-targets clippy 零警告、Go 原契约
-包退出 0。联合轮未重跑 ignored 数据库场景，不冒用先前独立 SQL 结果。
-原件为 `read-receipts-20261007/union-core-fixed-input.log` 与
-`union-permission-go.log`。首次投递误写协议文件路径后运行的旧输入检查、
-以及首次匹配零用例的权限过滤器，均不计入这些通过数字；纠正固定树输入并
-逐字核对、使用真实模块名后才取得以上结果。
-
-本批未构建或部署，线上仍是 `46fcd1a68b92962c37b7ac8eb37fb3411f223d7b`。
-没有把旧截图当作新路由上线验收。原生 WeKnora 新增 Go 消费者未在本批编译；
-Data 剩余空间不足时没有强行启动该大包链接，也没有清理共享缓存或其他任务。
-真实注册 binding、完整跨组件终态/计量、自动同步、三人双 Agent 稳定协作与
-Win11/Mobile、全页面中英文仍未验收，最近一次完整检查退出 1 的记录不变。
-
 ### 2026-10-07 固定 Buzz 全树差异清点（非逐项功能验收）
 
 本轮固定上游为 `779af8886caae1317b4de962082429867ab61503`，
@@ -1840,11 +1704,6 @@ SystemMessageAvatars.tsx、UserProfilePanelFields.tsx、UserProfilePanelSections
 这不是据此删除需求或修改源码的授权。本任务只追加证据，
 没有改功能、来源记录、构建/检查工具或声明全量门禁通过。
 未逐条分类的其余路径明确保留为未核实；完整差异生成成功不等于逐项 UI/行为验收。
-
-主线程随后按真实共享迁移与剩余缺项修正原 remove_paths 登记；同一原入口
-`python3 tools/upstream_manifest.py diff collaboration --check` 复跑退出 0，
-输出为同目录 `remove-check-restored.log`。只表示删除登记现已一致，不表示
-ProfileFields/Sections 等原功能已恢复；未修改产物摘要，未构建或部署。
 
 ### 2026-10-07：固定全树清单续核与原侧栏未读滚动共源恢复
 
@@ -2142,60 +2001,6 @@ Native **1 failed / 5 passed**，都退出 1；把 sidebar 恢复成忽略 msg/t
 | `desktop/src/features/sidebar/ui/CreateChannelFormFields.tsx::CreateChannelFormFields`、`CreateChannelFormFooter` | 缺失恢复：`roles.tsx::WorkspaceCreateForm` 与 `WorkspaceCreateFormFooter` 恢复原 Name、占位符、标签／输入结构、原 Button 和 HTML form 关联；不再用简化按钮或把提交区放在滚动正文中 |
 | `desktop/src/features/sidebar/lib/useCreateChannelForm.ts::useCreateChannelForm` | 共享迁移＋授权治理：`roles.tsx::useWorkspaceCreate` 恢复 fresh opening 重置、公开默认及预填光标；保留原不抢占表单内焦点的规则，宿主动画后聚焦使用已有 requestAnimationFrame；UNKNOWN 不重置命令 |
 | `desktop/src/shared/ui/chooser-dialog-content.tsx::ChooserDialogContent` | 共享迁移：复用原 header／scroll／footer 类；原 `description: _description` 未渲染说明，删除此前自行显示的介绍文字及无消费者词条 |
-
-### 2026-10-08：原 Inbox 虚拟列表实际消费者恢复与 Native 共源
-
-从既有 3307 路径全树清单续核，固定 Buzz
-`779af8886caae1317b4de962082429867ab61503` 的
-`desktop/src/features/home/ui/InboxListPane.tsx::InboxListPane` 使用原
-`desktop/src/shared/ui/VirtualizedList.tsx::VirtualizedList`，行高估算 96、
-稳定行键、外部滚动容器及动态测量。Web 现行消费者却直接全量 `map`，
-Native 仍保留另一份原列表；本批恢复实际共源调用，不添加新的页面/菜单/业务功能。
-
-- 原样保留：原行包装、样式、上下文菜单、头像、行动作、空态和原滚动容器。
-  列表仍由 TanStack 原虚拟器按动态行高测量，不自写另一套虚拟化。
-- 共享迁移：包导出既有 `src/react/forum/VirtualizedList.tsx`，
-  Native 原路径只再导出同一主体，删除重复实现；实际消费者是 Native
-  `InboxListPane`、`EmojiAutocomplete` 及 Web `InboxPane`，非 helper-only。
-- 已授权治理改造：Web 既有 BFF 准入、signed window、Principal/scope 聚合及
-  原读写动作均未改；列表稳定键消费现有 `scopeKey`，不据可见 DOM 判断准入或已读。
-- 缺失需恢复→已接真实消费者：Web Inbox 长列表只挂载窗口内行，实际滚动能
-  到达首屏外消息；原 Forum 的既有共享调用不变。
-
-四步结论（REQ-24、DD-74/75、V-REQ-24、SS-WEB-PRESENTATION）：
-
-1. 原 Inbox 布局/虚拟列表上游支持，共源呈现设计已定；不改领域语义、正文权威或执行底座。
-2. 检索确认以上 Native 两调用方及 Web 实际调用方。仅包出口、Native 原路径、
-   Web Inbox 与现有检查四路径变化，`+62/-189`；无契约、四侧生成、迁移或新持久状态。
-   固定原列表与既有共享主体的完整 diff 仍仅有来源/导入迁移、严格索引断言及
-   已验证的外部祖先 ref 订阅修正，本批不再修改原列表内部逻辑。
-3. 行卸载不写已读、不改变消息聚合或授权查询，重新挂载复用既有 scope query/cache；
-   原 profile 迟到/错误作者/Principal 切换检查继续通过，无第二资料或副作用权威。
-4. 零条目仍是原空态；列表切换和缓存复挂由原虚拟器处理，背压/分页仍沿原读取链。
-   不增加重试或中间状态，六类治理错误与 UNKNOWN 表达不变。
-   Web 经 BFF、Native 本机凭据与 Relay 边界不变，Mobile 无适用 TS 消费者。
-
-沿原 `kailo-agent-receipt-xvkujx` SDK 与已安装缓存集中窄验；inspect 实际
-4 CPU、8 GiB，终验前无编译/测试进程，可用内存 19720 MiB。
-未安装依赖、复制全树、构建镜像/安装包或发布。日志根沿用上一节：
-
-- `inbox-virtual-list-first.log`：Web 类型检查通过，Inbox 首轮 18 通过／2 失败，
-  原检查浏览器模拟缺真实滚动几何及 ResizeObserver `target`；只修正 jsdom 布局模拟，
-  未叠生产条件迎合检查。`inbox-virtual-list-layout.log` 后实际 20 passed、退出 0。
-- `inbox-virtual-list-mutation.log`：仅在 SDK 把实际 Web 调用方 overscan 退化成
-  全部行，真实长列表检查报 `expected 40 to be less than 40`，1 failed／19 skipped、
-  退出 1。还原后正式源码与四候选输入 `cmp` 均退出 0。
-- `inbox-virtual-list-restored.log`（session 52599）：Web `tsc --noEmit`、
-  Inbox/作者资料 29 项、Desktop `tsc --noEmit`、原共享虚拟列表 3 项，
-  整条命令实际退出 0；React `act(...)` warning 保留在原 stderr。
-- 四路径 `git diff --check` 实际退出 0；全仓 `check.sh --full` 留给主线批次收口，
-  不把上述窄验写成全仓验收。
-
-本批尚未部署或生成安装包，新增业务页面截图为零。实际 playwright-cli 当前进入
-OIDC 登录页、会话失效；受控本地账号口令没有打印、写入命令行或注入 session。
-因此不能用旧截图证明本批 Inbox/Native 虚拟列表呈现；新版本视觉验收尚未完成。
-3307 全树路径仍未全部分类，精确未分类数未统计；project/needs_action/reminders、
-完整 bot profile 及遗留 i18n 缺项仍未关闭，不能称 100% 还原或生产就绪。
 | `desktop/src/features/channels/ui/ChannelBrowserDialog.tsx::ChannelCreateView` | 缺失恢复：共享 `react/channel-browser/ChannelBrowserDialog.tsx::ChannelCreateView` 使用相同表单，恢复原 `shrink-0 pb-6 pt-4` 提交区及搜索预填；UNKNOWN 阻止返回浏览或关闭 |
 | `desktop/src/shared/ui/button.tsx::Button` | 原样共享控件：提交按钮消费已有 `react/profile/buzz/shared/ui/button.tsx::Button`，不再消费治理页最小按钮样式 |
 
@@ -2365,68 +2170,6 @@ Mobile 无适用 TS 对象，六类治理错误和 UNKNOWN 表达不变。
   `inbox-author-identity-mutation.log`、`inbox-author-avatar-mutation.log`、
   `inbox-author-principal-mutation.log`。恢复后 9 项退出 0，
   `inbox-author-avatar-restored.log`；不是以 helper-only 宣称 Inbox 功能已交付。
-
-### 2026-10-08：原 Pulse 动态头像媒体接线与真实登录边界
-
-沿既有全树 3307 路径差异快照续核，固定 Buzz
-`779af8886caae1317b4de962082429867ab61503` 的
-`desktop/src/shared/ui/UserAvatar.tsx::UserAvatar` 在解析 `#buzz-anim=` 后分别
-对海报/悬停动画调用 `rewriteRelayUrl`。原实际消费者为
-`desktop/src/features/pulse/ui/NoteCard.tsx::{NoteCard,ReplyParentContext}`、
-`desktop/src/features/pulse/ui/AgentActivityCard.tsx::AgentActivityCard`、
-`desktop/src/features/pulse/ui/PulseView.tsx::PulseView`，并非另设计动态页面。
-
-现存共享 `useUsersBatchQuery` 对完整 picture 做一次 host 映射，但完整动画描述串
-不等于海报/动画资源键；三个原模块的五处 UserAvatar 漏传现成 `resolveMediaUrl`，
-因此解析出的子资源会退回 identity resolver。既有 Core
-`pulse::query`/`web_profile::avatar_media_paths` 已投递两个确切资源映射，Web
-PulsePane 和 Native `features/platform/PulseScreen` 均已有真实 PulseHost.mediaUrl。
-本批直接接回该 host consumer，不新建媒体代理、头像服务、身份事实或公共契约。
-
-- 原样保留：原动态卡片、父引用、回复作者、Agent 活动与顶部输入区头像的 JSX、
-  circle/squircle、尺寸、海报、悬停播放/移出还原及原发布操作。
-- 共享迁移：上述五处共同消费既有 UserAvatar/PulseHost，Web 走已有 BFF 资源映射，
-  Native 走原 rewriteRelayUrl，不分叉出第二份动态页面或动画实现。
-- 已授权治理改造：只是将原解析后媒体重写时机接至已准入的宿主解析；不扩大查询
-  scope、授权或动作集合，不补造 owner/presence/Agent role。
-- 缺失需恢复→已接真实消费者：完整动画描述的两资源不再漏过既有 host resolver；
-  原静态头像沿同一 resolver 保持幂等映射。
-
-四步结论（REQ-24、DD-74/75）：原能力已有上游和实际服务生产者；影响面只有共享
-NoteCard、AgentActivityCard、PulseView 与既有 pulse.test 四文件 `+97/-2`。
-无契约、数据库、状态机、词条或四侧生成。这里只读原头像，不发消息/审批/额度或
-其他副作用；空头像无请求，范围切换沿既有 PulseScope key 卸载，不复用旧 Principal
-的缓存。失败、UNKNOWN 与既有 media 路径准入不变，Mobile 未改动、不冒称实机等效。
-
-复用原 4 CPU/8 GiB SDK/cache，启动前 pgrep 无编译/检查进程，容器只有 sleep；
-可用内存 29361 MiB、load 6.80/5.59/5.57，Data 剩 292 MiB。只同步四个精确输入
-及两宿主已安装的三个实际共享模块，没有安装依赖、全树复制、镜像/产物构建或清缓存。
-正式四输入及实际两宿主六安装文件共十处 `cmp` 退出 0，四路径 diff 检查退出 0。
-日志仍在本章前述 `workflow-native-template.s3JDP1` 目录：
-
-- `pulse-avatar-first.log`（session 84086）：共享 production/test 两个类型检查与
-  Pulse 11 项整条退出 0。
-- `pulse-avatar-mutation.log`（session 57915）：仅在私有 SDK 断开五个 resolver，
-  三个新增实际 DOM 检查均收到原媒体地址而不是 BFF path，3 failed/8 skipped、
-  退出 1；随后恢复与正式源码字节相同。
-- `pulse-avatar-restored.log`（session 77847）：共享 production/test 类型、Pulse
-  11 项及 Web 类型检查均通过，但 Native 命令错用上级 node_modules，实际总退出 1：
-  `Cannot find module .../collaboration/node_modules/typescript/bin/tsc`。未改产品代码
-  或安装工具；按已存在 desktop/node_modules 修正执行路径，仅重跑 Native 类型。
-- `pulse-avatar-native-restored.log`（session 42475）：Native `tsc --noEmit` 实际退出
-  0、日志为空；原 React act warning 在 Pulse 日志保留，没有宣称无警告或全量通过。
-
-浏览器沿现有正常 OIDC 表单尝试一次真实 bootstrap 登录，IdP 返回
-`Invalid username or password.`，未重试、重置口令或注入 cookie/session。
-随后只读核对确认容器既有凭据挂载是旧 inode，当前受控 host 文件已更换；
-该拒绝只证明旧挂载输入无效，不证明当前凭据或账号失效。
-受控临时输入已删除并检验不存在，原 Secret 未改；没有运行原辅助脚本的发消息段。
-playwright-cli 截图 `.playwright-cli/kailo-ui-20261008-oidc-input-refused.png` 已实际打开
-复核：当前为英文错误登录页，不是业务页；连同此前空登录页，本轮为两个登录状态，
-业务截图仍为零。服务仍是 live `sha256:d313fb1326cec59bcd4f3dc3b4785033026c43a438a41594895e6f57b5157e83`，
-不是本批新源码；本批未部署、未更新安装包或运行完整门禁。
-全树分类、完整 bot profile 和三个原 Inbox 筛选业务链仍未全部闭合，不称 100% 还原。
-
 - 真实 Inbox 接线后 `tsc --noEmit` 与资料 9／Inbox 19 项整条命令退出 0，
   `inbox-author-consumer-first.log`（session 1367）。覆盖原静态头像、Conversation
   动态 poster/hover、错误作者、身份/scope 变更及迟到读取边界。
@@ -2443,6 +2186,60 @@ playwright-cli 截图 `.playwright-cli/kailo-ui-20261008-oidc-input-refused.png`
 仍未关闭。本批没有新增页面截图；既有登录失效截图不证明新 Inbox 呈现。
 **本批未部署，原版一致性的视觉验收未完成。** 全仓检查、Windows/Mobile 包与
 实机验收本批未执行，由主线集中收口；不能宣称 100% 还原或生产就绪。
+
+### 2026-10-08：原 Inbox 虚拟列表实际消费者恢复与 Native 共源
+
+从既有 3307 路径全树清单续核，固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/home/ui/InboxListPane.tsx::InboxListPane` 使用原
+`desktop/src/shared/ui/VirtualizedList.tsx::VirtualizedList`，行高估算 96、
+稳定行键、外部滚动容器及动态测量。Web 现行消费者却直接全量 `map`，
+Native 仍保留另一份原列表；本批恢复实际共源调用，不添加新的页面/菜单/业务功能。
+
+- 原样保留：原行包装、样式、上下文菜单、头像、行动作、空态和原滚动容器。
+  列表仍由 TanStack 原虚拟器按动态行高测量，不自写另一套虚拟化。
+- 共享迁移：包导出既有 `src/react/forum/VirtualizedList.tsx`，
+  Native 原路径只再导出同一主体，删除重复实现；实际消费者是 Native
+  `InboxListPane`、`EmojiAutocomplete` 及 Web `InboxPane`，非 helper-only。
+- 已授权治理改造：Web 既有 BFF 准入、signed window、Principal/scope 聚合及
+  原读写动作均未改；列表稳定键消费现有 `scopeKey`，不据可见 DOM 判断准入或已读。
+- 缺失需恢复→已接真实消费者：Web Inbox 长列表只挂载窗口内行，实际滚动能
+  到达首屏外消息；原 Forum 的既有共享调用不变。
+
+四步结论（REQ-24、DD-74/75、V-REQ-24、SS-WEB-PRESENTATION）：
+
+1. 原 Inbox 布局/虚拟列表上游支持，共源呈现设计已定；不改领域语义、正文权威或执行底座。
+2. 检索确认以上 Native 两调用方及 Web 实际调用方。仅包出口、Native 原路径、
+   Web Inbox 与现有检查四路径变化，`+62/-189`；无契约、四侧生成、迁移或新持久状态。
+   固定原列表与既有共享主体的完整 diff 仍仅有来源/导入迁移、严格索引断言及
+   已验证的外部祖先 ref 订阅修正，本批不再修改原列表内部逻辑。
+3. 行卸载不写已读、不改变消息聚合或授权查询，重新挂载复用既有 scope query/cache；
+   原 profile 迟到/错误作者/Principal 切换检查继续通过，无第二资料或副作用权威。
+4. 零条目仍是原空态；列表切换和缓存复挂由原虚拟器处理，背压/分页仍沿原读取链。
+   不增加重试或中间状态，六类治理错误与 UNKNOWN 表达不变。
+   Web 经 BFF、Native 本机凭据与 Relay 边界不变，Mobile 无适用 TS 消费者。
+
+沿原 `kailo-agent-receipt-xvkujx` SDK 与已安装缓存集中窄验；inspect 实际
+4 CPU、8 GiB，终验前无编译/测试进程，可用内存 19720 MiB。
+未安装依赖、复制全树、构建镜像/安装包或发布。日志根沿用上一节：
+
+- `inbox-virtual-list-first.log`：Web 类型检查通过，Inbox 首轮 18 通过／2 失败，
+  原检查浏览器模拟缺真实滚动几何及 ResizeObserver `target`；只修正 jsdom 布局模拟，
+  未叠生产条件迎合检查。`inbox-virtual-list-layout.log` 后实际 20 passed、退出 0。
+- `inbox-virtual-list-mutation.log`：仅在 SDK 把实际 Web 调用方 overscan 退化成
+  全部行，真实长列表检查报 `expected 40 to be less than 40`，1 failed／19 skipped、
+  退出 1。还原后正式源码与四候选输入 `cmp` 均退出 0。
+- `inbox-virtual-list-restored.log`（session 52599）：Web `tsc --noEmit`、
+  Inbox/作者资料 29 项、Desktop `tsc --noEmit`、原共享虚拟列表 3 项，
+  整条命令实际退出 0；React `act(...)` warning 保留在原 stderr。
+- 四路径 `git diff --check` 实际退出 0；全仓 `check.sh --full` 留给主线批次收口，
+  不把上述窄验写成全仓验收。
+
+本批尚未部署或生成安装包，新增业务页面截图为零。实际 playwright-cli 当前进入
+OIDC 登录页、会话失效；受控本地账号口令没有打印、写入命令行或注入 session。
+因此不能用旧截图证明本批 Inbox/Native 虚拟列表呈现；新版本视觉验收尚未完成。
+3307 全树路径仍未全部分类，精确未分类数未统计；project/needs_action/reminders、
+完整 bot profile 及遗留 i18n 缺项仍未关闭，不能称 100% 还原或生产就绪。
 
 ### 2026-10-08：原 Forum 卡片、详情与回复真实作者头像消费者
 
@@ -2613,6 +2410,67 @@ load 6.19/5.09/6.21，Data 仅余 294 MiB；只同步四个精确输入，没有
 实际消费者检查不冒充图像验收。完整 bot profile（含 agent 形状/owner/presence
 真实事实）、原 Inbox 剩余筛选生产者/消费者及全树未分类项仍未全部闭合。
 
+### 2026-10-08：原 Pulse 动态头像媒体接线与真实登录边界
+
+沿既有全树 3307 路径差异快照续核，固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/shared/ui/UserAvatar.tsx::UserAvatar` 在解析 `#buzz-anim=` 后分别
+对海报/悬停动画调用 `rewriteRelayUrl`。原实际消费者为
+`desktop/src/features/pulse/ui/NoteCard.tsx::{NoteCard,ReplyParentContext}`、
+`desktop/src/features/pulse/ui/AgentActivityCard.tsx::AgentActivityCard`、
+`desktop/src/features/pulse/ui/PulseView.tsx::PulseView`，并非另设计动态页面。
+
+现存共享 `useUsersBatchQuery` 对完整 picture 做一次 host 映射，但完整动画描述串
+不等于海报/动画资源键；三个原模块的五处 UserAvatar 漏传现成 `resolveMediaUrl`，
+因此解析出的子资源会退回 identity resolver。既有 Core
+`pulse::query`/`web_profile::avatar_media_paths` 已投递两个确切资源映射，Web
+PulsePane 和 Native `features/platform/PulseScreen` 均已有真实 PulseHost.mediaUrl。
+本批直接接回该 host consumer，不新建媒体代理、头像服务、身份事实或公共契约。
+
+- 原样保留：原动态卡片、父引用、回复作者、Agent 活动与顶部输入区头像的 JSX、
+  circle/squircle、尺寸、海报、悬停播放/移出还原及原发布操作。
+- 共享迁移：上述五处共同消费既有 UserAvatar/PulseHost，Web 走已有 BFF 资源映射，
+  Native 走原 rewriteRelayUrl，不分叉出第二份动态页面或动画实现。
+- 已授权治理改造：只是将原解析后媒体重写时机接至已准入的宿主解析；不扩大查询
+  scope、授权或动作集合，不补造 owner/presence/Agent role。
+- 缺失需恢复→已接真实消费者：完整动画描述的两资源不再漏过既有 host resolver；
+  原静态头像沿同一 resolver 保持幂等映射。
+
+四步结论（REQ-24、DD-74/75）：原能力已有上游和实际服务生产者；影响面只有共享
+NoteCard、AgentActivityCard、PulseView 与既有 pulse.test 四文件 `+97/-2`。
+无契约、数据库、状态机、词条或四侧生成。这里只读原头像，不发消息/审批/额度或
+其他副作用；空头像无请求，范围切换沿既有 PulseScope key 卸载，不复用旧 Principal
+的缓存。失败、UNKNOWN 与既有 media 路径准入不变，Mobile 未改动、不冒称实机等效。
+
+复用原 4 CPU/8 GiB SDK/cache，启动前 pgrep 无编译/检查进程，容器只有 sleep；
+可用内存 29361 MiB、load 6.80/5.59/5.57，Data 剩 292 MiB。只同步四个精确输入
+及两宿主已安装的三个实际共享模块，没有安装依赖、全树复制、镜像/产物构建或清缓存。
+正式四输入及实际两宿主六安装文件共十处 `cmp` 退出 0，四路径 diff 检查退出 0。
+日志仍在本章前述 `workflow-native-template.s3JDP1` 目录：
+
+- `pulse-avatar-first.log`（session 84086）：共享 production/test 两个类型检查与
+  Pulse 11 项整条退出 0。
+- `pulse-avatar-mutation.log`（session 57915）：仅在私有 SDK 断开五个 resolver，
+  三个新增实际 DOM 检查均收到原媒体地址而不是 BFF path，3 failed/8 skipped、
+  退出 1；随后恢复与正式源码字节相同。
+- `pulse-avatar-restored.log`（session 77847）：共享 production/test 类型、Pulse
+  11 项及 Web 类型检查均通过，但 Native 命令错用上级 node_modules，实际总退出 1：
+  `Cannot find module .../collaboration/node_modules/typescript/bin/tsc`。未改产品代码
+  或安装工具；按已存在 desktop/node_modules 修正执行路径，仅重跑 Native 类型。
+- `pulse-avatar-native-restored.log`（session 42475）：Native `tsc --noEmit` 实际退出
+  0、日志为空；原 React act warning 在 Pulse 日志保留，没有宣称无警告或全量通过。
+
+浏览器沿现有正常 OIDC 表单尝试一次真实 bootstrap 登录，IdP 返回
+`Invalid username or password.`，未重试、重置口令或注入 cookie/session。
+随后只读核对确认容器既有凭据挂载是旧 inode，当前受控 host 文件已更换；
+该拒绝只证明旧挂载输入无效，不证明当前凭据或账号失效。
+受控临时输入已删除并检验不存在，原 Secret 未改；没有运行原辅助脚本的发消息段。
+playwright-cli 截图 `.playwright-cli/kailo-ui-20261008-oidc-input-refused.png` 已实际打开
+复核：当前为英文错误登录页，不是业务页；连同此前空登录页，本轮为两个登录状态，
+业务截图仍为零。服务仍是 live `sha256:d313fb1326cec59bcd4f3dc3b4785033026c43a438a41594895e6f57b5157e83`，
+不是本批新源码；本批未部署、未更新安装包或运行完整门禁。
+全树分类、完整 bot profile 和三个原 Inbox 筛选业务链仍未全部闭合，不称 100% 还原。
+
 ### 2026-10-08：原线程摘要宿主媒体消费者与发送中双语状态
 
 固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
@@ -2763,118 +2621,6 @@ ThreadPanelSurface 两个摘要消费者没有转送宿主解析。这不是缺�
   `useUsersBatchQuery`，Web 仍只在已准入绑定内解析参与者；原 `+N more`
   提示改为同源 `dm.moreParticipants` 中英词条并沿原工具生成 Dart。
 - 缺失需恢复：只闭合本批草稿来源消费，不据此称整个私聊、Inbox、所有
-
-### 2026-10-08：原 Projects 目录创建／管理实际消费者恢复
-
-固定官方基准仍为 Buzz `779af8886caae1317b4de962082429867ab61503`。本批不再只补
-Inbox 局部效果，而接回原 Projects 空态创建、网格／列表管理菜单及列表展示链。
-八个代码／生成／检查路径共 +344/-26 行，未改契约、Core、组件数据或宿主业务实现。
-
-#### 权威、影响、副作用与边界
-
-1. 用户要求完整原版页面而保留既有治理；原
-   `desktop/src/features/projects/ui/ProjectCards.tsx::EmptyState/ProjectGridCard/ProjectListRow`、
-   `desktop/src/features/projects/ui/CreateProjectDialog.tsx::CreateProjectDialog` 与
-   `desktop/src/features/projects/ui/ProjectListRowMenu.tsx::ProjectListRowMenu`
-   是本批显示／交互依据；动作继续用现有 `useCreateProject` 与 `ProjectDeleteAction`。
-   不把原 Projects 过滤列表头没有的创建加号留在当前页面；原空态创建入口恢复。
-2. 实际消费者为共享 `ProjectsView::ProjectDirectory`，由
-   `web-client/web/src/platform/ui/ProjectsPane.tsx` 与
-   `collaboration/desktop/src/features/platform/ProjectsScreen.tsx` 直接复用。
-   查询仍沿原 ProjectsHost；创建检查真实 roleWorkspaces capability，提交原工作区
-   ActionCommand、项目／仓库公告并读回，不另造项目或执行权威。删除目标按
-   `projectModels` 的时间戳／最小 ID 赢头规则选择，不能删除旧 revision 冒充删除当前项目。
-   只有本机原身份拥有的条目显示删除菜单，最终权限仍在 Relay／Core。
-3. 当前 scope 失败／刷新时不保留公告事实；无创建 capability 或读取失败无创建入口。
-   UNKNOWN 沿现有冻结意图与同键观察，不因本批弹窗创建新命令；已确认创建后的导航错误
-   不报成创建失败。卸载后不写新页面状态、不导航。Core 不复制正文；列表持久化只保存
-   原 `buzz.projects.viewMode` 的 grid/list 设备偏好，不保存成员、权限或账号事实。
-4. 空目录与过滤零结果使用不同原组件；列表描述直接复用固定原
-   `desktop/src/features/projects/lib/projectsViewHelpers.ts::markdownToPlainText/listRowDescription`。
-   重入、超时、撤权、未知结果、ACK 后读回失败继续由现有动作链决定，不新增状态机。
-   本批无数据库／四侧契约变更；两条原英文文案补中文，同源生成 Dart，未另立翻译权威。
-
-#### 固定原路径四类归档（本模块范围，不代表全树完成）
-
-| 固定官方完整路径／符号 | 分类、已恢复与仍缺项 |
-| --- | --- |
-| `desktop/src/features/projects/ui/ProjectListRowMenu.tsx::ProjectListRowMenu` | 共享迁移；除两行来源注释和两个共享 import 路径外，原函数字节级 diff 退出 0。Web/Desktop 网格和列表均是真实消费者。 |
-| `desktop/src/features/projects/ui/CreateProjectDialog.tsx::CreateProjectDialog` | 已授权治理改造；原 Dialog 关闭／busy 规则复用，附加现有冻结意图及原治理表单 back 接缝。真实空态按钮调用，不是无调用方 helper。 |
-| `desktop/src/features/projects/ui/ProjectCards.tsx::EmptyState/EmptyFilteredState/ProjectGridCard/ProjectListRow` | 缺失需恢复（部分已补）；原空态、过滤空态、菜单位置／覆盖按钮与列表正文已恢复，people、activity、Git/Terminal 仍缺真实生产链，不能算整文件完成。 |
-| `desktop/src/features/projects/ui/ProjectsView.tsx::ProjectsView` | 缺失需恢复（部分已补）；共源目录接回真实创建／删除，仍不是原完整 Activity/Repositories/Tasks/Reviews/Channels/详情产品页面；当前公告侧栏不当作完整原详情。 |
-| `desktop/src/features/projects/lib/projectsViewHelpers.ts::readStoredViewMode/writeStoredViewMode/markdownToPlainText/listRowDescription` | 缺失需恢复（部分已补）；列明的实际调用函数已迁移，其余 Git/activity/filter 依赖未按名称复制成死代码。本批没有新增原样保留文件；未变化原文件不计入本表五条变动归档。 |
-
-原 3307 路径历史 patch 的绝对原件未能定位，本表不把该快照称当前可复核完整清单，
-也不与旧 3278 路径另一版本混算。下一步沿现有 upstream_manifest 重新导出当前完整
-差异；全局未分类／未恢复准确数量仍未知，不能用此五条记录计算全仓完成比例。
-
-#### 实施后实际验证／破坏恢复
-
-仍复用 `kailo-agent-receipt-xvkujx` 4 CPU／8 GiB 受限 SDK 与现有缓存；检查前主机
-可用内存 24 GiB、swap 0、Data 2.0 GiB，无已在跑编译进程。未新镜像／安装依赖／整树复制。
-日志均在 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1/`。
-
-- `projects-directory-candidate.log`：shared production/test 两次 tsc 退出 0；第一次
-  54 项有 16 项失败，原因是本批检查把 localStorage.clear 放在 setLocale(en) 后，清掉
-  检查语言，修正清理顺序后 `projects-directory-final.log` 54 passed。未改生产语言默认。
-- `projects-directory-hosts.log`：Web／Native tsc 两次退出 0，原 Dart 生成及 `--check`
-  输出 `PASS: Mobile platform and reason catalogs match the shared TypeScript source`。
-  正式 Dart 文件为 root 所有，普通 cp 一次 Permission denied 后，用限定目标 sudo cp
-  投递机械生成的十行词条差异；reason_text cmp 未变化。
-- 私有候选破坏创建点击、准入、删除赢头、布局保存和过滤空态，
-  `projects-directory-mutation.log` 退出 1，7 failed／1 passed／46 skipped；独立绕过
-  compact description 解析，`projects-description-mutation.log` 退出 1，1 failed／53 skipped。
-- 全部恢复后 `projects-directory-restored.log` 54 passed；固定原列表头复核删除非原加号
-  后 `projects-directory-source-aligned.log` shared production tsc 及 54 项再次退出 0。
-  两已安装共享包／SDK 正式输入与生成词条共二十次 cmp、相关 diff --check 均退出 0。
-  日志保留现有 React 异步 act 警告，不把告警隐藏为零。
-
-本批未提交／部署／更新安装包，未运行全仓门禁，由主线集中收口。新版 Projects 浏览器
-与 Windows/Mobile 尚未验收。既有正常 SSO 会话另打开并实际截图复核旧 live 通知设置
-`.playwright-cli/kailo-ui-20261008-live-notifications.png`（1920×1080）；现共十二张旧
-live d313fb 图，十类页面及两状态，不是本批源码截图。通知权限显示已阻止，未保存偏好
-或验证推送。该旧会话 console 有图片请求被转到 IdP 后受 img-src CSP 阻断的真实错误，
-未放宽 CSP 或注入会话；不把布局可见称头像／全部功能／100% 原版一致性验收。
-
-### 2026-10-08：当前固定官方全树差异重新导出及逐路径归档起点
-
-原历史 3307 路径 patch 未能定位，不沿其数字宣称当前全量可复核。本次只运行现有
-`python3 tools/upstream_manifest.py diff collaboration` 一次；官方基准为
-`779af8886caae1317b4de962082429867ab61503`，导出前后 apps HEAD 都是
-`8ee8e674bb8c53a0698e1ba47261acb4b91bcead`。工作树含尚未提交改动，HEAD 不代表
-全部输入；下面的不可变 patch 字节才是本次差异快照，不与其他历史快照混算。
-
-复用现有 SDK 镜像，以独立只读源码挂载、network none、4 CPU／8 GiB cgroup 导出，
-没有新镜像、下载、源码整树复制、GitNexus、主 SDK 并发编译或发布。生成产物位于
-`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1/`：
-
-- `collaboration-current-20261008.patch`：3313 差异路径，1,040,289 行、44,230,352 字节；
-  SHA-256 `8f570bf7af384ddc39a9d0b28eab705489b4377c7653c183c9cccc12418a22b4`。
-- `collaboration-current-20261008.numstat`：由原 patch 经 `git apply --numstat` 只读解析，
-  3313 行；SHA-256 `30cb8f0d0a133fc150ce7c585de05c507276cb3222dddd506c6fcc767f8fe327`。
-- `collaboration-current-20261008.classification.tsv`：3313 个差异路径逐行登记固定版本、
-  路径、变动种类、分类、迁入位置与证据边界；SHA-256
-  `153513977f30c3bd0aa88b50af7b8ac7701fbb8a9a8e461d9d3dd17bed5f0884`。
-
-本表当前确实归类 27 路径：共享迁移 21、已授权治理改造 1、缺失需恢复 5，
-其余 **3286 路径未分类**。其中 18 个迁移路径以固定官方 blob 与迁入文件原始字节
-完全一致确认；其余九条沿上节 Projects 归档及逐文件源码对照。原文件字节被复制不自动
-证明真实调用方、布局或运行验收成立，因此表中明确保留该证据边界，不把分类数量当
-功能完成率。官方完整树共 5195 文件，其中同路径原 blob 一致的 1980 文件是差异表外
-的原样保留事实，不混入 3313 差异路径的分母。
-
-原 `desktop/src/features/projects/` 共 279 路径落入本次差异；旧路径删除既包括迁入共享
-实现，也包括未恢复模块。不能把 `remove_paths` 当删除功能的授权，或将整个目录按
-“共享迁移”一次性通过。已定位的真实缺项包括原 `ProjectDetailMetaPills`、
-`projectCollection::homeRepositoriesToBind` 及其完整详情／仓库绑定调用链；未为无调用方
-函数单独复制死代码。全仓尚未恢复的准确数量仍未知，不把五个已确认缺项当全部缺项。
-
-浏览器正常会话另查看并打开复核旧 live 快捷键截图
-`.playwright-cli/kailo-ui-20261008-live-shortcuts.png`；旧 live 业务截图现十三张，
-十一类页面及两状态。随后点击自定义表情时会话过期，截图
-`.playwright-cli/kailo-ui-20261008-live-session-expired.png` 只记录正常 IdP 登录页，
-不计自定义表情页验收，不注入或重置会话。新 Projects 源码业务截图、Windows/Mobile
-设备验收仍为零，未用旧 live 页面证明本次源码已部署或全部原版一致。
   侧栏或原 `dmParticipantDisplay` 其他功能已完整还原。
 
 10 个代码/检查/生成路径合计 `+232/-3`：共享 package.json、i18n.ts、
@@ -3059,6 +2805,118 @@ OCI revision 为空；是旧部署，不证明本批源码、最新 main 或 Win
 本批无新增截图，前节十一张只证明旧线上 d313fb 镜像；新源码 Inbox 高亮/
 shortcode 的实际浏览器视觉、Windows/Mobile 仍未验收。3307 全树差异尚未
 全部语义分类，准确未分类数与全部页面截图覆盖总数未统计，不称 100% 还原。
+
+### 2026-10-08：原 Projects 目录创建／管理实际消费者恢复
+
+固定官方基准仍为 Buzz `779af8886caae1317b4de962082429867ab61503`。本批不再只补
+Inbox 局部效果，而接回原 Projects 空态创建、网格／列表管理菜单及列表展示链。
+八个代码／生成／检查路径共 +344/-26 行，未改契约、Core、组件数据或宿主业务实现。
+
+#### 权威、影响、副作用与边界
+
+1. 用户要求完整原版页面而保留既有治理；原
+   `desktop/src/features/projects/ui/ProjectCards.tsx::EmptyState/ProjectGridCard/ProjectListRow`、
+   `desktop/src/features/projects/ui/CreateProjectDialog.tsx::CreateProjectDialog` 与
+   `desktop/src/features/projects/ui/ProjectListRowMenu.tsx::ProjectListRowMenu`
+   是本批显示／交互依据；动作继续用现有 `useCreateProject` 与 `ProjectDeleteAction`。
+   不把原 Projects 过滤列表头没有的创建加号留在当前页面；原空态创建入口恢复。
+2. 实际消费者为共享 `ProjectsView::ProjectDirectory`，由
+   `web-client/web/src/platform/ui/ProjectsPane.tsx` 与
+   `collaboration/desktop/src/features/platform/ProjectsScreen.tsx` 直接复用。
+   查询仍沿原 ProjectsHost；创建检查真实 roleWorkspaces capability，提交原工作区
+   ActionCommand、项目／仓库公告并读回，不另造项目或执行权威。删除目标按
+   `projectModels` 的时间戳／最小 ID 赢头规则选择，不能删除旧 revision 冒充删除当前项目。
+   只有本机原身份拥有的条目显示删除菜单，最终权限仍在 Relay／Core。
+3. 当前 scope 失败／刷新时不保留公告事实；无创建 capability 或读取失败无创建入口。
+   UNKNOWN 沿现有冻结意图与同键观察，不因本批弹窗创建新命令；已确认创建后的导航错误
+   不报成创建失败。卸载后不写新页面状态、不导航。Core 不复制正文；列表持久化只保存
+   原 `buzz.projects.viewMode` 的 grid/list 设备偏好，不保存成员、权限或账号事实。
+4. 空目录与过滤零结果使用不同原组件；列表描述直接复用固定原
+   `desktop/src/features/projects/lib/projectsViewHelpers.ts::markdownToPlainText/listRowDescription`。
+   重入、超时、撤权、未知结果、ACK 后读回失败继续由现有动作链决定，不新增状态机。
+   本批无数据库／四侧契约变更；两条原英文文案补中文，同源生成 Dart，未另立翻译权威。
+
+#### 固定原路径四类归档（本模块范围，不代表全树完成）
+
+| 固定官方完整路径／符号 | 分类、已恢复与仍缺项 |
+| --- | --- |
+| `desktop/src/features/projects/ui/ProjectListRowMenu.tsx::ProjectListRowMenu` | 共享迁移；除两行来源注释和两个共享 import 路径外，原函数字节级 diff 退出 0。Web/Desktop 网格和列表均是真实消费者。 |
+| `desktop/src/features/projects/ui/CreateProjectDialog.tsx::CreateProjectDialog` | 已授权治理改造；原 Dialog 关闭／busy 规则复用，附加现有冻结意图及原治理表单 back 接缝。真实空态按钮调用，不是无调用方 helper。 |
+| `desktop/src/features/projects/ui/ProjectCards.tsx::EmptyState/EmptyFilteredState/ProjectGridCard/ProjectListRow` | 缺失需恢复（部分已补）；原空态、过滤空态、菜单位置／覆盖按钮与列表正文已恢复，people、activity、Git/Terminal 仍缺真实生产链，不能算整文件完成。 |
+| `desktop/src/features/projects/ui/ProjectsView.tsx::ProjectsView` | 缺失需恢复（部分已补）；共源目录接回真实创建／删除，仍不是原完整 Activity/Repositories/Tasks/Reviews/Channels/详情产品页面；当前公告侧栏不当作完整原详情。 |
+| `desktop/src/features/projects/lib/projectsViewHelpers.ts::readStoredViewMode/writeStoredViewMode/markdownToPlainText/listRowDescription` | 缺失需恢复（部分已补）；列明的实际调用函数已迁移，其余 Git/activity/filter 依赖未按名称复制成死代码。本批没有新增原样保留文件；未变化原文件不计入本表五条变动归档。 |
+
+原 3307 路径历史 patch 的绝对原件未能定位，本表不把该快照称当前可复核完整清单，
+也不与旧 3278 路径另一版本混算。下一步沿现有 upstream_manifest 重新导出当前完整
+差异；全局未分类／未恢复准确数量仍未知，不能用此五条记录计算全仓完成比例。
+
+#### 实施后实际验证／破坏恢复
+
+仍复用 `kailo-agent-receipt-xvkujx` 4 CPU／8 GiB 受限 SDK 与现有缓存；检查前主机
+可用内存 24 GiB、swap 0、Data 2.0 GiB，无已在跑编译进程。未新镜像／安装依赖／整树复制。
+日志均在 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1/`。
+
+- `projects-directory-candidate.log`：shared production/test 两次 tsc 退出 0；第一次
+  54 项有 16 项失败，原因是本批检查把 localStorage.clear 放在 setLocale(en) 后，清掉
+  检查语言，修正清理顺序后 `projects-directory-final.log` 54 passed。未改生产语言默认。
+- `projects-directory-hosts.log`：Web／Native tsc 两次退出 0，原 Dart 生成及 `--check`
+  输出 `PASS: Mobile platform and reason catalogs match the shared TypeScript source`。
+  正式 Dart 文件为 root 所有，普通 cp 一次 Permission denied 后，用限定目标 sudo cp
+  投递机械生成的十行词条差异；reason_text cmp 未变化。
+- 私有候选破坏创建点击、准入、删除赢头、布局保存和过滤空态，
+  `projects-directory-mutation.log` 退出 1，7 failed／1 passed／46 skipped；独立绕过
+  compact description 解析，`projects-description-mutation.log` 退出 1，1 failed／53 skipped。
+- 全部恢复后 `projects-directory-restored.log` 54 passed；固定原列表头复核删除非原加号
+  后 `projects-directory-source-aligned.log` shared production tsc 及 54 项再次退出 0。
+  两已安装共享包／SDK 正式输入与生成词条共二十次 cmp、相关 diff --check 均退出 0。
+  日志保留现有 React 异步 act 警告，不把告警隐藏为零。
+
+本批未提交／部署／更新安装包，未运行全仓门禁，由主线集中收口。新版 Projects 浏览器
+与 Windows/Mobile 尚未验收。既有正常 SSO 会话另打开并实际截图复核旧 live 通知设置
+`.playwright-cli/kailo-ui-20261008-live-notifications.png`（1920×1080）；现共十二张旧
+live d313fb 图，十类页面及两状态，不是本批源码截图。通知权限显示已阻止，未保存偏好
+或验证推送。该旧会话 console 有图片请求被转到 IdP 后受 img-src CSP 阻断的真实错误，
+未放宽 CSP 或注入会话；不把布局可见称头像／全部功能／100% 原版一致性验收。
+
+### 2026-10-08：当前固定官方全树差异重新导出及逐路径归档起点
+
+原历史 3307 路径 patch 未能定位，不沿其数字宣称当前全量可复核。本次只运行现有
+`python3 tools/upstream_manifest.py diff collaboration` 一次；官方基准为
+`779af8886caae1317b4de962082429867ab61503`，导出前后 apps HEAD 都是
+`8ee8e674bb8c53a0698e1ba47261acb4b91bcead`。工作树含尚未提交改动，HEAD 不代表
+全部输入；下面的不可变 patch 字节才是本次差异快照，不与其他历史快照混算。
+
+复用现有 SDK 镜像，以独立只读源码挂载、network none、4 CPU／8 GiB cgroup 导出，
+没有新镜像、下载、源码整树复制、GitNexus、主 SDK 并发编译或发布。生成产物位于
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1/`：
+
+- `collaboration-current-20261008.patch`：3313 差异路径，1,040,289 行、44,230,352 字节；
+  SHA-256 `8f570bf7af384ddc39a9d0b28eab705489b4377c7653c183c9cccc12418a22b4`。
+- `collaboration-current-20261008.numstat`：由原 patch 经 `git apply --numstat` 只读解析，
+  3313 行；SHA-256 `30cb8f0d0a133fc150ce7c585de05c507276cb3222dddd506c6fcc767f8fe327`。
+- `collaboration-current-20261008.classification.tsv`：3313 个差异路径逐行登记固定版本、
+  路径、变动种类、分类、迁入位置与证据边界；SHA-256
+  `153513977f30c3bd0aa88b50af7b8ac7701fbb8a9a8e461d9d3dd17bed5f0884`。
+
+本表当前确实归类 27 路径：共享迁移 21、已授权治理改造 1、缺失需恢复 5，
+其余 **3286 路径未分类**。其中 18 个迁移路径以固定官方 blob 与迁入文件原始字节
+完全一致确认；其余九条沿上节 Projects 归档及逐文件源码对照。原文件字节被复制不自动
+证明真实调用方、布局或运行验收成立，因此表中明确保留该证据边界，不把分类数量当
+功能完成率。官方完整树共 5195 文件，其中同路径原 blob 一致的 1980 文件是差异表外
+的原样保留事实，不混入 3313 差异路径的分母。
+
+原 `desktop/src/features/projects/` 共 279 路径落入本次差异；旧路径删除既包括迁入共享
+实现，也包括未恢复模块。不能把 `remove_paths` 当删除功能的授权，或将整个目录按
+“共享迁移”一次性通过。已定位的真实缺项包括原 `ProjectDetailMetaPills`、
+`projectCollection::homeRepositoriesToBind` 及其完整详情／仓库绑定调用链；未为无调用方
+函数单独复制死代码。全仓尚未恢复的准确数量仍未知，不把五个已确认缺项当全部缺项。
+
+浏览器正常会话另查看并打开复核旧 live 快捷键截图
+`.playwright-cli/kailo-ui-20261008-live-shortcuts.png`；旧 live 业务截图现十三张，
+十一类页面及两状态。随后点击自定义表情时会话过期，截图
+`.playwright-cli/kailo-ui-20261008-live-session-expired.png` 只记录正常 IdP 登录页，
+不计自定义表情页验收，不注入或重置会话。新 Projects 源码业务截图、Windows/Mobile
+设备验收仍为零，未用旧 live 页面证明本次源码已部署或全部原版一致。
 
 ### 2026-10-08：原 Projects Channels、搜索工具栏与两宿主真实消费者恢复
 
@@ -3633,7 +3491,6 @@ oom/oom_kill仍0、历史max12244未变，无在途编译/Node检查，SDK已释
   `profile-dm-web-restored.log` **37 passed**、`profile-dm-member-restored.log`
   **11 passed**、`profile-dm-native-restored.log` **3 passed**，整组退出0。
 - 本批十路径 `git diff --check -- <十路径>` 退出0。当前全仓 diff --check退出2：
-
   既有未提交文件 InlineEmojiPopover.tsx:106、custom-emoji/emoji.ts:118、
   messages/editAttachments.ts:192、messages/parseImeta.ts:66各报新增EOF空行；这些不在
   本次冻结49路径内，未修改其字节，不把本批目标通过冒充全仓通过。
@@ -4436,118 +4293,6 @@ ProfileAvatarEditor/helpers/types/utils/ModeTabs五模块完整diff；已知完�
   原目标一次重试 `sidebar-id-web-negative-retry.log` exit1、1失败/8通过，
   真正抓住Web生产prop回退工作区ID（预期native-one，实际one）。
 - 恢复原输入后的 `sidebar-id-shared-restored.log` 与
-
-## 2026-10-08 原线程编辑真实消费者与0b线上冷定位复验
-
-### 权威、影响面及边界
-
-本批先对固定官方 Buzz `779af8886caae1317b4de962082429867ab61503` 的
-`desktop/src/features/channels/ui/useRoutedMessageEdit.ts::useRoutedMessageEdit`、
-`desktop/src/features/channels/useChannelPaneHandlers.ts::useChannelPaneHandlers`、
-`desktop/src/features/channels/ui/useChannelRouteTarget.ts::useChannelRouteTarget`、
-`desktop/src/features/channels/useThreadTargetSync.ts::useThreadTargetSync` 和
-`desktop/src/features/messages/ui/MessageThreadPanel.tsx::MessageThreadPanel`
-逐模块核对，再恢复已有原编辑组件的真实调用方；没有先写规格或测试。
-`GuardedChannelPane.tsx::GuardedChannelPane` 固定原版仅9行props转发，
-当前Native直接消费同一lazy Pane，不凭名称假造新guard。
-
-影响面是同一共享编辑选择/退出守卫、Native Screen→Pane→ThreadPanel、
-Web Pane→ThreadPane→原Composer、原route/profile/reply切换和两侧既有编辑发布。
-不新增数据库、API、reason code、工具或状态权威；原event/edit标签仍由Relay保存，
-无旧数据迁移和合同格式变更。Web仍经既有BFF，Native仍本机持钥；
-Mobile没有因此出现组件宿主或私钥出口。
-
-新增shared `useChannelMessageEdit` 直接承接原同消息取消/跨主线程编辑互斥、
-线程离开必须先完成或取消、身份/频道变化立即隐藏旧编辑目标；旧scope的异步回执
-不能清掉新owner编辑器。Native恢复真实线程editTarget、原Composer、保存及
-确认回执失效查询，route在loaded target后才清main edit，forum拒绝stream route。
-Web线程行仅当前已验证本人签名者可编辑，沿原publish传准确`editEventId`，
-不冒充普通reply；eventId/operationId齐全才结束，UNKNOWN/拒绝保留编辑与草稿。
-没有绘制新页面、菜单、确认弹窗或空closeAgentSession。
-
-空列表/未加载目标不定位；scope切换render立即fence；编辑进行中不离开线程；
-重复保存受原busy/editing守卫约束，Web复用原request/pending链；迟到回执只清原目标。授权拒绝沿DENIED，
-就绪/投影缺失沿PRECONDITION，额度/容量沿LIMIT，版本/重入沿CONFLICT，
-执行结果不明沿UNKNOWN并保留原待对账证据，不将其渲染为成功或失败。
-缺真实Agent Activity/会话合同的close保持BLOCKED缺项，不造假consumer。
-原空编辑删除确认、deferred focus/本人末条快捷键仍缺，不声称这几个原模块全恢复。
-
-2条提示`buzz.finishThreadEdit`/`buzz.finishEdit`在原TS词条权威追加中英，
-沿原生成器生成Dart；未建立重复翻译源。17源码路径+755/-47，
-包含新62行shared hook；仅格式化新增区段，不整份重排紧凑宿主。
-本批恢复文件不存在过期remove_paths；仍缺的Agent会话/原编辑消费者未从目标删除。
-
-### 实际执行、生产破坏与还原
-
-复用`kailo-agent-receipt-xvkujx`原SDK和候选
-`/evidence/profile-settings-ortsoo.DRR20F/apps`，4 CPU/8 GiB、
-Node堆3072 MiB、Vitest forks/maxWorkers=1，无Cargo/Go/安装/镜像/全仓编译。
-原始日志目录：
-`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS`。
-
-- Shared实际命令`vitest run test/timeline-scope.test.tsx --pool=forks --maxWorkers=1`：
-  `thread-edit-shared-forks.log`及最终`thread-edit-shared-restored.log`，5/5、exit0。
-- Native实际命令`node --import ./test-loader.mjs --experimental-strip-types --test src/features/channels/ui/ChannelPane.helpers.test.mjs`：
-  `thread-edit-native.log`及最终`thread-edit-native-restored.log`，4/4、exit0。
-- Web原命令`vitest run src/platform/ui/<目标>.test.tsx --pool=forks --maxWorkers=1`：
-  最终`thread-edit-web-read-restored.log`30/30，`thread-edit-web-pane-restored.log`10/10，
-  `thread-edit-web-thread-restored.log`9/9，串行终态exit0。
-- Shared生产/检查、Web、Native的原`tsc --noEmit`四入口均exit0，日志分别
-  `thread-edit-shared-types.log`、`thread-edit-shared-tests-types.log`（`-p tsconfig.test.json`）、
-  `thread-edit-web-types.log`、`thread-edit-native-types.log`。
-- `PATH=/usr/lib/dart/bin:$PATH python3 tools/gen-platform-i18n.py`及`--check`均exit0，
-  `thread-edit-i18n-final.log`；reason_text原字节cmp0。首次PATH未投递导致Dart不可用的
-  `thread-edit-i18n.log`真实失败保留，纠正既有PATH而非安装或换工具。
-- 初次Shared threads及Web三文件cold worker超时分别保留在
-  `thread-edit-shared.log`、`thread-edit-web.log`；未执行的目标不计通过。
-  后者仅Thread9项曾执行，随后原目标逐文件串行运行，最终全部实际执行。
-- 私有生产破坏，正式源码和检查未被破坏：删除线程离开guard，
-  `thread-edit-guard-negative.log`1失败；删除旧owner fence，
-  `thread-edit-owner-negative.log`1失败；Native移除root guard及改错forum守卫，
-  `thread-edit-native-negative.log`2失败；Web把真实editEventId错绑root，
-  `thread-edit-web-negative.log`4失败（confirmed/missing/unknown/denied）。
-  四次实际测试exit1，包装调用只确认预期失败，没有拿startup失败充数。
-- 每次破坏后从正式源还原；最终17源码与候选、6处shared实体包副本cmp全0。
-  初轮恢复58项实际通过；末次行回复纠偏后为下述59项；scoped`git diff --check`exit0；
-  cgroup max16751/oom2/oom_kill2均零增量。SDK工具链终态后已释放。
-
-### 新部署浏览器证据与未验范围
-
-正常SSO表单登录沿既有受控输入及官方playwright-cli Session执行；
-无cookie/session注入、账户修改或口令输出。实际读
-`/app/platform-build-info.json`确认固定main
-`0b04bc2654e5f1b8a7942d9966ebe334927e0c86`，Web image
-`sha256:f60b4fe4dbcc9b9caa3f1567e9c5b80ebea0b8db81d49790ad05f20fe1d02f5b`，
-build/source`sha256:a61b2f7db919f3fe9d4aa20b136bcff530a48954847ba096ca22bf5339110672`。
-真实搜索结果点击、冷根消息定位、回复线程定位及两者整页刷新，5张截图均打开复核：
-`/volumes/kailo/apps/.playwright-cli/kailo-ui-20261008-main0b-search-results.png`、
-`kailo-ui-20261008-main0b-search-cold-target.png`、`kailo-ui-20261008-main0b-search-thread-target.png`、
-`kailo-ui-20261008-main0b-search-thread-reloaded.png`、`kailo-ui-20261008-main0b-search-cold-reloaded.png`
-（后4张与首张同目录）。根消息实际y498.75、线程回复y267，
-刷新等待真实virtualizer/RAF后同样在视口，不以人工scroll伪造定位。
-主代理亦逐张打开5图；浏览器只读导航，没有提交新消息或外部动作。
-
-这些图仅验已部署0b的上一批冷定位修复，不验当前17路径线程编辑；
-本批待主代理提交/部署，没有新的Windows/Mobile设备验收或三组件业务页面验收。
-完整diff仍是32971030d1d856b4f26b19fcff02cd4939204864快照3323路径，
-40已分类=32共享迁移+8缺失需恢复，3283未分类；不是当前main逐处验收完成。
-实际TSV为上述日志目录的`collaboration-main.classification.tsv`，SHA256
-`1e576302dab2f1a92f25b32c025afc01c22bcdeae79c23ec8ffa12738f8f3e70`。
-仍未100%还原；原Agent Activity/profile/DM、其余未核路径、全端完整交互
-和三组件业务运行证据不能由本批59项源码检查或5图代替。
-
-收口实际复核发现线程row `onReply` 仅改replyId、未清editTarget，
-与固定原`useChannelPaneHandlers::handleSelectThreadReplyTarget`不一致；
-最终两入口共用实际callback，同目标再次选择回root且取消编辑。
-新增原ChannelRead实际菜单Edit→row Reply→同row取消目标→再选→发送链，
-要求真实BFF参数为STREAM+parentEventId而非editEventId，没有只测helper。
-`thread-edit-row-reply-positive.log`首次39通过/1失败为新增fixture误用展示时间；
-纠正为既有RawEvent秒数后`thread-edit-row-reply-final.log`40/40、exit0。
-私有仅将row `onReply`改回旧直接setReplyId，
-`thread-edit-row-reply-negative.log`实际1失败，明确抓到仍显示Editing message。
-原字节还原后`thread-edit-row-reply-restored.log`Web31+10+9=50/50、exit0；
-加未更改的Shared5/Native4，共59项；两纠偏源与正式cmp全0。
-末次原Web `tsc --noEmit`亦exit0，`thread-edit-row-reply-types.log`；OOM零增量。
   `sidebar-id-web-restored.log` 均exit0，14+9通过。四输入及Web已装共享包
   共五次cmp、scoped git diff --check均0；旧oom/oom_kill=2未增。
 
@@ -4733,6 +4478,118 @@ Vitest threads/maxWorkers=1；无Cargo、镜像、下载、全局Node重跑或�
 本批源码检查和本节冻结交主代理提交；不自行stage/push。
 未新增业务截图，仍只有此前329线上8状态；新定位修复、全量原版一致性、
 Windows/Mobile和三组件业务页面未由本批验收，不声明100%或生产就绪。
+
+## 2026-10-08 原线程编辑真实消费者与0b线上冷定位复验
+
+### 权威、影响面及边界
+
+本批先对固定官方 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/channels/ui/useRoutedMessageEdit.ts::useRoutedMessageEdit`、
+`desktop/src/features/channels/useChannelPaneHandlers.ts::useChannelPaneHandlers`、
+`desktop/src/features/channels/ui/useChannelRouteTarget.ts::useChannelRouteTarget`、
+`desktop/src/features/channels/useThreadTargetSync.ts::useThreadTargetSync` 和
+`desktop/src/features/messages/ui/MessageThreadPanel.tsx::MessageThreadPanel`
+逐模块核对，再恢复已有原编辑组件的真实调用方；没有先写规格或测试。
+`GuardedChannelPane.tsx::GuardedChannelPane` 固定原版仅9行props转发，
+当前Native直接消费同一lazy Pane，不凭名称假造新guard。
+
+影响面是同一共享编辑选择/退出守卫、Native Screen→Pane→ThreadPanel、
+Web Pane→ThreadPane→原Composer、原route/profile/reply切换和两侧既有编辑发布。
+不新增数据库、API、reason code、工具或状态权威；原event/edit标签仍由Relay保存，
+无旧数据迁移和合同格式变更。Web仍经既有BFF，Native仍本机持钥；
+Mobile没有因此出现组件宿主或私钥出口。
+
+新增shared `useChannelMessageEdit` 直接承接原同消息取消/跨主线程编辑互斥、
+线程离开必须先完成或取消、身份/频道变化立即隐藏旧编辑目标；旧scope的异步回执
+不能清掉新owner编辑器。Native恢复真实线程editTarget、原Composer、保存及
+确认回执失效查询，route在loaded target后才清main edit，forum拒绝stream route。
+Web线程行仅当前已验证本人签名者可编辑，沿原publish传准确`editEventId`，
+不冒充普通reply；eventId/operationId齐全才结束，UNKNOWN/拒绝保留编辑与草稿。
+没有绘制新页面、菜单、确认弹窗或空closeAgentSession。
+
+空列表/未加载目标不定位；scope切换render立即fence；编辑进行中不离开线程；
+重复保存受原busy/editing守卫约束，Web复用原request/pending链；迟到回执只清原目标。授权拒绝沿DENIED，
+就绪/投影缺失沿PRECONDITION，额度/容量沿LIMIT，版本/重入沿CONFLICT，
+执行结果不明沿UNKNOWN并保留原待对账证据，不将其渲染为成功或失败。
+缺真实Agent Activity/会话合同的close保持BLOCKED缺项，不造假consumer。
+原空编辑删除确认、deferred focus/本人末条快捷键仍缺，不声称这几个原模块全恢复。
+
+2条提示`buzz.finishThreadEdit`/`buzz.finishEdit`在原TS词条权威追加中英，
+沿原生成器生成Dart；未建立重复翻译源。17源码路径+755/-47，
+包含新62行shared hook；仅格式化新增区段，不整份重排紧凑宿主。
+本批恢复文件不存在过期remove_paths；仍缺的Agent会话/原编辑消费者未从目标删除。
+
+### 实际执行、生产破坏与还原
+
+复用`kailo-agent-receipt-xvkujx`原SDK和候选
+`/evidence/profile-settings-ortsoo.DRR20F/apps`，4 CPU/8 GiB、
+Node堆3072 MiB、Vitest forks/maxWorkers=1，无Cargo/Go/安装/镜像/全仓编译。
+原始日志目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS`。
+
+- Shared实际命令`vitest run test/timeline-scope.test.tsx --pool=forks --maxWorkers=1`：
+  `thread-edit-shared-forks.log`及最终`thread-edit-shared-restored.log`，5/5、exit0。
+- Native实际命令`node --import ./test-loader.mjs --experimental-strip-types --test src/features/channels/ui/ChannelPane.helpers.test.mjs`：
+  `thread-edit-native.log`及最终`thread-edit-native-restored.log`，4/4、exit0。
+- Web原命令`vitest run src/platform/ui/<目标>.test.tsx --pool=forks --maxWorkers=1`：
+  最终`thread-edit-web-read-restored.log`30/30，`thread-edit-web-pane-restored.log`10/10，
+  `thread-edit-web-thread-restored.log`9/9，串行终态exit0。
+- Shared生产/检查、Web、Native的原`tsc --noEmit`四入口均exit0，日志分别
+  `thread-edit-shared-types.log`、`thread-edit-shared-tests-types.log`（`-p tsconfig.test.json`）、
+  `thread-edit-web-types.log`、`thread-edit-native-types.log`。
+- `PATH=/usr/lib/dart/bin:$PATH python3 tools/gen-platform-i18n.py`及`--check`均exit0，
+  `thread-edit-i18n-final.log`；reason_text原字节cmp0。首次PATH未投递导致Dart不可用的
+  `thread-edit-i18n.log`真实失败保留，纠正既有PATH而非安装或换工具。
+- 初次Shared threads及Web三文件cold worker超时分别保留在
+  `thread-edit-shared.log`、`thread-edit-web.log`；未执行的目标不计通过。
+  后者仅Thread9项曾执行，随后原目标逐文件串行运行，最终全部实际执行。
+- 私有生产破坏，正式源码和检查未被破坏：删除线程离开guard，
+  `thread-edit-guard-negative.log`1失败；删除旧owner fence，
+  `thread-edit-owner-negative.log`1失败；Native移除root guard及改错forum守卫，
+  `thread-edit-native-negative.log`2失败；Web把真实editEventId错绑root，
+  `thread-edit-web-negative.log`4失败（confirmed/missing/unknown/denied）。
+  四次实际测试exit1，包装调用只确认预期失败，没有拿startup失败充数。
+- 每次破坏后从正式源还原；最终17源码与候选、6处shared实体包副本cmp全0。
+  初轮恢复58项实际通过；末次行回复纠偏后为下述59项；scoped`git diff --check`exit0；
+  cgroup max16751/oom2/oom_kill2均零增量。SDK工具链终态后已释放。
+
+### 新部署浏览器证据与未验范围
+
+正常SSO表单登录沿既有受控输入及官方playwright-cli Session执行；
+无cookie/session注入、账户修改或口令输出。实际读
+`/app/platform-build-info.json`确认固定main
+`0b04bc2654e5f1b8a7942d9966ebe334927e0c86`，Web image
+`sha256:f60b4fe4dbcc9b9caa3f1567e9c5b80ebea0b8db81d49790ad05f20fe1d02f5b`，
+build/source`sha256:a61b2f7db919f3fe9d4aa20b136bcff530a48954847ba096ca22bf5339110672`。
+真实搜索结果点击、冷根消息定位、回复线程定位及两者整页刷新，5张截图均打开复核：
+`/volumes/kailo/apps/.playwright-cli/kailo-ui-20261008-main0b-search-results.png`、
+`kailo-ui-20261008-main0b-search-cold-target.png`、`kailo-ui-20261008-main0b-search-thread-target.png`、
+`kailo-ui-20261008-main0b-search-thread-reloaded.png`、`kailo-ui-20261008-main0b-search-cold-reloaded.png`
+（后4张与首张同目录）。根消息实际y498.75、线程回复y267，
+刷新等待真实virtualizer/RAF后同样在视口，不以人工scroll伪造定位。
+主代理亦逐张打开5图；浏览器只读导航，没有提交新消息或外部动作。
+
+这些图仅验已部署0b的上一批冷定位修复，不验当前17路径线程编辑；
+本批待主代理提交/部署，没有新的Windows/Mobile设备验收或三组件业务页面验收。
+完整diff仍是32971030d1d856b4f26b19fcff02cd4939204864快照3323路径，
+40已分类=32共享迁移+8缺失需恢复，3283未分类；不是当前main逐处验收完成。
+实际TSV为上述日志目录的`collaboration-main.classification.tsv`，SHA256
+`1e576302dab2f1a92f25b32c025afc01c22bcdeae79c23ec8ffa12738f8f3e70`。
+仍未100%还原；原Agent Activity/profile/DM、其余未核路径、全端完整交互
+和三组件业务运行证据不能由本批59项源码检查或5图代替。
+
+收口实际复核发现线程row `onReply` 仅改replyId、未清editTarget，
+与固定原`useChannelPaneHandlers::handleSelectThreadReplyTarget`不一致；
+最终两入口共用实际callback，同目标再次选择回root且取消编辑。
+新增原ChannelRead实际菜单Edit→row Reply→同row取消目标→再选→发送链，
+要求真实BFF参数为STREAM+parentEventId而非editEventId，没有只测helper。
+`thread-edit-row-reply-positive.log`首次39通过/1失败为新增fixture误用展示时间；
+纠正为既有RawEvent秒数后`thread-edit-row-reply-final.log`40/40、exit0。
+私有仅将row `onReply`改回旧直接setReplyId，
+`thread-edit-row-reply-negative.log`实际1失败，明确抓到仍显示Editing message。
+原字节还原后`thread-edit-row-reply-restored.log`Web31+10+9=50/50、exit0；
+加未更改的Shared5/Native4，共59项；两纠偏源与正式cmp全0。
+末次原Web `tsc --noEmit`亦exit0，`thread-edit-row-reply-types.log`；OOM零增量。
 
 ## 2026-10-08 原 routed-edit 延后焦点与本人末条快捷键真实消费者
 
@@ -5364,6 +5221,29 @@ Mobile 不因本批 Web/Desktop 共享而增加组件宿主或绕过持钥边界
    `AutomationTriggerKind` 仅 `CHANNEL_MESSAGE/MENTION/SCHEDULE`；
    原 `ACTION_TYPES` 含 `send_dm/call_webhook`，当前 `ActionEnum` 未包含二者。
    这些仍是恢复／接缝缺项，不称设计已阻断，不生成空执行入口，也不删除交付目标。
+
+2026-10-10 现网实拍补记及后置纠偏：旧部署 `4c099a5f9b508f7df47b9fc923fe37ab7375aa70`
+的既有草稿为 `AGENT_TURN`，该分支表单和 YAML 展示单 `action`，运行历史为真实空态；
+这些截图不能推断其它分支没有多步骤画布，也不是当前 main 候选验收。
+固定上游仍为上述 `779af8886caae1317b4de962082429867ab61503`。原四张截图已打开复核，证据位于
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/project-card-20261010.dD5l0n/`
+的 `live-4c099-workflow-existing-form.png`、`live-4c099-workflow-existing-yaml.png`、
+`live-4c099-workflow-history-visible.png`、`live-4c099-workflow-history-empty.png`。
+随后同一正常 SSO 在创建弹窗选择现有执行器和 `POST_MESSAGE`，实际仅在本地编辑
+`delay(1s) → send_message`；步骤画布、节点检查器与 `formatVersion: 3` 的 `steps` YAML
+均可见。新增 `live-4c099-workflow-sequence-add.png`、`live-4c099-workflow-delay-message-form.png`、
+`live-4c099-workflow-delay-message-yaml.png` 已逐张打开复核，最终经原“放弃更改”退出。
+未核对请求、提交、发布、启用或运行；重新读取 build-info 的摘要仍为
+`sha256:9e1bd3032cefb32ac76fc5e64e9ed0fa7d8b45091acfe2e5556d990b407e1761`。
+当前真实 `AutomationAction → WorkflowFormCanvas → WorkflowStepCard` 消费 format 2/3 与
+`delay/request_approval/send_message/add_reaction/set_channel_topic` 五类合同动作；本次实拍只验证
+上述延时和消息编辑分支，不冒称审批、反应或主题执行已验收。完整原七类动作、逐步骤条件与超时仍有缺项。
+逐步骤轨迹缺口单列：固定原 `desktop/src/shared/api/workflowTypes.ts::TraceEntry/WorkflowRun`
+及 `desktop/src/features/workflows/ui/WorkflowRunTrace.tsx::WorkflowRunTrace` 消费 stepId、status、
+startedAt、completedAt、output、error；当前 `contracts/api/automation_run_view.schema.json`
+和 `automation_query.rs::runs` 只投递 Task、步骤审批 Task、progress、usage 引用，不能编造原轨迹。
+本纠偏发生在集中 full 87175 的冻结树 `9badf1f870727971baf0103871549470ad298ed6` 之后，
+不宣称该快照已检查这些后置文档，也不宣称完整原版工作流恢复。
 
 完整工程历史全量表仍为 `collaboration-dfc7a3383517.classification.tsv` 的固定比较点，
 不是本批 main 的完整复核。未重导大树、不新增分类覆盖率、不声称原版 100%。
@@ -7069,33 +6949,6 @@ taskStatus 或 observation。原 `client-kit/ts/platform/src/governance.ts::task
 - 一次有界只读诊断：原 Vitest 配置仅 jsdom 与原 test include；真实 worker 入口 `dist/workers/forks.js`、测试及生产输入均可读，作业退出后 SDK 仅 sleep，无遗留 worker。固定 Vitest 4.1.11 的 `waitForStart` 未收到 `started` ACK，尚未进入实际用例。cgroup 的累计 `oom=2/oom_kill=2` 没有本轮前值，不能据此归因本次 OOM；I/O 压力也不能单独证明根因。没有核实到配置/路径投递缺项，不改产品、依赖、框架或阈值；不宣称根因已查明，验证窗口已释放。
 - 当前源码检查点不代表完整 DOM、生产负向还原、新版截图或部署完成。没有新建镜像、替换在线 Web 或新增账号。现网仍旧 `4c099a5f9b508f7df47b9fc923fe37ab7375aa70`，空 Projects 截图不能证明本批卡片/列表的实际视觉与操作结果；本轮只读页面事实及逐图复核详见 `live-ui-findings.md`，不计入候选验收。
 
-### 2026-10-11 原 Projects 公告卡片旧暂存收口（未部署）
-
-- 当前基底 `d712e9e3130d9fc6171c34c866a9871e22f5048b`；上述 10 月 10 日记录及两次 worker 零断言失败原样保留。本轮不把旧空 Projects 截图作为卡片验收，也没有重新拍摄空态。
-- 重新解析固定官方 `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/features/projects/ui/ProjectCards.tsx::{StatusPill,ProjectGridCard,ProjectListRow}` 及 `desktop/src/features/projects/lib/projectsViewHelpers.ts::getProjectUpdatedAt`。pill class、默认描述、仓库单复数、列表行与日期 fallback 为原样保留/共享迁移；中文及原治理动作槽是授权接入差异。人员、Git activity/repository availability、终端与选择上下文仍缺真实完整消费者，未伪造数据或新增按钮。
-- 10 月 10 日的详情缺项是历史状态：当前 main 已有 `8e3ac789d6ceb12f23ba04f88a6dce8736a5160b` 的 Issue/PR 只读详情与 Inbox 项目读链、`89c3aa14ef2e2e69ff4420172ae72782cee9a089` 的原来源读取；写操作、Git/CommitDetailPanel、Web 项目作者资料触发器仍未全部恢复。本批仅公告卡片显示，不声称完整 Projects。
-- 五路径候选从当前 HEAD 组装；只消费旧 `ProjectCards.tsx`/`projects.test.tsx` 两 blob、两个项目词条及对应同源 Dart、上段项目记录。旧暂存中的 thread/workflow/DM 词条删除不纳入；工作树额外 DM/Agent 词条、旧 Workflow 实拍 23 行及其它未暂存记录不混入本批。公共 index 未修改。
-- 四步复核：要求为固定原版呈现；读写影响仅既有公告读模型 `status/createdAt/repositoryAddresses` 到共源 `ProjectsView::ProjectDirectory`，无字段/契约/DB 迁移；不复制权限权威、不增加请求/写动作；active 不显示 pill、未知真实状态原样显示，未知/撤权/旧作用域清空仍沿既有消费者。日期无 activity summary 只取原公告时间，不标作 Git 最近提交。
-- 原 SDK `kailo-web-thread-tooltip-sdk` 实读 idle、4 CPU/8 GiB/equal swap、1000:1000，Data 挂载，MemAvailable 约 26.5 GiB。独立输入 `/volumes/data/kailo/tmp/web-tooltip-shared.zzIWe9/project-cards.tNU1dY` 未复制依赖树；`node node_modules/vitest/vitest.mjs run test/projects.test.tsx --pool=threads --maxWorkers=1` 原套件正向 57/57、exit 0，日志 `projects-positive.log`。
-- 实现后私有反证分别去掉网格空描述 fallback、列表 `dateSeconds`，原中英文真实 DOM 消费者各 2 failed、exit 1（其余 55 因指定用例未执行）；日志 `projects-description-negative.log` / `projects-date-negative.log`。原字节还原并 cmp 0 后整套 57/57、exit 0，`projects-restored.log`。原 React act 警告保留，不修改原超时/断言/产品语义消音。
-- 原词条生成首次失败保留：Web SDK 的 Dart 尝试创建 `/.dart-tool` 被拒，gen exit 1 / dart format exit 255；不修改 HOME 或生产工具。改用此前已正确配置的原 `kailo-cells-closure-kxbrvt` 空闲 SDK，在独立 `/volumes/data/kailo/tmp/cells-native-closure.KxbRvt/project-cards-gen.wBq3Uk` 执行 `python3 tools/gen-platform-i18n.py` 与 `--check` 均 exit 0，Mobile 共源目录一致；生成 Dart 逐字 cmp 后仅纳入本两个项目词条，保留已提交 Origin 词条。
-- 规范依赖只复用现有 Data 链接（不复制包树）：TypeScript 5.9.3、@types/node 24.13.6、Vitest 4.1.11；原 `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json` 作业 43978 exit 0。主线交叉核实当前无 publish 的 fixture 渲染真实 button，并非菜单 overlay 的 div；随后仅在原中英文用例增加 tagName BUTTON、清空后一次正确项目 ID 回调断言，正式与私有 cmp 0。末版 4758 顺序 tsc 成功后进入 Vitest，但原 worker 启动 60.01s 超时，0 tests、transform/import/tests 均 0，聚合 exit 1（`projects-final.log`）。新增回调断言未执行，不将既有 57 项结果冒充这版通过。未执行本批 full、打包、部署、带真实公告的浏览器截图或 Windows/Mobile 验收，不声明原版 100% 恢复。
-
-- 主线释放 I/O 窗口后只运行末版原套件：50317 实际 exit 0、57/57，通过包含真实 button/一次正确项目 ID 回调；`projects-window.log` 总耗时 158.87s，断言实际 2.49s。私有生产仅将列表 `onClick` 委托改为 NOOP，25098 实际 exit 1，两种语言都在新增回调断言报 `expected vi.fn once, got 0`（其余 55 因指定用例未执行），日志 `projects-click-negative.log`。原样还原并 cmp 正式文件 0 后，6654 原整套还原检查 exit 1：worker 启动 60.32s 超时、0 tests，日志 `projects-click-restored.log`；不冒称还原执行通过，不再循环重跑。恢复后字节与 50317 成功输入一致，生产、用例和超时均未改。当前是已知环境启动失败下的源码检查点，不是发布验收。
-
-### 2026-10-10 实拍审计代码的共享中英文显示（DOM 已验证，未部署）
-
-- 权威与发现：用户要求平台页面完整中文/英文、结果不明不伪报终态；`06` §4 固定 reason code 不随本地化变化。正常 SSO 的旧 Web `4c099a5f9b508f7df47b9fc923fe37ab7375aa70` 实拍 `27-audit.png` 发现作用域/成员跃迁显示未识别动作、多种实际结果只显示代码，证据目录 `/volumes/data/kailo/tmp/kailo-live-handoff-20261010.tvomwE/`。这是已授权治理页面的文案缺口，不是另写或重排 Buzz 原版页面；该截图不是新源码验收。
-- 影响面与实际改动：Web/Desktop 同一 `client-kit/ts/platform/src/react/pages.tsx::AuditResult` 增加 18 个既有结果的显示映射；原 `ActionLabel` 消费共源词条新增的 `scope.transition`、`membership.transition` 标签。`i18n.ts` 唯一词条源由原 `tools/gen-platform-i18n.py` 投影到 Dart；Mobile 获得词条不等于其审计页面已验收。无 schema、数据库、接口、权限、执行路由或审计记录变更，无数据迁移和新状态。
-- 语义核验与副作用：对照 `scope_state`、`membership_state`、`invitation`、`governance`、`agent_task`、`gateway_usage` 的实际写入者；`COMMITTED` 只表示用量入库，不声明账单结算，`NATIVE_TURN_BOUND`、`DISPATCH_INTENT`、`CANCEL_REQUEST_PENDING` 不表示任务完成。原始 action/result code 保留，未知值继续中性回退，准入 ALLOW/DENY 的色调逻辑未变，不引入第二状态机或 fail-open。
-- 边界：空列表、分页、读取拒绝、网络故障、审批及执行中撤权仍由原读取/执行链处理；本次没有新增请求、重试、副作用或生命周期。超限、重入、投影滞后和结果不明不从显示文案推断成功。既有未知代码与 prototype-key 用例保留，新增中英结果映射断言在实现之后写入。
-- 实际验证：受限既有 SDK `kailo-agent-receipt-xvkujx`（4 CPU/8 GiB）生成及 `--check` 成功，输出 `PASS: Mobile platform and reason catalogs match the shared TypeScript source`；生成物与正式工作区 cmp 0，`git diff --check` 0。首次作业 58433 的测试类型检查 exit 2：私有导出漏 `profile-assets.ts`，另有原工作流测试 TS6133 未使用 `host`；补全实际资源源文件，并只移除 `workflow-definition.test.tsx` 对该未使用变量的解构，不删调用或断言。后续 87938 生产 `tsc --noEmit` 成功，但原 `vitest run test/pages.test.tsx -t AuditPage` 的 forks worker 在 60.01s 启动超时，exit 1，0 tests/0 import；日志 `audit-localization-20261010.CebJWU/audit-worker-timeout.log` 位于 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/`。不放宽超时，不将 0 用例计通过。
-- 验收边界：审计 DOM 用例与生产变异反证尚未执行成功，修复后完整测试类型检查、新版截图、Desktop/Mobile 设备均未验收。运行中的 full 35997 固定树 `160c6736339414f0b516922472e278d91a96fbc6` 不含本节改动，已实际报同一 TS6133；没有修改冻结输入、重启构建或宣称 full 成功。本节源码未提交、未推送、未部署；不提高完整还原或组件集成完成度。
-- full 状态补充：外层会话 35997 后来退出 143，容器 `2dbb81519d44386735b3e940104338f7f087e00afadaba079af74cd6a504bb58` 实际仍为 running、`OOMKilled=false`，供应链 Python/Git 扫描仍运行；不能把外层退出码当作检查容器终态或 OOM。继续读取同一容器日志到 `/volumes/data/kailo/tmp/full-160c6736-container-continuation.log`，未启动第二遍检查。
-- full 最终结果：同一容器随后实际结束，续接作业 4069 输出 `FULL_CONTAINER_EXIT=1`，没有重跑 full。除上述 TS6133 外，接缝检查明确拒绝 collaboration-relay、desktop-client、data-query-ai-service、data-query-engine、model-gateway、web-client 六个发布单元的当前源码与登记产物不一致；必须用对应真实构建收口，不能手改摘要充作通过。Rust/Go/Dart、契约四侧同步与兼容、隔离库迁移往返/SQLx、文档和安全检查的通过不抵消这两个失败类别；实际部署 `.env` 预检仍跳过。
-- 修复后测试类型检查：作业 45526 的 `tsc --noEmit -p tsconfig.test.json` 实际成功；后续 DOM 收集报 `ENOENT .../web-client/web/tailwind.config.js`，exit 1、0 tests，原因是私有输入未包含既有整文件用例在收集阶段读取的宿主配置。补入正式 Web/Desktop 两份原配置并逐一 cmp 0，不改检查内容或产品行为；本次失败不计 DOM 验收。
-- DOM 最终与反证：完整输入后 97020 原 `vitest run test/pages.test.tsx -t AuditPage` 实际 18 passed/252 skipped、exit 0。实现后只在私有生产 `AuditResult` 将 `DISPATCH_INTENT` 错映射为 `platform.audit.completed`，30168 中英两项均真实断言失败、exit 1（中文原输出 `expected '已完成' to be '派发意图已记录，尚未确认派发'`）。apply_patch 精确还原并与正式源 cmp 0，96895 同一 AuditPage 范围再次 18 passed/252 skipped、exit 0。日志分别为同一私有根的 `audit-positive-complete-input.log`、`audit-production-negative.log`、`audit-restored.log`。正式产品源码未变异；252 项筛选跳过不计通过。此前“DOM 与测试类型尚未验收”的边界仅由这三次结果收窄；新版浏览器、Desktop/Mobile、full、提交、推送和部署仍未完成。
-
 ### 2026-10-10 原 WorkflowRunTrace 的原生步骤证据与共享呈现
 
 - 权威与状态：用户原版完整恢复要求、`.design/06` §3.1/§9.1 的 Temporal/TaskProjection 单一权威。固定 Buzz `779af8886caae1317b4de962082429867ab61503`，`desktop/src/features/workflows/ui/WorkflowRunTrace.tsx::WorkflowRunTrace` 的卡片、步骤状态、时间、输出、错误、审批区域按原组件复用。执行仍是既有 AgentTask，未新增工作流引擎、账本、正文副本或原生未治理执行入口。
@@ -7131,12 +6984,35 @@ taskStatus 或 observation。原 `client-kit/ts/platform/src/governance.ts::task
 - UI 真实结果：86190 中原色检查通过，历史夹具仍按旧内联布局寻找按钮失败；32231/87895 继续暴露历史区域和 UNKNOWN 空容器的旧定位，按原 Dialog 实际路径修正后 35446 历史 13/13 与原色 1/1。私有生产源码变更原绿色与移除真实步骤映射，16029 两个相应用例确实失败，exit 1；按正式字节恢复 cmp 0 后，43831 历史 13/13、原色 1/1、原外观 12/12，共 26 passed/267 无关筛选 skipped，exit 0。日志 `full-consumer-production-negative.log`、`full-consumer-restored-and-theme-prepared.log`；不把筛选项算全套通过。
 - 外观超时定位：86190 英文首例再次 5000ms 超时，其余 11 项通过；35446 仅私有诊断记录显示 render 约 100ms，真实默认 buzz 动态 import 6038.8ms 后才 initial ready，首次 dark 再加载仅 9.6ms；不是永久 loading，未证明磁盘与 Vitest 转换各占多少。诊断文件已按正式字节还原。既有检查仅在 beforeAll 准备真实默认 buzz 模块，不 mock 返回值、不改业务源码/阈值；43831 原交互、localStorage 与三次模式切换通过。这不验证线上冷启动性能，旧超时日志与 `full-consumer-and-theme-diagnostic.log` 保留。
 
+### 2026-10-10 新消息原宿主与公钥标签恢复检查点
+
+- 固定原版：Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/app/routes/messages.new.tsx` → `desktop/src/app/AppShellChannelSurface.tsx::AppShellChannelSurface` → `desktop/src/features/messages/ui/NewMessageScreen.tsx::NewMessageScreen`；原 inline To header、flex-1 body、底部 Composer 不带额外通用标题或 p4。Web 实際宿主误用 block/p4，实拍 body 高度为 0；本批只纠正原 PlatformApp 分流，保留管理面、身份和发送消费者。
+- 原公钥按钮 `desktop/src/features/profile/ui/SelectedRecipientChip.tsx::SelectedRecipientChip` 保留完整英文 `Verify {name} public key`；新同源 `dm.verifyPublicKey` 中译明确公钥，原可见弹层 `dm.verifyPerson` 不改。新增单词条按原生成路径投影 Dart，不增加 Mobile 宿主能力。无契约、迁移、权限、配额、状态机或第二身份权威变化。
+- 最终 6 源相对 `03213129c6e0c20988f2ec47dac1d83a9745fa3d` 为 +35/-6，补丁 `new-message-host-public-key.patch` SHA-256 `cb8403213a255d76e96d158cba6975bc7caf649ebea16ea5a1c4514f7562ecad`；旧短标签补丁不采用。主线已精确收入候选 `c1f58641eb07a3552a856e3a7648b808a978f441`，未提交、未部署。
+- 原生成器 84462 exit 0，`--check` 实际输出 `PASS: Mobile platform and reason catalogs match the shared TypeScript source`。旧输入 60934 exit 0：shared 2 passed、Web 宿主 1 passed；Web 输入与最终相同，旧 shared 短标签结果不证明最终词条。最终输入 42626 exit 1：Vitest forks worker 启动超时、0 tests/0 import，后置 Web 未执行；不是业务断言失败，不充作生产反证。未改 timeout/pool，不重复重开 SDK。
+- 后续真实验证：原 SDK 4CPU/8GiB、仅 sleep、可用约 26GiB，五个 TypeScript 生产/检查输入与当前 `4897b9bfdfeb195e17081440ea71a1342e7fa617` 导出 cmp 0。76955 标签中英 2/2 通过；同作业后续 Web 宿主 forks worker 60.12s 启动超时、0 tests/0 import，整体 exit 1。仅在私有生产 chip 还原硬编码 aria，36180 中文实际断言失败、英文通过，exit 1；apply_patch 恢复并 cmp 0，9193 同两项 2/2、exit 0。日志 `new-message-final-three-positive.log`、`new-message-label-production-negative.log`、`new-message-label-restored.log`。Web 宿主最终用例及其生产反证未验收，不再盲重试；新版视觉、Windows 设备与 full 未验收，不以标签或其他批结果替代。
+- 实拍范围：正常 SSO 的旧部署 `4c099a5f9b508f7df47b9fc923fe37ab7375aa70`，实际 buildId `sha256:9e1bd3032cefb32ac76fc5e64e9ed0fa7d8b45091acfe2e5556d990b407e1761`；频道浏览、排序、归档空态、搜索空态、新消息收件人、身份公钥弹层及空态共 7 张均打开复核，仅证明旧版本。未创建频道、会话或发送消息，不把旧部署截图当候选验收。
+- 证据根 `/volumes/data/kailo/tmp/live-ui-uncovered-20261010.jjvvsg/`：`observations.md`、`new-message-restoration.md`、`new-message-positive.log`、`new-message-final-positive.log`；原截图完整路径见 observations。源码/生成物不再改，构建以主线更新后的候选导出为准。
+
 ### 2026-10-10 工作流卡片生成枚举穷尽修正
 
 - 原卡片 actionClause 的参数来自生成 AutomationStep.action，却使用字符串 switch case，原 shared tsc 作业 49191 报 TS2366、exit 2；这是当前卡片批既有编译阻断，不是 description 新字段导致。仅替换为同一 contracts 的 ActionEnum 值导入与五个成员，保持封闭穷尽，不加 default、空返回或改动原展示语义。
 - 原受限 SDK 修复后 40793 shared tsc exit 0。实施后仅私有副本还原旧字符串分支，42766 的真实 tsc 再报同一 TS2366、exit 2；按正式字节还原 cmp 0，50914 再跑原 shared tsc 成功后进入其串行 DOM，整作业 exit 0。该 DOM 的 description 6 项属于独立下一批，不计本批新消息宿主/标签验收。
 - 单文件补丁 SHA-256 `af205745f7742c2882170c692ed4e862328a53a5f469f1aa415e9821183f48e0`；正式文件与当前构建导出 Git blob 同为 `4a50d68a97741bcab2590f2e482a9f361908a04e`。主线候选 `4897b9bfdfeb195e17081440ea71a1342e7fa617` 不含 description；Web/Windows/Relay 尚未构建，不宣称部署、截图或 Windows 设备验收。
 - 日志根 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-description-next.IPHHqc/`：最初失败 `types-roundtrip-ui.log`、修复 `shared-types-enum-fix.log`（tsc 无诊断，终态 0）、反证 `enum-description-production-negative.log`（明确 ENUM_NEGATIVE_EXIT=2）、还原 `enum-description-restored.log`。
+
+### 2026-10-10 实拍审计代码的共享中英文显示（DOM 已验证，未部署）
+
+- 权威与发现：用户要求平台页面完整中文/英文、结果不明不伪报终态；`06` §4 固定 reason code 不随本地化变化。正常 SSO 的旧 Web `4c099a5f9b508f7df47b9fc923fe37ab7375aa70` 实拍 `27-audit.png` 发现作用域/成员跃迁显示未识别动作、多种实际结果只显示代码，证据目录 `/volumes/data/kailo/tmp/kailo-live-handoff-20261010.tvomwE/`。这是已授权治理页面的文案缺口，不是另写或重排 Buzz 原版页面；该截图不是新源码验收。
+- 影响面与实际改动：Web/Desktop 同一 `client-kit/ts/platform/src/react/pages.tsx::AuditResult` 增加 18 个既有结果的显示映射；原 `ActionLabel` 消费共源词条新增的 `scope.transition`、`membership.transition` 标签。`i18n.ts` 唯一词条源由原 `tools/gen-platform-i18n.py` 投影到 Dart；Mobile 获得词条不等于其审计页面已验收。无 schema、数据库、接口、权限、执行路由或审计记录变更，无数据迁移和新状态。
+- 语义核验与副作用：对照 `scope_state`、`membership_state`、`invitation`、`governance`、`agent_task`、`gateway_usage` 的实际写入者；`COMMITTED` 只表示用量入库，不声明账单结算，`NATIVE_TURN_BOUND`、`DISPATCH_INTENT`、`CANCEL_REQUEST_PENDING` 不表示任务完成。原始 action/result code 保留，未知值继续中性回退，准入 ALLOW/DENY 的色调逻辑未变，不引入第二状态机或 fail-open。
+- 边界：空列表、分页、读取拒绝、网络故障、审批及执行中撤权仍由原读取/执行链处理；本次没有新增请求、重试、副作用或生命周期。超限、重入、投影滞后和结果不明不从显示文案推断成功。既有未知代码与 prototype-key 用例保留，新增中英结果映射断言在实现之后写入。
+- 实际验证：受限既有 SDK `kailo-agent-receipt-xvkujx`（4 CPU/8 GiB）生成及 `--check` 成功，输出 `PASS: Mobile platform and reason catalogs match the shared TypeScript source`；生成物与正式工作区 cmp 0，`git diff --check` 0。首次作业 58433 的测试类型检查 exit 2：私有导出漏 `profile-assets.ts`，另有原工作流测试 TS6133 未使用 `host`；补全实际资源源文件，并只移除 `workflow-definition.test.tsx` 对该未使用变量的解构，不删调用或断言。后续 87938 生产 `tsc --noEmit` 成功，但原 `vitest run test/pages.test.tsx -t AuditPage` 的 forks worker 在 60.01s 启动超时，exit 1，0 tests/0 import；日志 `audit-localization-20261010.CebJWU/audit-worker-timeout.log` 位于 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/`。不放宽超时，不将 0 用例计通过。
+- 验收边界：审计 DOM 用例与生产变异反证尚未执行成功，修复后完整测试类型检查、新版截图、Desktop/Mobile 设备均未验收。运行中的 full 35997 固定树 `160c6736339414f0b516922472e278d91a96fbc6` 不含本节改动，已实际报同一 TS6133；没有修改冻结输入、重启构建或宣称 full 成功。本节源码未提交、未推送、未部署；不提高完整还原或组件集成完成度。
+- full 状态补充：外层会话 35997 后来退出 143，容器 `2dbb81519d44386735b3e940104338f7f087e00afadaba079af74cd6a504bb58` 实际仍为 running、`OOMKilled=false`，供应链 Python/Git 扫描仍运行；不能把外层退出码当作检查容器终态或 OOM。继续读取同一容器日志到 `/volumes/data/kailo/tmp/full-160c6736-container-continuation.log`，未启动第二遍检查。
+- full 最终结果：同一容器随后实际结束，续接作业 4069 输出 `FULL_CONTAINER_EXIT=1`，没有重跑 full。除上述 TS6133 外，接缝检查明确拒绝 collaboration-relay、desktop-client、data-query-ai-service、data-query-engine、model-gateway、web-client 六个发布单元的当前源码与登记产物不一致；必须用对应真实构建收口，不能手改摘要充作通过。Rust/Go/Dart、契约四侧同步与兼容、隔离库迁移往返/SQLx、文档和安全检查的通过不抵消这两个失败类别；实际部署 `.env` 预检仍跳过。
+- 修复后测试类型检查：作业 45526 的 `tsc --noEmit -p tsconfig.test.json` 实际成功；后续 DOM 收集报 `ENOENT .../web-client/web/tailwind.config.js`，exit 1、0 tests，原因是私有输入未包含既有整文件用例在收集阶段读取的宿主配置。补入正式 Web/Desktop 两份原配置并逐一 cmp 0，不改检查内容或产品行为；本次失败不计 DOM 验收。
+- DOM 最终与反证：完整输入后 97020 原 `vitest run test/pages.test.tsx -t AuditPage` 实际 18 passed/252 skipped、exit 0。实现后只在私有生产 `AuditResult` 将 `DISPATCH_INTENT` 错映射为 `platform.audit.completed`，30168 中英两项均真实断言失败、exit 1（中文原输出 `expected '已完成' to be '派发意图已记录，尚未确认派发'`）。apply_patch 精确还原并与正式源 cmp 0，96895 同一 AuditPage 范围再次 18 passed/252 skipped、exit 0。日志分别为同一私有根的 `audit-positive-complete-input.log`、`audit-production-negative.log`、`audit-restored.log`。正式产品源码未变异；252 项筛选跳过不计通过。此前“DOM 与测试类型尚未验收”的边界仅由这三次结果收窄；新版浏览器、Desktop/Mobile、full、提交、推送和部署仍未完成。
 
 ### 2026-10-10 原版工作流说明字段全链合入（数据库与四侧验证已通过，未发布）
 
@@ -7151,6 +7027,23 @@ taskStatus 或 observation。原 `client-kit/ts/platform/src/governance.ts::task
 - 续接结果：此前文档作业 38905 固定树 `741bbaceffc43476e8266cc1ca49cb8ee68126f3` 最终 exit 0，不包含本节新改动。27190 独立库完整迁移链含 `20261010030000` exit 0；同库原 `sqlx migrate revert` 后 `run` 均 exit 0，日志 `description-empty-rollback.log`，只证明无描述数据时可逆。23554 后来 exit 101，真实输出 `ext_mcp.proto is not in any include path`；核对原 `platform-core/build.rs` 后补入固定候选 `model-gateway/crates/protos/proto`，89915 串行运行原 Core 用例和真实 writer，日志 `core-description-protocol-input.log`、`description-real-writer.log`。正在执行不计通过。
 - Core/DB 最终与反证：89915 原 Core 管理范围 15 passed/4 ignored，随后显式运行原实际 writer 用例 1 passed，整作业 exit 0。只在私有生产 Schedule CREATE SQL 去掉 description 重建项，34193 同一真实 writer 用例 exit 101：`left: Null`、`right: String("  原版 YAML description\n")`；未修改断言或正式源码。apply_patch 原样还原且 cmp 正式文件为 0，74204 同一 writer 1 passed、exit 0。43593 原 `tools/gen.sh --check` 四侧及共源词条同步，Rust roundtrip 47/47、Go 原 contracts 包、TS 类型与 roundtrip 55/55、Dart 原 roundtrip 47/47，整批 exit 0；Dart 依赖从已挂载 cache 离线解析。日志 `description-schedule-production-negative.log`、`description-schedule-restored.log`、`description-four-side-roundtrip.log`。此前尚未完成的 Core/DB/四侧往返边界由这些实测收窄；完整兼容门禁、新 UI 截图、Windows/Mobile、full、提交/push、部署仍无本批通过证据。
 - 格式与隔离数据清理：原 cargo fmt 首次因私有导出缺 `collaboration/examples/countdown-bot/Cargo.toml` exit 1，补投递固定候选原模块后 70944 原 `cargo fmt --manifest-path core/Cargo.toml --all --check` exit 0；未修改格式检查或生产代码。日志 `description-format-check.log`、`description-format-complete-input.log`。本轮隔离库最终查得 AutomationVersion/ActionExecution 为 `0|0`，随后仅删除本轮创建的 `automation_dates_verify_description_20261010`，DROP DATABASE exit 0；生产库、其他验证库、迁移与日志均保留，可重新建立同一验证库。
+
+### 2026-10-10 合并候选契约检查与三组件全量原生差异
+
+- 合并候选为 `b19984a14e7d29c370864ced8ab24e6483ddcd3c`，相对 main `f5673422728077dc24c694981e99d57e770b9ab1` 为 92 文件 +6145/-380；是私有 index 的固定树，不是新提交或部署。本节追加前的源码已通过原 `tools/check.sh contract`（作业 78834，外层 exit 0，包含清理结束），没有重复运行此前的 full。
+- 实际命令：`TMPDIR=/volumes/data/kailo/tmp CHECK_SOURCE_REF=b19984a14e7d29c370864ced8ab24e6483ddcd3c CHECK_CPUS=4 CHECK_MEMORY=8g CHECK_NETWORK=host CHECK_CACHE_ROOT=/volumes/data/kailo/check-cache CARGO_BUILD_JOBS=16 BUILDX_BUILDER=kailo-core-data ./tools/check.sh contract`，经 rtk 在 apps 根执行。原 SDK 摘要 `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，实际容器 4 CPU/8 GiB，使用 Data 缓存；pnpm 报 reused 326/downloaded 0，Dart 解析 47 个依赖，不据此宣称整批离线。
+- 原输出为 `PASS 四侧生成物与 contracts/ 同步`、`PASS 相对 contracts-v0.1.0 无破坏性变更（294 个 schema，匹配 3 个历史 schema）` 和 `全部通过。`。只执行 contract 子步骤；双向序列化另见前述四侧实跑。历史兼容基准只匹配 3 个 schema，不代表所有已发布客户端支持新增 description；原先迁移、全部读取者更新后再准入新字段的发布顺序不变。
+- 成功日志 `/volumes/data/kailo/tmp/tmp.gejGWTrLjh.check.log`，SHA-256 `60820faf796ed3d7d1e904d32c675d1cf85108126748c4c4baa5b451f533ff79`。此前 `CHECK_NETWORK=none` 尝试在 Dart 依赖准备时报 `Got socket error trying to find package test at https://pub.dev.`，没有执行契约子步骤；作业 66243 的清理结束后已确认外层 exit 2。失败日志 `/volumes/data/kailo/tmp/tmp.EbV5Yo2yPz.check.log`，SHA-256 `6fff33a4f4a076968509951a98ed0aba0081f6733c345b564d8acd7c9db08be4`，没有抹去失败或将依赖缺失计为业务失败。
+- 三组件的原 `tools/upstream_manifest.py diff` 均实际 exit 0，完整 patch 与 `RESULTS.md` 位于 `/volumes/data/kailo/tmp/component-full-diff-20261010.fIu7nz/`。对比对象是基于上述 main 的正式脏工作树，不是候选 b199 固定树；原 helper 排除各组件 `fork/`，这三份 patch 不涵盖 Core、Worker 或共享客户端。
+
+| 组件 | 固定官方 commit | 差异文件 / 行数 | Patch SHA-256 |
+| --- | --- | --- | --- |
+| Cells | `c57f02f4962835447df694c63bd0fd8c22bd7baf` | 152 / +26456/-2974 | `75e4e5481b92148cb17ede9227db2ce4e422145a2b2b373ca3b0231ac6a47e05` |
+| WeKnora | `2be7bd40631dda1dd485306038f07a62e9ee287e` | 132 / +18389/-1055 | `0061757f776c49e32a0a13d697b511ca15742fe2203e822d61fe06fad6719617` |
+| Wren | `c5f02a0391c87420dba78632dcd86073710deb72` | 203 / +51776/-2101 | `74a4966e27fa9d19a5e8ba2f4c79750b91c817a35ef17a9c1916430ef8bcf0cc` |
+
+- 原 helper 发出缓存 alternate 指向容器路径、宿主不可访问的 warning，保留该事实；没有修改 `.references` 或共享缓存元数据。全量 diff 只证明差异输入已取得，逐处四类归属、前后端业务、iframe 身份/撤权和全页面视觉验收仍未全部完成，不能写成 100% 还原。
+- Wren UI 的真实源码构建已成功，来源 `sha256:e4400b75b6df9a8e55272c183975ede04aa71d63cd43e7685f7326cfb5df6779`、产物 `sha256:c48437e060361c066e5484c212c62be815a8c2c3c0a939f7945f662013195258` 已按原构建回执进入候选；详见 `data-query/fork/verify/native-integration.md`。AI 与文档读取器仍未产出本批镜像，不能以 UI 构建代替三组件实际部署。完整 full、新版浏览器/Windows/Mobile、提交/push、生产验收仍没有本批通过证据。
 
 ## 2026-10-12 固定全量清单的执行消费者续核
 

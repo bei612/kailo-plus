@@ -1171,8 +1171,8 @@ pub async fn emit_group_discovery_events(
     }
 
     // Re-capture membership behind the writer lock immediately before the
-    // authoritative 39002 replacement. Metadata/admin snapshots retain their
-    // existing behavior; only membership publication needs this freshness fence.
+    // authoritative 39002 replacement. The 39000 topic is fenced against its
+    // Channel row inside replacement; membership uses this separate roster lock.
     let relay_pubkey = state.relay_keypair.public_key().to_bytes();
     let mut member_snapshot = state
         .db
@@ -3015,7 +3015,8 @@ pub async fn reconcile_nip43_membership_snapshots(state: &Arc<AppState>) -> anyh
     .await
 }
 
-/// Reconcile NIP-43 snapshots with explicit startup or maintenance attribution.
+/// Reconcile NIP-43 and channel-topic discovery with explicit startup or
+/// maintenance attribution, sharing the existing community sweep and cadence.
 pub async fn reconcile_nip43_membership_snapshots_with_purpose(
     state: &Arc<AppState>,
     purpose: Nip43ReconciliationPurpose,
@@ -3069,10 +3070,74 @@ pub async fn reconcile_nip43_membership_snapshots_with_purpose(
                 warn!(%community_id, %host, %error, "NIP-43 membership reconciliation failed");
             }
         }
+        // A healthy roster must not short-circuit metadata repair. Likewise a
+        // roster failure must not prevent repairing this community's topic.
+        let tenant = TenantContext::resolved(community_id, host.clone());
+        if let Err(error) = reconcile_topic_snapshots(&tenant, state, purpose).await {
+            metrics::counter!("buzz_topic_snapshot_reconciliation_failures_total").increment(1);
+            warn!(%community_id, %host, %error, "channel topic reconciliation failed");
+        }
     }
 
     metrics::counter!("buzz_nip43_membership_reconciliations_total").increment(reconciled as u64);
     Ok(reconciled)
+}
+
+async fn reconcile_topic_snapshots(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    purpose: Nip43ReconciliationPurpose,
+) -> anyhow::Result<usize> {
+    let relay_pubkey = state.relay_keypair.public_key().to_bytes();
+    let mut after = None;
+    let mut repaired = 0;
+    loop {
+        let candidates = match purpose {
+            Nip43ReconciliationPurpose::Bootstrap => {
+                state
+                    .db
+                    .topic_snapshot_candidates_for_bootstrap(
+                        tenant.community(),
+                        &relay_pubkey,
+                        after,
+                    )
+                    .await?
+            }
+            Nip43ReconciliationPurpose::Maintenance => {
+                state
+                    .db
+                    .topic_snapshot_candidates_for_maintenance(
+                        tenant.community(),
+                        &relay_pubkey,
+                        after,
+                    )
+                    .await?
+            }
+        };
+        let Some(last) = candidates.last().copied() else {
+            break;
+        };
+        let exhausted = candidates.len() < buzz_db::event::DEFAULT_MAX_PAGE_LIMIT as usize;
+        for channel_id in candidates {
+            match emit_group_discovery_events(tenant, state, channel_id).await {
+                Ok(()) => {
+                    repaired += 1;
+                    metrics::counter!("buzz_topic_snapshot_reconciliations_total").increment(1);
+                }
+                Err(error) => {
+                    metrics::counter!("buzz_topic_snapshot_reconciliation_failures_total")
+                        .increment(1);
+                    warn!(community_id=%tenant.community(), %channel_id, %error,
+                        "channel topic snapshot remains pending for next reconciliation");
+                }
+            }
+        }
+        if exhausted {
+            break;
+        }
+        after = Some(last);
+    }
+    Ok(repaired)
 }
 
 /// Publish a kind:13534 relay membership list event (NIP-43).
@@ -3713,17 +3778,14 @@ mod tests {
         let relay = nostr::Keys::generate();
         let channel = Uuid::new_v4();
         let command = |keys: &nostr::Keys, topic: &str| {
-            EventBuilder::new(
-                Kind::Custom(buzz_core::kind::KIND_NIP29_EDIT_METADATA as u16),
-                "",
-            )
-            .tags([
-                Tag::parse(["h", &channel.to_string()]).unwrap(),
-                Tag::parse(["topic", topic]).unwrap(),
-            ])
-            .custom_created_at(nostr::Timestamp::from(1))
-            .sign_with_keys(keys)
-            .unwrap()
+            EventBuilder::new(Kind::Custom(buzz_core::kind::KIND_NIP29_EDIT_METADATA as u16), "")
+                .tags([
+                    Tag::parse(["h", &channel.to_string()]).unwrap(),
+                    Tag::parse(["topic", topic]).unwrap(),
+                ])
+                .custom_created_at(nostr::Timestamp::from(1))
+                .sign_with_keys(keys)
+                .unwrap()
         };
         for value in ["Release notes", ""] {
             let source = command(&actor, value);
@@ -3757,6 +3819,213 @@ mod tests {
                 &source, &forged
             ));
         }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires isolated migrated BUZZ_TEST_DATABASE_URL"]
+    async fn topic_reconciliation_repairs_postcommit_gaps_and_rejects_stale_publishers() {
+        let url =
+            std::env::var("BUZZ_TEST_DATABASE_URL").expect("explicit isolated topic database");
+        let pool = sqlx::PgPool::connect(&url).await.unwrap();
+        buzz_db::migration::run_migrations(&pool).await.unwrap();
+        let state = crate::state::tests::test_state_with_database_pool(pool.clone()).await;
+        let community_id = Uuid::new_v4();
+        let host = format!("topic-reconcile-{community_id}.example");
+        sqlx::query("INSERT INTO communities(id,host) VALUES($1,$2)")
+            .bind(community_id)
+            .bind(&host)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let community = buzz_core::CommunityId::from_uuid(community_id);
+        let tenant = TenantContext::resolved(community, host);
+        let channel_id = Uuid::new_v4();
+        let owner = nostr::Keys::generate();
+        buzz_db::channel::create_channel_with_id(
+            &pool,
+            community,
+            channel_id,
+            "Topic reconciliation",
+            buzz_db::channel::ChannelType::Stream,
+            buzz_db::channel::ChannelVisibility::Open,
+            None,
+            &owner.public_key().to_bytes(),
+            None,
+        )
+        .await
+        .unwrap();
+        let relay_pubkey = state.relay_keypair.public_key().to_bytes();
+        let query = buzz_db::event::EventQuery {
+            kinds: Some(vec![KIND_NIP29_GROUP_METADATA as i32]),
+            channel_id: Some(channel_id),
+            pubkey: Some(relay_pubkey.to_vec()),
+            limit: Some(1),
+            ..buzz_db::event::EventQuery::for_community(community)
+        };
+        // A committed canonical topic with no postcommit discovery event is
+        // exactly the crash boundary; use the real publisher, not a fake row.
+        state
+            .db
+            .set_topic(
+                community,
+                channel_id,
+                "First",
+                &owner.public_key().to_bytes(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            state
+                .db
+                .topic_snapshot_candidates_for_bootstrap(community, &relay_pubkey, None)
+                .await
+                .unwrap(),
+            vec![channel_id]
+        );
+        assert!(
+            state
+                .db
+                .topic_snapshot_candidates_for_maintenance(
+                    community,
+                    &relay_pubkey,
+                    Some(channel_id)
+                )
+                .await
+                .unwrap()
+                .is_empty(),
+            "keyset resumes strictly after its cursor"
+        );
+        assert!(
+            state
+                .db
+                .topic_snapshot_candidates_for_maintenance(
+                    buzz_core::CommunityId::from_uuid(Uuid::new_v4()),
+                    &relay_pubkey,
+                    None,
+                )
+                .await
+                .unwrap()
+                .is_empty(),
+            "another Community sees no channel candidates"
+        );
+        assert_eq!(
+            reconcile_topic_snapshots(&tenant, &state, Nip43ReconciliationPurpose::Bootstrap)
+                .await
+                .unwrap(),
+            1
+        );
+        let old = state
+            .db
+            .query_events_for_event_write(&query)
+            .await
+            .unwrap()
+            .remove(0)
+            .event;
+        assert!(old
+            .tags
+            .iter()
+            .any(|tag| tag.as_slice() == ["topic", "First"]));
+        assert_eq!(
+            reconcile_topic_snapshots(&tenant, &state, Nip43ReconciliationPurpose::Maintenance)
+                .await
+                .unwrap(),
+            0,
+            "matching snapshots do not get republished"
+        );
+        assert_eq!(
+            state
+                .db
+                .topic_snapshot_candidates_for_maintenance(
+                    community,
+                    &owner.public_key().to_bytes(),
+                    None,
+                )
+                .await
+                .unwrap(),
+            vec![channel_id],
+            "only the expected relay signer satisfies discovery"
+        );
+
+        state
+            .db
+            .set_topic(
+                community,
+                channel_id,
+                "Second",
+                &owner.public_key().to_bytes(),
+            )
+            .await
+            .unwrap();
+        let stale = EventBuilder::new(Kind::Custom(KIND_NIP29_GROUP_METADATA as u16), "")
+            .tags(old.tags.clone())
+            .custom_created_at(nostr::Timestamp::from(old.created_at.as_secs() + 1))
+            .sign_with_keys(&state.relay_keypair)
+            .unwrap();
+        assert!(
+            state
+                .db
+                .replace_addressable_event(community, &stale, Some(channel_id))
+                .await
+                .is_err(),
+            "a newer timestamp cannot authenticate a stale captured topic"
+        );
+        assert_eq!(
+            state.db.query_events_for_event_write(&query).await.unwrap()[0]
+                .event
+                .id,
+            old.id,
+            "refusing the stale publisher must preserve the previous head"
+        );
+        assert_eq!(
+            reconcile_topic_snapshots(&tenant, &state, Nip43ReconciliationPurpose::Maintenance)
+                .await
+                .unwrap(),
+            1
+        );
+        assert!(
+            state.db.query_events_for_event_write(&query).await.unwrap()[0]
+                .event
+                .tags
+                .iter()
+                .any(|tag| tag.as_slice() == ["topic", "Second"])
+        );
+
+        // Exercise the actual startup/periodic caller too, including its
+        // healthy NIP-43 early-return branch; clearing a topic omits its tag.
+        reconcile_nip43_membership_snapshots_with_purpose(
+            &state,
+            Nip43ReconciliationPurpose::Bootstrap,
+        )
+        .await
+        .unwrap();
+        state
+            .db
+            .set_topic(community, channel_id, "", &owner.public_key().to_bytes())
+            .await
+            .unwrap();
+        reconcile_nip43_membership_snapshots_with_purpose(
+            &state,
+            Nip43ReconciliationPurpose::Maintenance,
+        )
+        .await
+        .unwrap();
+        let cleared = state
+            .db
+            .query_events_for_event_write(&query)
+            .await
+            .unwrap()
+            .remove(0)
+            .event;
+        assert!(!cleared
+            .tags
+            .iter()
+            .any(|tag| tag.as_slice().first().is_some_and(|key| key == "topic")));
+        assert!(state
+            .db
+            .topic_snapshot_candidates_for_maintenance(community, &relay_pubkey, None)
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

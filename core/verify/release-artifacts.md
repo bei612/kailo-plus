@@ -340,10 +340,70 @@ worker sha256:9e7d3a6d48b1d0281974db4806a307d44f3f30b72348c76a1bb3c18707bfd46c
 - 本段不含对这两个 digest 的破坏核验与回滚演练；重构后的行为回归见
   `core/verify/functional-layout-regression.md`。
 
+## 2026-09-29：ADR-17 后的历史发布登记（2026-09-30 只读补核）
+
+提交 `a7df56f4ee7230456c488d0f59ca874655cf1167` 的说明记录了
+`tools/release.sh` 构建以下 Core/Worker、生成 SBOM/provenance，以及 trace、supply 通过：
+
+```text
+core   sha256:a52669b7227a79bd0b382e093f91ed197f48985d29fc2ca8ad3766cae84cb2f2
+worker sha256:8a05f23aa9f41393d626742c5503a7e4cbe9740c92da6aec35151c7b594f4301
+```
+
+本次只读回读 `dist/` 中两组对应的 `.spdx.json`、`.provenance.json`，四个文件实存。
+两份 provenance 的 subject digest 与文件名一致，源提交均为
+`b592e353c9a86f7119cc97892a410589dc43558b`，依赖锁摘要均为
+`7fb91d1a70c935f857e07bdec20bd68de5983f71abd2fcfb0acafb65a6a77b77`，
+builder 为 `local`，构建上下文为 `apps/`，Dockerfile 分别为 Core/Worker 的文件。
+两份 SPDX 根 package 的版本均为该源提交，生成时间分别为
+`2026-09-29T10:54:41Z` 与 `2026-09-29T10:55:08Z`。
+
+本次没有重新执行构建、发布或 trace/supply；历史通过结果取自上述提交说明。
+这组登记不覆盖 `0ec5e552` 之后的未提交增量，也不证明本地恢复镜像
+`1685e9da…` 已有发布来源证明；本次在 `dist/` 未发现该恢复镜像对应的 SBOM/provenance。
+
+## 2026-10-01：二开产物登记与当前运行边界
+
+本段是 2026-10-01 04:52 UTC 的发布与运行事实核对，不重跑业务验收，
+也不把本轮二开产物登记写成上面的历史 Core/Worker 发布证明。
+`tools/build-upstream.sh` 从 `apps/` 中登记的 inputs 暂存构建输入；镜像经
+registry push 后回读 digest，安装包计算字节摘要，两者均由原工具写回
+`fork/upstream.yaml` 的 source/artifact 两行。固定上游基准不等于 Kailo
+本轮源码提交：这些输入包含完整未提交工作树，而不是选定 Git commit 的归档。
+
+| 产物 | 本批来源记录中的 artifact | 本次核对的运行或安装状态 |
+|---|---|---|
+| Web | `sha256:9c00b00e42974c2d05f03720ecad9b3f53edfa04e85a6056c37f146b22b95748` | registry HEAD 200，返回同一 Docker-Content-Digest；运行容器与 Compose 仍为 `sha256:b474c25ccb35f80dca16fa15d23058ca5fb86acea0a01f44f914f71cf62cf6ae`，新镜像未部署 |
+| AgentGateway | `sha256:43366f393c57aedd895ece4ba7ea2fc5f2b6578a1a79bdf3927870888b68df16` | 原构建脚本退出 0、registry HEAD 200、回读同一 digest；运行容器与 Compose 仍为 `sha256:6b8a47a36ab1d090fb9b1924e8e946dafb45b937f02507c36b2bf2e493d746be`，新镜像未部署 |
+| Linux Desktop | `sha256:51e25fd0fdfb1ade1ffae937617aa4d7a214bc24a2edb9a3715541f0e2b9f9a0` | `sha256sum dist/desktop-client/Kailo_0.5.23_amd64.deb` 与来源记录一致；本批未安装、未作安装包业务验收 |
+
+复用 `tools/upstream_manifest.py::source_digest` 只读重算 Web、Desktop、
+AgentGateway 与 Relay 的当前 inputs，四项均与各自记录一致。此检查证明当前
+输入摘要匹配，不生成远端签名、SBOM/provenance，也不证明当前运行容器使用新产物。
+核对时 13 份追溯 YAML 仍登记旧 Web `b474c25c…`，两处 Gateway 登记仍为
+`6b8a47a3…`，两处 Desktop 登记仍为 `52061409…`；这些登记尚未与本批新产物同步。
+Relay 的 `bba42d49…` 在来源记录、Compose 与当前运行容器一致。
+
+当前运行 Core image ID 为 `sha256:8da30c70e4a62bfd0fa652642416c3f0d0390a79a677eb884a46f7e8f2ef8862`，
+Worker 为 `sha256:4832ccbb1405b0cdf01c90075487aafd6b0272bb8031beed062c8e4ff93af40d`。
+它们不是追溯 YAML 中历史 Core `a52669b7…`、Worker `8a05f23a…`；上述历史
+provenance 的 subject、源提交 `b592e353c9a86f7119cc97892a410589dc43558b` 与锁摘要
+实际回读一致，但不覆盖当前运行镜像或本轮未提交源码。
+
+核对时 Git root 是 `/volumes/kailo`，`apps/` 没有独立 `.git`；
+HEAD 与本地 `origin/main` 均为 `ee4c79683453b0cdc45ca5a0668338b6f977c17c`。
+本轮新镜像 push 是 OCI registry 写入，不是 Git push；本轮尚无新源码提交，
+也没有因构建而完成部署、回滚演练或 Stage 1/2 验收。
+
+本次对 `.references` 的 20 个 clone 和 DocumentServer 三个子模块执行
+`git status --porcelain` 均退出 0、无输出。此结果只证明工作树干净，
+不证明历史上从未运行其中内容；本次核对未在其中运行构建或可执行物。
+
 ## 未被本记录证明的边界
 
-本地镜像尚未作为 OCI referrer 连同 SBOM/provenance 推送到共享 registry，
-也没有远端签名及部署前验签；这按 `ADR-06` 在出现共享 registry 时启用。
+历史 Core/Worker 发布记录未证明 OCI referrer、远端签名及部署前验签；
+2026-10-01 新二开镜像虽已进入本地 registry，其 digest 回读仍不证明这些供应链门禁。
+不得因 registry 已存在，把未执行的签名或验签写成通过；适用合同见 `ADR-06`。
 本记录不证明 Desktop/Mobile 的安装包供应链，也不代替 Stage 2 业务门禁。
 
 ## 2026-10-03：公开 Memory 批 release 与限定部署
@@ -1466,6 +1526,28 @@ network none、UID 1000，七项全部通过；启动器原导出目录清理也
 本次只重新验证一个 HUMAN 的新回合，不把历史三 HUMAN 消息冒充新一轮三账号验收。
 实际运行版本仍是 Web `9edf456a172200fae22adc9ab15e975109ab26b8`、Core/Worker
 `d619b0b06adea393ac21102ac9fe0ff4767981e5`；没有部署此后的 main 或 Windows/Mobile。
+
+## 2026-10-10 固定 216740 Core/Worker 产物终态（未部署）
+
+原发布任务 29435 实际退出 0；没有重启或重复构建。冻结源码为
+`216740f31da344786f282ee74fcede94981f2034`，原工作树与产物目录为
+`/volumes/data/kailo/tmp/core-worker-release-216740.OtiBRP/apps` 及其 `dist/`。
+Core 本机镜像为 `sha256:ac379f4642ff821bc21593e7429d8075a00e5ea582888b8ef8e827295b8a40e5`，
+Worker 为 `sha256:bddff046ef80cdefe8089f07b01524046a6479a444796b1f894798b89989855e`；
+按两个 `platform/{core,worker}:216740f31da344786f282ee74fcede94981f2034` 原 tag
+实际 inspect 均成功且摘要一致。直接用 Worker OCI config 摘要查询本机镜像失败，
+不把 config 摘要当作本机镜像 ID 或部署 pin。两份 SPDX 与 provenance 均实际存在，
+provenance 的 source commit 和 `PLATFORM_BUILD_ID` 都是上述冻结提交，锁摘要为
+`0fa106de22e891a176a10fc9da4b3f38dc608800fd3d17e0ddf65d7077f6b2f7`。
+
+原始 `release.log` 位于上述工作树的父目录，SHA-256 为
+`c9cb6a29eee2cb8748006b0dcc7e77e4150f81ec4fc001a15ac9fe3eb60e289e`；
+Core/Worker provenance 的 SHA-256 分别为
+`573b8faad96428597b7904bc8a07b5285ff84b26a757cc4a88f3b7bbec9a20ff`、
+`e47c7680705f122d9d13b159a39d2d32b31c905e87102f4421587d99dcee3534`。
+本记录只证明冻结源码的本机构建产物，不证明 registry 发布、服务替换、最新
+main、后续 Binding 身份修正或 Wren 改动已部署。没有修改当前 Compose pins，
+没有据编译退出 0 关闭仍失败的 full 或三端、三组件业务验收门禁。
 
 ## 2026-10-12 bdc 同源 Core/Worker 发布终态与 Web 接续
 

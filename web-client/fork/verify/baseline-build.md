@@ -84,6 +84,79 @@ Vite 构建成功（3943 modules）、OCI 导出及实际 registry 产物。
 `Got socket error trying to find package test at https://pub.dev.`
 依赖准备阶段失败，产品门禁没有执行，不能声明全量检查通过或生产就绪。
 
+## 2026-10-10 共享线程历史与呈现修正的实际发布
+
+冻结源码树 `252cf1239c04717370df803dec302aba354a8e32`，只导出原构建输入到
+`/volumes/data/kailo/tmp/web-release-20261010.mk6Pk4`，没有改写公共暂存区。
+固定 Web 上游仍为 `a6766c482533d028582d0efcfd3740769f86217c`；共享 Buzz
+组件来源和权限、历史、退出动画边界见
+[线程恢复证据](../../../core/verify/thread-history-restoration.md)。
+
+原 `tools/build-upstream.sh web-client` 经 `kailo-core-data` 的 8 CPU/16 GiB
+限额执行，临时文件、日志与缓存位于 Data 盘。句柄 69700 退出 0：TypeScript
+与 Vite 构建通过，4006 modules；保留大于 500 kB chunk 的原警告，没有调整
+阈值遮蔽。原日志 `build-web-client.DWXTLl.log` 位于上述导出目录。
+
+- source/build ID：`sha256:e2fd03703af893438467954c20bf5aef154ad0b29d0914ac79143f1d624f4415`。
+- artifact：`sha256:7fd2aacefd5527ac5334ca7e1100153252a41c3abd381692822e7e8e31c5b456`。
+- 独立读取 registry OCI manifest，返回体 SHA-256 与 artifact 相同；同时更新
+  Web manifest、原 Compose 和现有追溯中的该产物 pin，未用 image config
+  digest 代替可部署 manifest digest。
+- 原 Compose 的 `up -d --no-deps --no-build buzz-web` 句柄 29928 退出 0；
+  新容器 `2d41d380662c1737bf9a1c51667fa42d5b16315d4777188d83d58a4a5fdab75e`
+  实际 running、restart 0，随后 healthy。启动前逐键核对该服务投递环境与
+  运行环境，无变化，command 保持 null。只更新 Web，未借此重启 Core/Worker。
+- 容器内 `/srv/app/platform-build-info.json` 回读 buildId 与上述源码摘要相同，
+  reportedAt 为 `2026-10-10T23:04:46.820Z`。浏览器实拍独立核对，不能用
+  本容器读回替代页面操作，更不能声称 Windows/Mobile 已验收。
+
+此前句柄 92698 构建了更早输入，期间定位到实际权限退出动画问题；在生产编译
+与 push 之前精确取消该次 buildx，实际退出 130，日志 `build-web-client.LP70oa.log`。
+没有删除缓存、停止业务服务或把该次中止算通过。修正后才运行上述 69700。
+本节不证明整个工作树或一期全量检查通过，也不表示三个外部组件已发布/绑定。
+
+## 2026-10-11 9d718 普通 SSO 实际视觉核验
+
+固定源码 `9d718234b74b688d9b81816f9b67470d4fc80440` 的构建、限定 Web 部署和
+原始失败记录见 [构建输入与发布证据](emoji-burst-build-input.md)。普通账号浏览器
+实际读回 `/app/platform-build-info.json` HTTP 200，buildId 为
+`sha256:1fe5c137da245352680e90626a67aef906cd4bee1bb9b7964b2c080964c0653e`，
+reportedAt 为 `2026-10-11T15:40:21.954Z`。本节不引用旧 032b9 截图作为新版验收。
+
+首次刷新因原会话到期停在正常 IdP 登录表单，等待频道标签 30 秒超时，保留
+`01-reload-state.yaml`。随后从既有受控文件通过匿名 FD 登录同一普通账号，
+不回显密码、不共享认证状态、不关闭浏览器 sandbox 或 CSP。没有发送消息、
+创建项目、保存定义、提交工作流、安装 Agent 或激活绑定；Inbox 原自动已读行为
+没有另行抑制。以下截图原件均在
+`/volumes/data/kailo/tmp/web-main-9d71823-release.fddJRC`，已逐张打开复核。
+
+| 截图 | 实际操作与结论 |
+| --- | --- |
+| 03-projects.png | 项目列表空态与原项目/频道、网格/列表控件可见；无项目对象，不证明详情、Issue、Git、成员或创建链可用 |
+| 04-agents-frame.png | 本版共享原标题/外框已可见，现有定义卡片和工作区安装空态加载；额外治理区须逐项核对，不能称原 Agents 完整恢复 |
+| 05-agent-definition.png | 点击既有定义，真实发布版本/历史/指令详情打开后关闭；未修改版本、所有权或安装 |
+| 06-workflows.png | 实际列表为空、创建卡片可点击；没有把缺少对象当运行历史验收 |
+| 07-workflow-agent-turn.png | 原创建对话框打开 Agent 回合检查器；本页仍无有效执行器，顶部空区及治理区不据此认定与原版一致 |
+| 08-workflow-yaml.png | 同一未提交草稿切到 YAML 后关闭；未执行、未发布，Delay timeout 运行终态未实机验收 |
+| 09-inbox.png | 真实已有会话列表及线程消息加载、原 composer 可见；没有用固定新回复代替多人协作验收 |
+| 10-inbox-filter.png | 实际仅 all/mention/thread/agent_activity/drafts 五项；固定原版 project/needs_action/reminders 三项缺失保留为差距 |
+| 11-profile-frame.png | 从已有消息打开真实 Profile，共享框架、头像、信息与公钥显示；随后点击复制出现成功 toast，未独立读取系统剪贴板，不扩大为剪贴板内容已核验 |
+
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/home/ui/InboxFilterMenu.tsx::InboxFilterMenu` 有八种筛选，
+实际共享类型和数据消费者尚不完整；不能只增加三个空菜单。Agents 的
+UnifiedAgents/Teams/Snapshot/Transcript 及完整执行链也未由上述截图证明恢复。
+本轮没有捕获网络自然加载骨架帧，骨架实际视觉状态仍未验，不用最终空态替代。
+
+三组件菜单未出现的原因继续只读核验：租户及目录实际返回的三个工作区，分别
+GET application-bindings 均 HTTP 200、bindings 为空、无 nextOffset、canCreate 为 true。
+三工作区原件 `component-bindings-read.json`。现有 `NativeApplicationScope`
+只渲染 ACTIVE 且 hasNativePage 的绑定，当前返回为空不是已有入口渲染丢失，
+不外推其他租户。三个业务页面、iframe、撤权、上传下载仍未进入本轮验收。
+
+这是一项实际部署版本的有限页面走查，不是所有页面/关键状态矩阵，不证明
+原版 100% 一致、三人多 Agent 稳定协作、Windows、Mobile 或生产就绪。
+
 ## 2026-10-12 54306 Web 匹配产物：已构建、未部署
 
 本批唯一构建固定已提交并推送的源码

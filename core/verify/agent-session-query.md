@@ -42,6 +42,116 @@ Web 与 Desktop 使用同一管理面 BFF 和 TypeScript 消费者。Mobile 仅�
 最终 TS 独立输出在 `ts-roundtrip-restored.log`，实际 56 passed / 0 failed。
 上一冻结 f9784f9b92f8279e3293999c04c97d8e0baaddde 的全量检查实际 exit 1，包括旧 Core stream、共享 Workflow 检查及产物来源不匹配；不是本批通过证据。本批源码未部署，不改变三组件 release/binding 的阻断状态。
 
+## 2026-10-10 当前业务状态复核
+
+通过原 `platform-local-core-db-1` 的 `psql -X -v ON_ERROR_STOP=1`，使用容器既有
+数据库身份执行 `BEGIN READ ONLY`，读取原 Invocation 与 CapacityLease，最后
+`COMMIT`，实际退出 0。未读取密码、正文、工具结果或密钥，未修改业务记录。
+第一次带状态筛选的命令因 shell 引号转义错误退出 1；随后使用无字符串筛选的
+原表连接取得下面的实际结果，不把失败命令记为验收通过。
+
+- installation `2989b1ec-f3fa-468d-89c5-4a8be226c97c` 仍有四条 CREATED；
+  旧 Invocation `db6dfccb-f0db-409a-8ed6-d81e64e277d9` 与 lease 均 UNKNOWN。
+  lease 有 terminal event 13，但 native_release_confirmed_at 仍为空，最近
+  updated_at 为 `2026-10-10T19:13:42.866618Z`。没有清理占用、重放或扩大容量。
+- installation `f66a3b3e-589e-4c27-965c-8d2b4cebb995` 最近已完成的 Invocation
+  仍为 `ab1c154a-58f3-4d9f-bc39-8e87788f21a0`；其 lease RELEASED，具有
+  terminal event 13 与 `2026-10-09T13:18:25.468167Z` 的原生释放证据。
+  本轮没有发起新消息，历史完成记录不是新的双 Agent 协作验收。
+- 更早的 Invocation `4cfe99fe-1e45-46d2-834b-411027412a9d` 为 RUNNING，
+  lease 已 RELEASED。容量释放不是 Invocation 的业务完成证明；现有
+  `capacity.rs::confirm_closed_native` 明确把 Reply/Usage 终态留给原消费者。
+  本次没有据 lease 推断或人工写入业务成功/失败。
+
+`playwright-cli` 实查两个旧协作浏览器会话已处于正常 IdP 登录页；
+`kailo-ui-status` 仍有旧 Workflows DOM，但直接会话 GET 已重定向 IdP，被
+页面的 `connect-src 'self'` 拒绝。这个裸 GET 不是原客户端的完整会话恢复链，
+既不证明客户端恢复错误，也不证明旧 DOM 仍有有效授权。不放宽 CSP、注入
+Cookie 或把残留页面当作当前读验收。当前多人多 Agent 稳定协作仍未证明。
+
+## 2026-10-10 会话时间戳四侧往返纠正
+
+既定权威是 ADR-03 与 `contracts/README.md` §1：RFC3339 时间按普通字符串
+传输，不使用 `format: date-time`。`AgentSessionView.createdAt` 与
+`AgentInvocationView.createdAt/updatedAt` 错用了该 format；Go 生成的
+`time.Time` 将原样例 `.000Z` 序列化成 `Z`。这是时间字节被改写，不是字段
+丢失或时间点变化，也不能靠把样例改成某一语言偏好的格式解决。
+
+影响面为两份 schema、原四侧生成类型及现有 Session/Invocation 往返消费者。
+Core 从原数据库 DateTime 字段输出 RFC3339，未接受新的客户端时间写入；
+Web/Desktop 原共享 TypeScript 字符串消费者不变，Mobile 未另建类型或页面。
+恢复普通字符串不会扩大 Session、Invocation 或 rollout 读取权限，不变更
+枚举、分页、native 引用、Workflow history、数据库、取消或 UNKNOWN 语义。
+缺省字段仍保持缺省；原样例、往返断言及未知状态拒绝检查均不放宽。
+
+实际修复后的 Worker 枚举专项命令先通过 `go vet ./...`，随后
+`go test ./... -count=1` 在上述两个既有往返子用例失败，整体退出 `1`；
+workflows 与 replay-tests 已通过。原始输出位于
+`/volumes/data/kailo/tmp/component-delivery-commit.CVKZK5/worker-enum-corrected.log`。
+这份最终毫秒样例的失败优先于前文串行过程中的 Go 通过描述：此前通过不能
+证明后改的最终样例四侧都通过。现已按合同移除三处 date-time format，原
+受限 SDK 的 `tools/gen.sh` 实际退出 `0`，四份生成物已回写；Go 与 Dart
+恢复字符串，TypeScript 从 Date 恢复 string，Rust 原本就是 String，仅增注释。
+日志为同目录 `session-contract-gen.log`。串行复验的
+`session-contract-four-side.log` 已实际记录 Worker 所有 Go 包（含 contracts、
+workflows、replay-tests）通过，Dart 原往返 48/48、TypeScript 原检查类型及
+56/56 用例通过。原句柄 `63418` 随后取得共享构建锁，Rust contracts 的
+48 项往返和 2 项 adapter PEP 往返全部通过；原 `tools/gen.sh --check`
+确认 Dart/Rust/TypeScript/Go 四侧与 Mobile 同源目录均同步，串行作业最终
+退出 `0`。这是该冻结输入的四侧往返与生成同步，不替代最终合并树的全量
+检查及契约兼容比对。没有修改正式生成文件来绕过生成器，也未改样例或
+测试期望。
+
+### 同轮旧冻结树的全量检查失败边界
+
+`CHECK_SOURCE_REF=c381e68b783b1860c510128126bba3c9a58556b9` 的原
+`./tools/check.sh --full` 于 2026-10-10 执行；输入固定在随后 Worker 枚举、
+会话时间戳及共享 UI 修复之前，不在运行过程中替换源文件。原始日志为
+`/volumes/data/kailo/tmp/component-delivery-commit.CVKZK5/full-component-final.log`，
+容器日志为 `/volumes/data/kailo/tmp/tmp.VmTkwMk5Q7.check.log`。
+
+已取得的实际结果包括 Rust fmt/clippy、生产 TypeScript 类型、Dart analyze、
+四侧生成同步、302 个 schema 的历史兼容及 Cargo 检查通过；真实数据库迁移
+因未提供 `DATABASE_URL` 跳过。旧输入的 `go vet`、`go test` 失败；上述随后
+修复的定向通过不会将这两个旧失败改记为通过。
+
+同轮共享平台 Vitest 实际为 136 passed / 1 failed，另有 46 个未处理的
+worker 启动错误。`profile-assets.test.ts` 的原头像资源输出用例报
+`Test timed out in 5000ms`，其余启动错误为
+`Timeout waiting for worker to respond`；`pnpm -r test` 因此退出 1。
+未放宽超时、移除断言或把未启动文件算作通过。后续 Dart 检查通过，replay
+仍失败；追溯的文档六项、24 条记录及能力注册表校验通过。随后入口进入
+供应链步骤。该冻结输入已明确失败，且不覆盖当前修复；为避免继续占用
+I/O，负责人核对容器的完整 ID、固定 SDK、实际 `bash tools/check.sh --full`
+及进程后，主动停止唯一对应的检查容器
+`07a1472886d9c7b96613cbd2c7638bf98ecab9c5decfcba7fe838daf7fa44360`。
+原入口执行自身清理；没有停止 Runtime BuildKit、队友 SDK 或其他项目。
+供应链及后续 seam/security/docs 未完成，不记通过，也不把主动停止写成
+自然完成的全量检查。外层日志 SHA-256 为
+`d87785429d48a1dadfe38ebea95a141a2cf09f3f8423f312086d907d2cafc49b`，
+容器日志为 `2ca6e2a14b0733351eaa1e0c511d9a87d9a1222f9cc73ff15afa9a002f3096ee`。
+该失败输入及旧部署截图均不证明最新集成树已验收。
+原入口清理完成后，句柄 `45041` 实际退出 `137`；这是上述主动停止的
+终态，不是 OOM 诊断、检查通过或当前候选树的验证结果。
+
+### 2026-10-11 后续冻结输入的 Core 静态检查
+
+原冻结 Git tree `bd47a6a1e19bd78ee6981cc08f095fd1a30579c8` 的 Core 检查
+句柄 76727 已实际退出 0，输出 `CLIPPY_EXIT=0`。实际命令为
+`cargo clippy --offline --manifest-path core/Cargo.toml --all-targets -- -D warnings`，
+使用固定 SDK `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+容器 `kailo-component-core-clippy` 的实际限额为 4 CPU、8 GiB，源和 Cargo 缓存均在 Data。
+日志 `core-clippy-bd47-protos.log` 位于前述批次目录，SHA-256 为
+`b6c74114067ea7a1b7c46076c306f1d62dc17727b43e271f83352a9ac1d2bd5a`。
+
+前一个句柄 75051 退出 101：私有导出漏了同树的
+`model-gateway/crates/protos/proto/ext_mcp.proto`，报该文件不在 include path。
+补齐同一冻结树的原 proto 输入后才执行上述复验；没有改产品编译逻辑或弱化 clippy。
+最终完成耗时 19m02s；收到编译完成文字时进程尚未退出，直到取得 0 才记通过。
+该证据只关闭这份输入的 Core 静态检查失败，既不重写此前全量失败，也不证明
+实库、旧 UNKNOWN 任务、三人多 Agent、最新 Web 修正或生产发布已验收。
+
+
 ## 2026-10-11 时间戳合同及 PEP 往返收口
 
 本批基准 `032b9c304c84336a52c699244992c9bc73ff55da`，只选择两个时间戳
@@ -71,7 +181,6 @@ schema、原四侧生成物和既有 PEP 往返消费者，不混入工作区其
 该全量另有 Relay 移除路径仍存在和 11 项 source/artifact 不匹配；数据库
 迁移及真实部署配置预检跳过。这些独立问题不因本批窄修复而变成通过。
 没有新部署、Windows/Mobile 安装包或三组件业务验收。
-
 
 ### 本批四侧定向验证
 

@@ -164,6 +164,20 @@ async fn scenarios(http: &reqwest::Client, e: &Env, pool: &PgPool, w: &World) {
         (state_of(pool, "identity.workspace", target).await == "ACTIVE").then_some(())
     })
     .await;
+    let creator_state: Option<String> = sqlx::query_scalar(
+        "select state from identity.workspace_membership
+         where workspace_id = $1 and tenant_principal_id = $2",
+    )
+    .bind(target)
+    .bind(w.fx.principal)
+    .fetch_optional(pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        creator_state.as_deref(),
+        Some("ACTIVE"),
+        "Workspace 就绪之前必须完成创建者成员投影，而不是只加入 CONTROL"
+    );
     // ActionDecision 带 SpiceDB 给出的 revision；DECISION 与 DISPATCH 各一条审计
     let zed: Option<String> = sqlx::query_scalar(
         "select zed_token from admission.action_decision where action_execution_id = $1 and phase = 'ADMISSION'")

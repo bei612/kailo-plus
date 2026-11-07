@@ -115,3 +115,5 @@ export function unionCustomEmoji(
     .map(([shortcode, { url }]) => ({ shortcode, url }))
     .sort((a, b) => a.shortcode.localeCompare(b.shortcode));
 }
+
+

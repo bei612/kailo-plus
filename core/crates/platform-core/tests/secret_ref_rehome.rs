@@ -1012,3 +1012,621 @@ async fn copied_then_rejected_destroys_the_unreferenced_copy() {
     common::teardown_live_workspace(&e, &pool, &fx).await;
     purge_test_legacy_metadata(&http, &e, fx.tenant, &path).await;
 }
+
+// ---- V-SCN-69 故障注入：真实响应丢失与执行中撤权 ----
+//
+// 响应丢失不是用 mock 回应模拟的：`DropResponseProxy` 把请求逐字节转发给本地
+// 真实 OpenBao，读到上游回应的状态行后双向断开，不向请求方交回任何字节。
+// 于是 OpenBao 已按请求落盘（状态行证明它已回应；KV v2 的写入与 destroy 都在
+// 回应前同步提交），请求方只得到传输错误——正是 Core 在 `write_once` /
+// `destroy_legacy_identity_version` 返回 `Transport` 时所处的局面。代理只插在
+// 测试进程与 OpenBao 之间：部署中的 Core 进程直连 OpenBao，不能在不重启的前提下
+// 改道，因此由测试代替 Core 发出那次「回应丢失」的请求，随后只让真实 Core 按
+// 冻结 locator 与 metadata 收敛。
+
+struct Legacy {
+    fx: common::LiveWorkspace,
+    path: String,
+    old_locator: String,
+    old_version: i32,
+    pubkey: String,
+    audience: String,
+    generation: i32,
+    key: String,
+    child: String,
+    root: String,
+}
+
+/// 与前两个用例同一夹具：把夹具 HUMAN 的 binding 改指部署级旧路径的同一私钥。
+async fn legacy_fixture(
+    http: &reqwest::Client,
+    e: &common::Env,
+    pool: &PgPool,
+    token: &str,
+) -> Legacy {
+    let fx = common::provision_live_workspace(http, e, pool, token)
+        .await
+        .expect("开通独立归位夹具");
+    let path = format!("buzz-human/{}/{}", fx.tenant, Uuid::new_v4());
+    let parent = std::env::var("OPENBAO_TENANT_PARENT_NAMESPACE").expect("Tenant namespace 根");
+    let credentials = std::fs::read_to_string(
+        std::env::var("VERIFY_OPENBAO_ROOT_TOKEN_FILE").expect("核验凭据路径"),
+    )
+    .expect("读取核验凭据");
+    let credentials: Value = serde_json::from_str(&credentials).expect("解析核验凭据");
+    let root = credentials["root_token"]
+        .as_str()
+        .expect("核验 root token")
+        .to_owned();
+    let (pubkey, tenant_locator, tenant_version, audience, generation): (
+        String,
+        String,
+        i32,
+        String,
+        i32,
+    ) = sqlx::query_as(
+        "select pubkey, private_key_secret_ref, private_key_secret_version,
+                private_key_secret_audience, version
+         from identity.buzz_identity_binding
+         where tenant_id = $1 and principal_id = $2 and kind = 'HUMAN'
+           and custody = 'SERVER' and state = 'ACTIVE'",
+    )
+    .bind(fx.tenant)
+    .bind(fx.principal)
+    .fetch_one(pool)
+    .await
+    .expect("夹具 HUMAN binding");
+    let key =
+        common::read_secret_version(http, e, fx.tenant, &tenant_locator, tenant_version).await;
+    let old_version =
+        i32::try_from(common::put_secret(http, e, &path, &key).await).expect("旧 KV 版本");
+    let old_locator = format!("{}/{}/{path}", e.bao_namespace, e.bao_mount);
+    let generation: i32 = sqlx::query_scalar(
+        "update identity.buzz_identity_binding
+         set private_key_secret_ref = $2, private_key_secret_version = $3,
+             version = version + 1
+         where pubkey = $1 and tenant_id = $4 and version = $5
+         returning version",
+    )
+    .bind(&pubkey)
+    .bind(&old_locator)
+    .bind(old_version)
+    .bind(fx.tenant)
+    .bind(generation)
+    .fetch_one(pool)
+    .await
+    .expect("只改夹具 SecretRef");
+    common::zed_relationship(
+        e,
+        "touch",
+        &format!("tenant:{}", fx.tenant),
+        "admin",
+        &format!("principal:{}", fx.principal),
+    );
+    Legacy {
+        child: format!("{parent}/{}", fx.tenant),
+        fx,
+        path,
+        old_locator,
+        old_version,
+        pubkey,
+        audience,
+        generation,
+        key,
+        root,
+    }
+}
+
+struct Seeded {
+    action: Uuid,
+    operation: Uuid,
+    target_path: String,
+    step: Value,
+}
+
+/// 写前事实：DISPATCHED 的动作不被对账器重复派发，WorkflowRef 只作服务面核验
+/// 引用；测试直接驱动 service API，与 `copied_then_rejected_*` 同一形状。
+async fn seed_rehome(
+    pool: &PgPool,
+    e: &common::Env,
+    l: &Legacy,
+    initiator: Uuid,
+    state: &str,
+    label: &str,
+) -> Seeded {
+    let action = Uuid::new_v4();
+    let operation = Uuid::new_v4();
+    let workflow = format!("platform:SECRET_REF_REHOME:{}:{action}:1", l.fx.tenant);
+    let target_path = format!("buzz-ref-rehome/{action}");
+    let target_locator = format!("{}/{}/{target_path}", l.child, e.bao_mount);
+    let mut tx = pool.begin().await.expect("冻结归位夹具事务");
+    sqlx::query(
+        "insert into admission.action_execution
+         (id, operation_id, tenant_id, action_key, action_version,
+          initiator_principal_id, actor_principal_id, target_id, parameter_hash,
+          temporal_workflow_id, gate_state, dispatch_state, correlation_id)
+         values ($1,$2,$3,'identity.secret_ref.rehome',1,$4,$4,$5,
+                 $6,$7,'ALLOWED','DISPATCHED',$8)",
+    )
+    .bind(action)
+    .bind(operation)
+    .bind(l.fx.tenant)
+    .bind(initiator)
+    .bind(l.fx.principal)
+    .bind(format!("fault-{label}"))
+    .bind(&workflow)
+    .bind(Uuid::new_v4())
+    .execute(&mut *tx)
+    .await
+    .expect("写入夹具 ActionExecution");
+    sqlx::query(
+        "insert into projection.workflow_ref
+         (workflow_id, workflow_type, workflow_version, kind, tenant_id,
+          operation_id, action_execution_id, projection_state)
+         values ($1,'ComponentTaskWorkflow',1,'SECRET_REF_REHOME',$2,$3,$4,'PENDING_START')",
+    )
+    .bind(&workflow)
+    .bind(l.fx.tenant)
+    .bind(operation)
+    .bind(action)
+    .execute(&mut *tx)
+    .await
+    .expect("写入夹具 WorkflowRef");
+    sqlx::query(
+        "insert into admission.secret_ref_rehome
+         (id, action_execution_id, workflow_id, tenant_id, identity_pubkey,
+          expected_binding_version, old_locator, old_version, old_audience,
+          target_locator, old_ref_status, new_ref_status, state)
+         values ($1,$1,$2,$3,$4,$5,$6,$7,$8,$9,'ACTIVE','NONE',$10)",
+    )
+    .bind(action)
+    .bind(&workflow)
+    .bind(l.fx.tenant)
+    .bind(&l.pubkey)
+    .bind(l.generation)
+    .bind(&l.old_locator)
+    .bind(l.old_version)
+    .bind(&l.audience)
+    .bind(&target_locator)
+    .bind(state)
+    .execute(&mut *tx)
+    .await
+    .expect("写入夹具归位行");
+    tx.commit().await.expect("提交写前事实");
+    Seeded {
+        action,
+        operation,
+        target_path,
+        step: json!({
+            "actionExecutionId": action,
+            "rehomeId": action,
+            "tenantId": l.fx.tenant,
+            "pubkey": l.pubkey,
+            "expectedBindingVersion": l.generation,
+            "workflowId": workflow
+        }),
+    }
+}
+
+async fn advance_step(
+    http: &reqwest::Client,
+    e: &common::Env,
+    token: &str,
+    s: &Seeded,
+) -> (reqwest::StatusCode, Value) {
+    let response = http
+        .post(format!(
+            "{}/service/v1/secret-ref-rehomes/advance",
+            e.service_url
+        ))
+        .bearer_auth(token)
+        .json(&s.step)
+        .send()
+        .await
+        .expect("调用归位 service API");
+    let status = response.status();
+    (status, response.json().await.unwrap_or(Value::Null))
+}
+
+async fn rehome_row(pool: &PgPool, s: &Seeded) -> (String, String, Option<i32>) {
+    sqlx::query_as(
+        "select state, new_ref_status, new_ref_version
+         from admission.secret_ref_rehome where id = $1",
+    )
+    .bind(s.action)
+    .fetch_one(pool)
+    .await
+    .expect("读取归位行")
+}
+
+async fn metadata(
+    http: &reqwest::Client,
+    e: &common::Env,
+    namespace: &str,
+    root: &str,
+    path: &str,
+) -> Option<Value> {
+    let response = http
+        .get(format!("{}/v1/{}/metadata/{path}", e.bao_addr, e.bao_mount))
+        .header("X-Vault-Namespace", namespace)
+        .header("X-Vault-Token", root)
+        .send()
+        .await
+        .expect("读 KV metadata");
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return None;
+    }
+    Some(
+        response
+            .error_for_status()
+            .expect("KV metadata 可读")
+            .json()
+            .await
+            .expect("解析 KV metadata"),
+    )
+}
+
+/// 目标 KV v2 首次写入，经代理丢掉回应。
+async fn lossy_target_write(
+    proxy: &common::DropResponseProxy,
+    e: &common::Env,
+    l: &Legacy,
+    s: &Seeded,
+) {
+    proxy
+        .send_losing_response(
+            common::lossy_client()
+                .post(proxy.url(&format!("/v1/{}/data/{}", e.bao_mount, s.target_path)))
+                .header("X-Vault-Namespace", &l.child)
+                .header("X-Vault-Token", &l.root)
+                .json(&json!({"data": {"value": l.key}, "options": {"cas": 0}})),
+            "HTTP/1.1 200",
+        )
+        .await;
+}
+
+async fn binding_ref(pool: &PgPool, l: &Legacy) -> (String, i32) {
+    sqlx::query_as(
+        "select private_key_secret_ref, private_key_secret_version
+         from identity.buzz_identity_binding where pubkey = $1 and tenant_id = $2",
+    )
+    .bind(&l.pubkey)
+    .bind(l.fx.tenant)
+    .fetch_one(pool)
+    .await
+    .expect("读 binding")
+}
+
+async fn audit_count(pool: &PgPool, s: &Seeded, stage: &str) -> i64 {
+    sqlx::query_scalar(
+        "select count(*) from audit.audit_event where operation_id = $1 and event_key like $2",
+    )
+    .bind(s.operation)
+    .bind(format!("%:{stage}"))
+    .fetch_one(pool)
+    .await
+    .expect("读归位审计")
+}
+
+/// 切换时冻结的旧 generation 消费者在 Core 侧的终态事实都已成立（未在准入中，
+/// 其全部 WorkflowRef 已 TERMINAL）。只有这时 Core 才会发出旧版本 destroy。
+async fn frozen_consumers_settled(pool: &PgPool, s: &Seeded) -> bool {
+    sqlx::query_scalar(
+        "select not exists (
+             select 1 from admission.secret_ref_rehome r
+             cross join lateral jsonb_array_elements(r.old_generation_consumer_refs) c
+             join admission.action_execution ae
+               on ae.id = (c->>'actionExecutionId')::uuid
+             where r.id = $1 and (
+                 ae.gate_state in ('EVALUATING','WAITING')
+                 or exists (select 1 from projection.workflow_ref w
+                            where w.action_execution_id = ae.id
+                              and w.projection_state <> 'TERMINAL')))",
+    )
+    .bind(s.action)
+    .fetch_one(pool)
+    .await
+    .expect("读冻结消费者终态")
+}
+
+/// 目标写入回应丢失 → 只按 locator 查证；旧版本 destroy 回应丢失 → 只按
+/// metadata 收敛。两次都不重写、不追加版本、不把失联当成功。
+#[tokio::test]
+async fn lost_write_and_destroy_responses_converge_by_locator_and_metadata() {
+    let Some(e) = common::env() else { return };
+    let http = reqwest::Client::new();
+    let pool = PgPool::connect(&e.database_url).await.expect("连 Core 库");
+    let token = common::worker_token(&http, &e).await;
+    let l = legacy_fixture(&http, &e, &pool, &token).await;
+    let proxy = common::DropResponseProxy::start(&e.bao_addr);
+    let s = seed_rehome(
+        &pool,
+        &e,
+        &l,
+        l.fx.principal,
+        "COPY_UNKNOWN",
+        "lost-responses",
+    )
+    .await;
+
+    let (status, _) = advance_step(&http, &e, &token, &s).await;
+    assert_eq!(status, reqwest::StatusCode::SERVICE_UNAVAILABLE, "目标缺失");
+    assert_eq!(rehome_row(&pool, &s).await.0, "COPY_UNKNOWN");
+
+    lossy_target_write(&proxy, &e, &l, &s).await;
+    let target = metadata(&http, &e, &l.child, &l.root, &s.target_path)
+        .await
+        .expect("回应丢失的写入已在 OpenBao 落盘");
+    assert_eq!(target["data"]["current_version"], 1);
+
+    let (status, body) = advance_step(&http, &e, &token, &s).await;
+    assert!(status.is_success(), "按 locator 查证：{status} {body}");
+    assert_eq!(body["state"], "COPIED");
+    let deadline = std::time::Instant::now() + Duration::from_secs(e.converge_bound_secs);
+    loop {
+        let (status, body) = advance_step(&http, &e, &token, &s).await;
+        if status.is_success() && body["state"] == "SWITCHED" {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "未切换：{status} {body}；保留 Tenant {}",
+            l.fx.tenant
+        );
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
+    let deadline = std::time::Instant::now() + Duration::from_secs(e.converge_bound_secs);
+    while !frozen_consumers_settled(&pool, &s).await {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "冻结的旧 generation 消费者未终态；保留 Tenant {}",
+            l.fx.tenant
+        );
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
+
+    // 代替 Core 发出旧版本 destroy，回应在途丢失。
+    proxy
+        .send_losing_response(
+            common::lossy_client()
+                .post(proxy.url(&format!("/v1/{}/destroy/{}", e.bao_mount, l.path)))
+                .header("X-Vault-Namespace", &e.bao_namespace)
+                .header("X-Vault-Token", &l.root)
+                .json(&json!({"versions": [l.old_version]})),
+            "HTTP/1.1 204",
+        )
+        .await;
+    let old = metadata(&http, &e, &e.bao_namespace, &l.root, &l.path)
+        .await
+        .expect("旧 KV metadata");
+    assert_eq!(
+        old.pointer(&format!("/data/versions/{}/destroyed", l.old_version)),
+        Some(&Value::Bool(true)),
+        "回应丢失的 destroy 已生效"
+    );
+    assert_eq!(
+        rehome_row(&pool, &s).await.0,
+        "SWITCHED",
+        "销毁结果未经 Core 查证前不退役"
+    );
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(e.converge_bound_secs);
+    loop {
+        let (status, body) = advance_step(&http, &e, &token, &s).await;
+        if status.is_success() && body["state"] == "RETIRED" {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "未按 metadata 退役：{status} {body}；保留 Tenant {}",
+            l.fx.tenant
+        );
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
+    let (status, body) = advance_step(&http, &e, &token, &s).await;
+    assert!(
+        status.is_success() && body["state"] == "RETIRED",
+        "终态重放"
+    );
+    assert_eq!(audit_count(&pool, &s, "retired").await, 1, "退役只审计一次");
+    let target = metadata(&http, &e, &l.child, &l.root, &s.target_path)
+        .await
+        .expect("目标 metadata");
+    assert_eq!(
+        target["data"]["current_version"], 1,
+        "不得盲写第二个目标版本"
+    );
+    let target_locator = format!("{}/{}/{}", l.child, e.bao_mount, s.target_path);
+    assert_eq!(binding_ref(&pool, &l).await, (target_locator, 1));
+
+    sqlx::query("delete from admission.secret_ref_rehome where tenant_id = $1")
+        .bind(l.fx.tenant)
+        .execute(&pool)
+        .await
+        .expect("清理归位夹具行");
+    common::zed_relationship(
+        &e,
+        "delete",
+        &format!("tenant:{}", l.fx.tenant),
+        "admin",
+        &format!("principal:{}", l.fx.principal),
+    );
+    common::teardown_live_workspace(&e, &pool, &l.fx).await;
+    purge_test_legacy_metadata(&http, &e, l.fx.tenant, &l.path).await;
+}
+
+/// 执行中撤权的完整矩阵（`copied_then_rejected_*` 已覆盖 COPIED 后 SpiceDB
+/// 撤权与 binding 偏离）：写前撤权不产生任何 OpenBao 副作用；COPY_UNKNOWN 中
+/// 撤权仍只查证目标，登记 COPIED 后才以确定拒绝销毁副本；Core 侧成员关系撤销
+/// （SpiceDB 仍有 admin）同样是确定拒绝。
+#[tokio::test]
+async fn revocation_during_rehome_never_leaves_an_unreferenced_copy() {
+    let Some(e) = common::env() else { return };
+    let http = reqwest::Client::new();
+    let pool = PgPool::connect(&e.database_url).await.expect("连 Core 库");
+    let token = common::worker_token(&http, &e).await;
+    let l = legacy_fixture(&http, &e, &pool, &token).await;
+    let proxy = common::DropResponseProxy::start(&e.bao_addr);
+    let admin = |op: &str, principal: Uuid| {
+        common::zed_relationship(
+            &e,
+            op,
+            &format!("tenant:{}", l.fx.tenant),
+            "admin",
+            &format!("principal:{principal}"),
+        )
+    };
+    let unchanged = (l.old_locator.clone(), l.old_version);
+
+    // 1. INTENT：写前撤权 → FAILED，目标路径从未被写。
+    let s = seed_rehome(&pool, &e, &l, l.fx.principal, "INTENT", "intent-revoked").await;
+    admin("delete", l.fx.principal);
+    let (status, _) = advance_step(&http, &e, &token, &s).await;
+    assert_eq!(status, reqwest::StatusCode::FORBIDDEN, "写前确定拒绝");
+    assert_eq!(
+        rehome_row(&pool, &s).await,
+        ("FAILED".to_owned(), "NONE".to_owned(), None)
+    );
+    assert!(
+        metadata(&http, &e, &l.child, &l.root, &s.target_path)
+            .await
+            .is_none(),
+        "写前拒绝不得产生目标 KV"
+    );
+    assert_eq!(audit_count(&pool, &s, "copy-rejected").await, 1);
+    assert_eq!(binding_ref(&pool, &l).await, unchanged);
+    admin("touch", l.fx.principal);
+
+    // 2. COPY_UNKNOWN：写入回应丢失后撤权。查证只看冻结目标（不判权限），
+    //    COPIED 之后切换被确定拒绝，销毁副本并查证。
+    let s = seed_rehome(
+        &pool,
+        &e,
+        &l,
+        l.fx.principal,
+        "COPY_UNKNOWN",
+        "copy-unknown-revoked",
+    )
+    .await;
+    lossy_target_write(&proxy, &e, &l, &s).await;
+    admin("delete", l.fx.principal);
+    let (status, body) = advance_step(&http, &e, &token, &s).await;
+    assert!(
+        status.is_success() && body["state"] == "COPIED",
+        "{status} {body}"
+    );
+    let (status, _) = advance_step(&http, &e, &token, &s).await;
+    assert_eq!(
+        status,
+        reqwest::StatusCode::CONFLICT,
+        "复制后撤权为确定失败"
+    );
+    assert_discarded(&http, &e, &token, &pool, &l, &s, &unchanged).await;
+    admin("touch", l.fx.principal);
+
+    // 3. COPIED：发起者（另一位 Tenant admin）的 Core 成员关系被撤销，而 SpiceDB
+    //    仍保留 admin。Core 的成员事实同样使新鲜 manage 判定为否。
+    let member = common::add_tenant_member(&http, &e, &pool, &token, &l.fx)
+        .await
+        .expect("开通另一位 Tenant 成员");
+    admin("touch", member.principal);
+    let s = seed_rehome(
+        &pool,
+        &e,
+        &l,
+        member.principal,
+        "COPY_UNKNOWN",
+        "member-revoked",
+    )
+    .await;
+    lossy_target_write(&proxy, &e, &l, &s).await;
+    let (status, body) = advance_step(&http, &e, &token, &s).await;
+    assert!(
+        status.is_success() && body["state"] == "COPIED",
+        "{status} {body}"
+    );
+    let revoked = sqlx::query(
+        "update identity.tenant_membership set state = 'REVOKED', version = version + 1
+         where id = $1 and state = 'ACTIVE'",
+    )
+    .bind(member.membership)
+    .execute(&pool)
+    .await
+    .expect("撤销发起者成员关系");
+    assert_eq!(revoked.rows_affected(), 1);
+    let (status, _) = advance_step(&http, &e, &token, &s).await;
+    assert_eq!(status, reqwest::StatusCode::CONFLICT, "成员撤销为确定失败");
+    assert_discarded(&http, &e, &token, &pool, &l, &s, &unchanged).await;
+    admin("delete", member.principal);
+
+    sqlx::query("delete from admission.secret_ref_rehome where tenant_id = $1")
+        .bind(l.fx.tenant)
+        .execute(&pool)
+        .await
+        .expect("清理归位夹具行");
+    admin("delete", l.fx.principal);
+    common::teardown_live_workspace(&e, &pool, &l.fx).await;
+    common::teardown_members(&pool, &l.fx, &[&member]).await;
+    purge_test_legacy_metadata(&http, &e, l.fx.tenant, &l.path).await;
+}
+
+async fn assert_discarded(
+    http: &reqwest::Client,
+    e: &common::Env,
+    token: &str,
+    pool: &PgPool,
+    l: &Legacy,
+    s: &Seeded,
+    unchanged: &(String, i32),
+) {
+    assert_eq!(
+        rehome_row(pool, s).await,
+        ("FAILED".to_owned(), "DISCARDED".to_owned(), Some(1))
+    );
+    let target = metadata(http, e, &l.child, &l.root, &s.target_path)
+        .await
+        .expect("目标 metadata");
+    assert_eq!(target["data"]["current_version"], 1);
+    assert_eq!(
+        target.pointer("/data/versions/1/destroyed"),
+        Some(&Value::Bool(true)),
+        "未引用的副本必须已销毁"
+    );
+    assert_eq!(&binding_ref(pool, l).await, unchanged, "binding 保持原 ref");
+    assert_eq!(audit_count(pool, s, "copy-discarded").await, 1);
+    let (status, _) = advance_step(http, e, token, s).await;
+    assert_eq!(status, reqwest::StatusCode::CONFLICT, "终态重放");
+}
+
+/// 代理自检（不需要集成环境）：上游完整收到请求体并已回应，请求方却只得到
+/// 传输错误。这证明注入的是「已处理、回应丢失」，而不是「请求未到达」。
+#[tokio::test]
+async fn drop_response_proxy_delivers_request_and_withholds_reply() {
+    use std::io::{Read, Write};
+    let upstream = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("假上游");
+    let upstream_addr = upstream.local_addr().expect("假上游地址");
+    let received = std::thread::spawn(move || {
+        let (mut conn, _) = upstream.accept().expect("接收转发的请求");
+        let mut seen = Vec::new();
+        let mut buf = [0u8; 1024];
+        while !String::from_utf8_lossy(&seen).contains("\"cas\":0") {
+            let n = conn.read(&mut buf).expect("读取转发的请求");
+            assert!(n > 0, "请求体未完整到达上游");
+            seen.extend_from_slice(&buf[..n]);
+        }
+        conn.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\nok")
+            .expect("上游回应");
+        String::from_utf8_lossy(&seen).into_owned()
+    });
+    let proxy = common::DropResponseProxy::start(&format!("http://{upstream_addr}"));
+    proxy
+        .send_losing_response(
+            common::lossy_client()
+                .post(proxy.url("/v1/kv/data/probe"))
+                .json(&json!({"data": {"value": "v"}, "options": {"cas": 0}})),
+            "HTTP/1.1 200",
+        )
+        .await;
+    let request = received.join().expect("假上游收尾");
+    assert!(request.starts_with("POST /v1/kv/data/probe "), "{request}");
+}
