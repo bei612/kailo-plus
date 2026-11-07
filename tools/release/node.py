@@ -346,6 +346,17 @@ def registry_has(ref, timeout=15):
         return None
 
 
+def registry_presence(registry, refs, has=None):
+    """{产物: digest} → {产物: True/False/None}：该 digest 在本仓库 registry 中是否可取（registry_has 的三值）。"""
+    has = has or registry_has
+    found = {}
+    for image, digest in refs.items():
+        if not re.fullmatch(r"[a-z][a-z0-9-]*", str(image)) or not DIGEST_RE.fullmatch(str(digest or "")):
+            raise NodeError(f"非法 registry 引用：{image}")
+        found[image] = has(f"{registry}/{image}@{digest}")
+    return found
+
+
 def judge_image(want, ref, container_image_id, local_id, in_registry):
     """Readback verdict for one running service, valid for both image stores: with the
     containerd store an image ID is the manifest digest, with a graph driver it is the
@@ -839,6 +850,11 @@ def inspect(request):
                                          if d.get("digest", {}).get("gitCommit")), None),
                             subject=doc.get("subject"))
     result["proofs"] = proofs
+    # 已固定产物是否在 registry（ADR-20 §13）：True 在、False 不在（需重建）、None 无法确认（不据此重建）
+    refs = request.get("registry_refs") or {}
+    if refs:
+        registry = component_registry(cfg)
+        result["registry"] = registry_presence(registry, refs)
     # 已生效的运维域投递摘要（ADR-20 §10）：只读回 deliveries.json 的摘要，不读投递内容
     journal = request.get("delivery_journal")
     if journal:

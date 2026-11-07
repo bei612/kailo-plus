@@ -69,6 +69,27 @@ class DockerEndpoint(unittest.TestCase):
                     os.environ["DOCKER_HOST"] = saved
 
 
+class RegistryPresence(unittest.TestCase):
+    """ADR-20 §13: a pinned artifact missing from the registry (fresh node) is reported, not assumed present."""
+
+    def test_each_pinned_digest_is_probed_in_the_ci_registry(self):
+        asked = []
+        answers = {"metering": True, "model-gateway": False, "web-client": None}
+
+        def has(ref):
+            asked.append(ref)
+            return answers[ref.split("/")[1].split("@")[0]]
+
+        found = node.registry_presence("127.0.0.1:55000", {k: PIN for k in answers}, has=has)
+        self.assertEqual(found, answers)
+        self.assertIn("127.0.0.1:55000/model-gateway@" + PIN, asked)
+
+    def test_malformed_references_are_refused(self):
+        for refs in ({"Bad": PIN}, {"metering": "sha256:abc"}, {"metering": None}):
+            with self.assertRaises(node.NodeError):
+                node.registry_presence("127.0.0.1:55000", refs, has=lambda ref: True)
+
+
 class JudgeImage(unittest.TestCase):
     def test_containerd_store_image_id_is_the_manifest_digest(self):
         self.assertEqual(node.judge_image(PIN, REF, PIN, PIN, True), [])
