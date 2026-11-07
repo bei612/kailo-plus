@@ -1,0 +1,38 @@
+{
+  "runtime": "/volumes/kailo/apps/deploy/local",
+  "sources": "/volumes/kailo/ci/sources",
+  "release_proofs": "/var/lib/kailo-ci/release-proofs",
+  "compose_project": "platform-local",
+  "queue": "/var/lib/kailo-ci/queue",
+  "artifacts": "/var/lib/kailo-ci/artifacts",
+  "source_repository": "/var/lib/kailo-ci/repo",
+  "web_build_info_path": "/usr/share/nginx/html/build-info.json",
+  "min_job_free_bytes": 34359738368,
+  "environment": {
+    "DOCKER_HOST": "unix:///run/kailo-docker/docker.sock",
+    "REGISTRY": "127.0.0.1:55000",
+    "TMPDIR": "/var/lib/kailo-ci/tmp",
+    "BUILDX_BUILDER": "kailo-builder",
+    "CHECK_CPUS": "4",
+    "CHECK_MEMORY": "16g",
+    "CHECK_NETWORK": "bridge",
+    "CHECK_CACHE_ROOT": "/var/lib/kailo-ci/check-cache",
+    "CHECK_POSTGRES_IMAGE": "postgres:16-alpine",
+    "CARGO_BUILD_JOBS": "8",
+    "https_proxy": "",
+    "HTTPS_PROXY": ""
+  },
+  "build_targets": {
+    "core-worker": {},
+    "web-client": {}, "desktop-client": {}, "mobile-client": {},
+    "agent-runtime": {}, "metering": {}, "model-gateway": {}, "collaboration-relay": {}, "document-editor": {},
+    "data-query-ui": {}, "data-query-ai-service": {}, "data-query-engine": {}, "data-query-ibis": {},
+    "file-storage-adapter": {}, "file-storage-service": {},
+    "knowledge-adapter": {}, "knowledge-service": {}, "knowledge-native-ui": {}, "knowledge-document-reader": {}
+  },
+  "retention": {
+    "journal": "/var/lib/kailo-ci/retention/journal",
+    "receipts": "/var/lib/kailo-ci/retention/receipts",
+    "scratch": ["/home/ubuntu/scratch"]
+  }
+}

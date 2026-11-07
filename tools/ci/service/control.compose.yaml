@@ -1,0 +1,20 @@
+# kailo-ci-control: the client endpoint `kailo-ci` execs into (docker --context kailo-ci exec kailo-ci-control ...).
+# Runs on the Kailo dockerd; only mounts the CI code (read-only), config (read-only), queue and artifacts.
+name: kailo-ci
+services:
+  control:
+    container_name: kailo-ci-control
+    image: python:3.12-slim
+    command: ["sleep", "infinity"]
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      KAILO_CI_CONFIG: /volumes/kailo/ci/config.json
+    volumes:
+      - /volumes/kailo/ci/service:/ci:ro
+      - /volumes/kailo/ci/config.json:/volumes/kailo/ci/config.json:ro
+      - /var/lib/kailo-ci/queue:/var/lib/kailo-ci/queue
+      - /var/lib/kailo-ci/artifacts:/var/lib/kailo-ci/artifacts:ro
+    network_mode: none
+    mem_limit: 256m
+    cpus: 0.5
