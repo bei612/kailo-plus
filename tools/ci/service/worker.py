@@ -213,7 +213,9 @@ class Worker:
         net = f"kci-{job.id[:12]}"
         name = f"kci-pg-{job.id[:12]}"
         password = secrets.token_hex(16)
-        job.run(docker + ["network", "create", "--internal", net], label="pg network")
+        # Not --internal: the check container shares this network and needs egress (via the Kailo egress proxy) for
+        # package downloads. PostgreSQL publishes no ports, so it is only reachable from this per-job network.
+        job.run(docker + ["network", "create", net], label="pg network")
         job.cleanup.append(lambda: subprocess.run(docker + ["network", "rm", net], capture_output=True))
         job.run(docker + ["run", "-d", "--name", name, "--network", net, "--cpus", "1", "--memory", "2g",
                           "--tmpfs", "/var/lib/postgresql/data:size=1g", "-e", f"POSTGRES_PASSWORD={password}",
