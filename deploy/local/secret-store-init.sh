@@ -210,7 +210,7 @@ POLICY
 : "${OPENBAO_SECRET_ID_TTL:?缺少 .env 中的 OPENBAO_SECRET_ID_TTL}"
 : "${OPENBAO_TOKEN_PERIOD:?缺少 .env 中的 OPENBAO_TOKEN_PERIOD}"
 project=$(python3 -c 'import re,io;print(re.search(r"^name: (\S+)", io.open("compose.yaml",encoding="utf-8").read(), re.M).group(1))')
-app_cidr=$(sudo -n docker network inspect "${project}_app" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')
+app_cidr=$(sudo -n --preserve-env=DOCKER_HOST docker network inspect "${project}_app" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')
 [ -n "$app_cidr" ] || { echo "取不到 ${project}_app 网络的子网，无法做 CIDR 绑定" >&2; exit 2; }
 role_opts=(secret_id_num_uses=1 "secret_id_ttl=$OPENBAO_SECRET_ID_TTL"
            "secret_id_bound_cidrs=$app_cidr" "token_bound_cidrs=$app_cidr"

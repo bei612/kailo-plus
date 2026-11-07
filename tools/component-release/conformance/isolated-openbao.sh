@@ -57,11 +57,11 @@ state=$OPENBAO_CONFORMANCE_STATE_DIR
 [[ $OPENBAO_CONFORMANCE_IMAGE =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]] || { echo 'OpenBao image must be digest-pinned' >&2; exit 2; }
 [[ ( $state == /var/lib/kailo-ci/* || $state == /volumes/data/* ) && -d $state && ! -L $state && $(stat -c '%a' -- "$state") == 700 ]] \
   || { echo 'OPENBAO_CONFORMANCE_STATE_DIR must be an existing 0700 directory under /var/lib/kailo-ci or /volumes/data' >&2; exit 2; }
-read -r -a docker <<<"${OPENBAO_CONFORMANCE_DOCKER:-sudo -n docker}"
+read -r -a docker <<<"${OPENBAO_CONFORMANCE_DOCKER:-sudo -n --preserve-env=DOCKER_HOST docker}"
 ADAPTER_AGENT_IMAGE=$OPENBAO_CONFORMANCE_IMAGE
 ADAPTER_AGENT_PLATFORM_NETWORK=$OPENBAO_CONFORMANCE_NETWORK
 # The Agent Compose file only interpolates ADAPTER_AGENT_*. `sudo` resets the
-# environment (env_reset), so exported values never reach `sudo -n docker
+# environment (env_reset), so exported values never reach `sudo -n --preserve-env=DOCKER_HOST docker
 # compose`; pass them explicitly as `<wrapper...> env NAME=VALUE... <docker>
 # compose`. The last word of OPENBAO_CONFORMANCE_DOCKER is the docker binary,
 # anything before it (e.g. `sudo -n`) its wrapper, so an override such as plain

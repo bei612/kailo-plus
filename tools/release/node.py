@@ -42,7 +42,10 @@ import urllib.request
 sys.dont_write_bytecode = True
 FROM_STDIN = sys.argv[0] in ("-", "")
 HERE = None if FROM_STDIN else os.path.dirname(os.path.realpath(__file__))
-DOCKER = ["sudo", "-n", "docker"]
+# Kailo 的 Docker 端点（ADR-20 §13）：CI 节点上 Kailo 只用独立的 dockerd，系统默认 dockerd 属于其他项目、
+# 不得触碰。端点的唯一来源是 CI 配置 environment.DOCKER_HOST（ci_config 读取时导出，见 select_docker_host）；
+# sudo 缺省清理环境，所以每次调用都显式保留 DOCKER_HOST，子进程（start-core.sh、bootstrap.sh、组件入口）同样继承。
+DOCKER = ["sudo", "-n", "--preserve-env=DOCKER_HOST", "docker"]
 COMPOSE_PROJECT_LABEL = "com.docker.compose.project"
 COMPOSE_SERVICE_LABEL = "com.docker.compose.service"
 COMPOSE_ONEOFF_LABEL = "com.docker.compose.oneoff"
@@ -85,7 +88,27 @@ def ci_config(path):
     missing = [k for k in need if not cfg.get(k)]
     if missing:
         raise NodeError(f"CI 配置缺少 {missing}")
+    select_docker_host(cfg)
     return cfg
+
+
+def select_docker_host(cfg, environ=None):
+    """按 CI 配置选中 Kailo 的 dockerd（ADR-20 §13）：environment.DOCKER_HOST 是唯一来源，导出到本进程环境，
+    之后的 docker/compose 调用与子进程都使用它。调用方已设置不同的 DOCKER_HOST，或设置了会与之冲突的
+    DOCKER_CONTEXT 时拒绝（不允许第二个来源）。配置没有该键时保持调用方环境（单 dockerd 的节点）。"""
+    environ = os.environ if environ is None else environ
+    want = str((cfg.get("environment") or {}).get("DOCKER_HOST") or "")
+    if not want:
+        return environ.get("DOCKER_HOST")
+    if not re.fullmatch(r"unix:///[^\s]+", want):
+        raise NodeError("CI 配置 environment.DOCKER_HOST 必须是本机 unix:// socket")
+    given = environ.get("DOCKER_HOST")
+    if given and given != want:
+        raise NodeError("DOCKER_HOST 与 CI 配置 environment.DOCKER_HOST 不一致")
+    if environ.get("DOCKER_CONTEXT"):
+        raise NodeError("设置了 DOCKER_CONTEXT：Kailo 的 Docker 端点只来自 CI 配置 environment.DOCKER_HOST")
+    environ["DOCKER_HOST"] = want
+    return want
 
 
 def runtime_dir(cfg):

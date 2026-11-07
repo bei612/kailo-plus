@@ -96,7 +96,7 @@ platform=$run/apps/deploy/local
 # deploy/local entry (init-local.sh, start-core.sh, bootstrap.sh) resolves .env, secrets/ and
 # data/ there, never an inherited KAILO_RUNTIME_DIR such as the production one.
 export KAILO_RUNTIME_DIR=$platform
-read -r -a docker <<<"${RECEIVER_DOCKER:-sudo -n docker}"
+read -r -a docker <<<"${RECEIVER_DOCKER:-sudo -n --preserve-env=DOCKER_HOST docker}"
 need() { for name in "$@"; do [[ -n ${!name:-} ]] || { echo "receiver.env: $name required for $stage" >&2; exit 2; }; done; }
 record() { [[ -f $run/$1 && ! -L $run/$1 && ( $1 == *.done || -s $run/$1 ) ]] || { echo "missing $run/$1: run the earlier stage first" >&2; exit 2; }; }
 private() { [[ $1 == /* && -f $1 && ! -L $1 && $(stat -c '%a' -- "$1") =~ ^[46]00$ ]] || { echo "$1 must be an absolute owner-only file" >&2; exit 2; }; }

@@ -14,7 +14,7 @@
 // DENIED/EXPIRED/FAILED and you have read why.
 //
 // Environment (all optional):
-//   KAILO_WEB                  Web origin (default http://192.168.0.193:58090)
+//   KAILO_WEB                  Web origin (default http://192.168.0.149:58090)
 //   KAILO_PLAYWRIGHT_PACKAGE   package.json whose node_modules has playwright
 //                              (default /volumes/kailo/apps/package.json)
 //   KAILO_CHROME               Chrome executable (default /usr/bin/google-chrome)
@@ -32,7 +32,7 @@ import { canonical, digest, uuidv5 } from '../render.mjs';
 export { canonical, digest, uuidv5 };
 
 const HOME = process.env.HOME;
-export const ORIGIN = process.env.KAILO_WEB ?? 'http://192.168.0.193:58090';
+export const ORIGIN = process.env.KAILO_WEB ?? 'http://192.168.0.149:58090';
 export const OUT = process.env.KAILO_FLOW_OUT ?? `${HOME}/kailo-acceptance/component-flow/out`;
 const ACCOUNTS = process.env.KAILO_FLOW_ACCOUNTS_DIR ?? `${HOME}/kailo-acceptance/accounts`;
 const DEPLOY = process.env.KAILO_DEPLOY_DIR ?? '/volumes/kailo/apps/deploy/local';

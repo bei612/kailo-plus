@@ -11,7 +11,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 . core/verify/integration-env.sh
 LOCAL=deploy/local
-DC() { sudo -n docker compose --env-file "$LOCAL/.env" -f "$LOCAL/compose.yaml" "$@"; }
+DC() { sudo -n --preserve-env=DOCKER_HOST docker compose --env-file "$LOCAL/.env" -f "$LOCAL/compose.yaml" "$@"; }
 PSQL() { psql "$DATABASE_URL" -Atc "$1"; }
 step() { printf '\n== %s（%s）\n' "$1" "$(date -u +%T)"; }
 backup=$(mktemp -d /tmp/platform-dr.XXXXXX)
@@ -71,7 +71,7 @@ bash "$LOCAL/dr-backup.sh" "$backup" | tail -9
 
 step "2. 灾难：删除全部数据卷与数据目录"
 DC down >/dev/null 2>&1
-for v in core-db-data buzz-db-data temporal-db-data spicedb-db-data; do sudo -n docker volume rm "${VERIFY_COMPOSE_PROJECT}_$v" >/dev/null; done
+for v in core-db-data buzz-db-data temporal-db-data spicedb-db-data; do sudo -n --preserve-env=DOCKER_HOST docker volume rm "${VERIFY_COMPOSE_PROJECT}_$v" >/dev/null; done
 sudo -n find "$LOCAL/data/secret-store" "$LOCAL/data/collab-objects" -mindepth 1 -delete
 echo "  已删除：4 个数据卷、OpenBao 与 MinIO 的数据目录、IdP 容器"
 
@@ -88,11 +88,11 @@ expect "计数（审计/Tenant/WorkflowRef/BuzzIdentityBinding）" "$(counts)" "
 expect "网关在运行的实例" "$(DC ps --format '{{.Service}}' | grep -cx agentgateway || true)" 0
 expect "灾难前的消息仍在 Relay 上" "$([ "$(history_has "$event")" -ge 1 ] && echo 是 || echo 否)" 是
 expect "恢复后发布（Core 从恢复的 OpenBao 取私钥代签）" "$(publish "after restore")" 200
-expect "SpiceDB 中 workspace→tenant 归属" "$(sudo -n docker run --rm --network "$VERIFY_DOCKER_NETWORK" --env-file "$VERIFY_ZED_ENV_FILE" \
+expect "SpiceDB 中 workspace→tenant 归属" "$(sudo -n --preserve-env=DOCKER_HOST docker run --rm --network "$VERIFY_DOCKER_NETWORK" --env-file "$VERIFY_ZED_ENV_FILE" \
   -e "ZED_ENDPOINT=$VERIFY_SPICEDB_ENDPOINT" -e ZED_INSECURE=true "$VERIFY_ZED_IMAGE" \
   relationship read "workspace:$ws" tenant --consistency-full 2>/dev/null | grep -c "tenant:$tenant" || true)" 1
 # ADR-17 迁移窗口：按 SA 列举时新旧两组都查；窗口关闭时删去 KailoTenantId 分支
-completed=$(sudo -n docker run --rm --network "$VERIFY_DOCKER_NETWORK" "$VERIFY_TEMPORAL_ADMIN_IMAGE" \
+completed=$(sudo -n --preserve-env=DOCKER_HOST docker run --rm --network "$VERIFY_DOCKER_NETWORK" "$VERIFY_TEMPORAL_ADMIN_IMAGE" \
   temporal --address "$VERIFY_TEMPORAL_INTERNAL_ADDRESS" --namespace "$TEMPORAL_NAMESPACE" \
   workflow count --query "(PlatformTenantId='$tenant' OR KailoTenantId='$tenant') AND ExecutionStatus='Completed'" 2>/dev/null | grep -oE '[0-9]+' | head -1)
 expect "Temporal 中该 Tenant 的已完成 Workflow 仍可查" "$([ "${completed:-0}" -ge 1 ] && echo 是 || echo 否)" 是

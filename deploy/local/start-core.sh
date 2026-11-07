@@ -693,11 +693,11 @@ PYGATEWAY
   gateway_compose=(-f "$gateway_config")
 fi
 project=$(python3 -c 'import re,io;print(re.search(r"^name: (\S+)", io.open("compose.yaml",encoding="utf-8").read(), re.M).group(1))')
-app_cidr=$(sudo -n docker network inspect "${project}_app" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')
+app_cidr=$(sudo -n --preserve-env=DOCKER_HOST docker network inspect "${project}_app" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')
 [ -n "$app_cidr" ] || { echo "取不到 ${project}_app 网络子网，拒绝创建 Tenant AppRole" >&2; exit 2; }
 
 # sudo 只保留受控构建器选择，避免 Core 镜像构建落到无 cgroup 限额的默认 builder。
-compose() { sudo -n --preserve-env=BUILDX_BUILDER,KAILO_RUNTIME_DIR docker compose --env-file "$KAILO_RUNTIME_DIR/.env" -f compose.yaml "${runtime_compose[@]}" "${action_token_compose[@]}" "${conformance_signing_compose[@]}" "${adapter_compose[@]}" "${gateway_compose[@]}" "$@"; }
+compose() { sudo -n --preserve-env=BUILDX_BUILDER,KAILO_RUNTIME_DIR,DOCKER_HOST docker compose --env-file "$KAILO_RUNTIME_DIR/.env" -f compose.yaml "${runtime_compose[@]}" "${action_token_compose[@]}" "${conformance_signing_compose[@]}" "${adapter_compose[@]}" "${gateway_compose[@]}" "$@"; }
 root_token=$(python3 -c 'import json,os;print(json.load(open(os.environ["KAILO_RUNTIME_DIR"] + "/secrets/openbao_init.json"))["root_token"])')
 # 令牌经 stdin 进入容器，不上命令行（与 secret-store-init.sh 的 run_bao 同一做法）
 run_bao() {
@@ -803,7 +803,7 @@ try:
     require(timeout > 0)
     runtime = Path(os.environ["KAILO_RUNTIME_DIR"])
     root = json.loads(private_read((runtime / "secrets/openbao_init.json").resolve()))["root_token"]
-    compose = ["sudo","-n","--preserve-env=KAILO_RUNTIME_DIR","docker","compose",
+    compose = ["sudo","-n","--preserve-env=KAILO_RUNTIME_DIR,DOCKER_HOST", "docker","compose",
                "--env-file",str(runtime / ".env"),"-f","compose.yaml"]
     def bao(path, fields=None, missing=False, wrap=None, version=None):
         args = (["kv", "get", "-version=" + str(version), "-format=json"] if version is not None
@@ -873,7 +873,7 @@ try:
         require(description.returncode == 0)
         image = json.loads(description.stdout)["services"]["openbao"]["image"]
         require("@sha256:" in image)
-        command = ["sudo","-n","docker","create","--pull","never","--read-only",
+        command = ["sudo","-n","--preserve-env=DOCKER_HOST","docker","create","--pull","never","--read-only",
             "--cpus",os.environ["CHECK_CPUS"],"--memory",os.environ["CHECK_MEMORY"],
             "--memory-swap",os.environ["CHECK_MEMORY"],"--user",f"{os.geteuid()}:{os.getegid()}",
             "--network",os.environ["AGENT_NETWORK"],"--cap-drop","ALL",
@@ -884,25 +884,25 @@ try:
         require(created.returncode == 0 and re.fullmatch(r"[a-f0-9]{64}\n?", created.stdout) is not None)
         container = created.stdout.strip()
         try:
-            inspected = subprocess.run(["sudo","-n","docker","inspect",container], capture_output=True, text=True, timeout=timeout)
+            inspected = subprocess.run(["sudo","-n","--preserve-env=DOCKER_HOST","docker","inspect",container], capture_output=True, text=True, timeout=timeout)
             require(inspected.returncode == 0)
             facts = json.loads(inspected.stdout)[0]
             limits = facts["HostConfig"]
             require(facts["State"]["Status"] == "created" and limits["NanoCpus"] > 0
                     and limits["Memory"] > 0 and limits["MemorySwap"] == limits["Memory"])
-            result = subprocess.run(["sudo","-n","docker","start","--attach",container], capture_output=True,
+            result = subprocess.run(["sudo","-n","--preserve-env=DOCKER_HOST","docker","start","--attach",container], capture_output=True,
                 text=True, timeout=seconds(os.environ["OPENBAO_SECRET_ID_WRAP_TTL"]))
             require(result.returncode == 0)
-            ended = subprocess.run(["sudo","-n","docker","inspect",container], capture_output=True, text=True, timeout=timeout)
+            ended = subprocess.run(["sudo","-n","--preserve-env=DOCKER_HOST","docker","inspect",container], capture_output=True, text=True, timeout=timeout)
             require(ended.returncode == 0)
             state = json.loads(ended.stdout)[0]["State"]
             require(state["Status"] == "exited" and state["ExitCode"] == 0 and not state["OOMKilled"])
         finally:
             # Only the exact newly-created one-off Agent is stopped/removed.
             # Never leave a timed-out renderer running with its scoped token.
-            stopped = subprocess.run(["sudo","-n","docker","stop",container], capture_output=True, timeout=timeout)
+            stopped = subprocess.run(["sudo","-n","--preserve-env=DOCKER_HOST","docker","stop",container], capture_output=True, timeout=timeout)
             require(stopped.returncode == 0)
-            removed = subprocess.run(["sudo","-n","docker","rm",container], capture_output=True, timeout=timeout)
+            removed = subprocess.run(["sudo","-n","--preserve-env=DOCKER_HOST","docker","rm",container], capture_output=True, timeout=timeout)
             require(removed.returncode == 0)
         require(json.loads(public.read_text()) == exported)
         print(label + " Core export and original OpenBao Agent public JWKS readback complete; no binding activated")
@@ -946,8 +946,8 @@ worker_id=$(compose ps -q worker | head -n 1)
 running_worker=
 running_environment=
 if [ -n "$worker_id" ]; then
-  running_worker=$(sudo -n docker inspect --format '{{index .Config.Labels "kailo.component-conformance.delivery"}}' "$worker_id")
-  running_environment=$(sudo -n docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$worker_id" \
+  running_worker=$(sudo -n --preserve-env=DOCKER_HOST docker inspect --format '{{index .Config.Labels "kailo.component-conformance.delivery"}}' "$worker_id")
+  running_environment=$(sudo -n --preserve-env=DOCKER_HOST docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$worker_id" \
     | sed -n 's/^COMPONENT_CONFORMANCE_DIR=//p')
 fi
 # A supplied delivery always recreates (unchanged behaviour); without one the

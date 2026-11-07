@@ -10,7 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 . core/verify/integration-env.sh
-DC() { sudo -n docker compose --env-file deploy/local/.env -f deploy/local/compose.yaml "$@"; }
+DC() { sudo -n --preserve-env=DOCKER_HOST docker compose --env-file deploy/local/.env -f deploy/local/compose.yaml "$@"; }
 PSQL() { psql "$DATABASE_URL" -Atc "$1"; }
 step() { printf '\n== %s（%s）\n' "$1" "$(date -u +%T)"; }
 interval=${ROSTER_RECONCILE_INTERVAL_SECONDS:?}

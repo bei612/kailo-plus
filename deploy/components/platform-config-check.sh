@@ -14,7 +14,7 @@ KAILO_RUNTIME_DIR=$(python3 -I -B "$S/../../tools/release/node.py" runtime --com
   || exit 2
 . "$S/runtime-dir.sh"
 R=$KAILO_RUNTIME_DIR
-D=(sudo -n docker)
+D=(sudo -n --preserve-env=DOCKER_HOST docker)
 fail=0
 bad() { echo "  FAIL: $*"; fail=1; }
 ok() { echo "  ok: $*"; }
@@ -149,7 +149,7 @@ grep -q "frame-src[^;]*\*" <<<"$csp" && bad "frame-src 含通配" || true
 echo "== 6. 组件页面嵌入头"
 for o in $origins; do
   h=$(curl -sS -m 15 -D - -o /dev/null "$o/" 2>/dev/null | tr -d '\r' | grep -iE '^(content-security-policy|x-frame-options):' || true)
-  if grep -qi "frame-ancestors[^;]*${public:-http://192.168.0.193:58090}" <<<"$h" && ! grep -qiE '^x-frame-options: *(sameorigin|deny)' <<<"$h"; then
+  if grep -qi "frame-ancestors[^;]*${public:-http://192.168.0.149:58090}" <<<"$h" && ! grep -qiE '^x-frame-options: *(sameorigin|deny)' <<<"$h"; then
     ok "$o 允许被 ${public:-58090} 嵌入"
   else
     echo "  -- $o：$(tr '\n' ' ' <<<"${h:-无 CSP/XFO 或未部署}")"

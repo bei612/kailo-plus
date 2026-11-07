@@ -145,7 +145,7 @@ class Delivery(unittest.TestCase):
         self.assertEqual(result["generation"], 1)
         self.assertIn("PGOPTIONS=-c default_transaction_read_only=on", calls[0])
         runtime = self.env["KAILO_RUNTIME_DIR"]
-        self.assertEqual(calls[0][:5], ["sudo", "-n", "--preserve-env=KAILO_RUNTIME_DIR", "docker", "compose"])
+        self.assertEqual(calls[0][:5], ["sudo", "-n", "--preserve-env=KAILO_RUNTIME_DIR,DOCKER_HOST", "docker", "compose"])
         self.assertEqual(calls[0][5:7], ["--env-file", runtime + "/.env"])
         self.assertEqual(environments[0]["KAILO_RUNTIME_DIR"], runtime)
         self.assertEqual(json.loads((self.dir / "projection.json").read_text()), self.value)
@@ -479,7 +479,7 @@ class RuntimeDirectorySeparation(unittest.TestCase):
     def test_compose_reads_the_runtime_env_and_keeps_the_variable_through_sudo(self):
         env = {**ENV, "KAILO_RUNTIME_DIR": str(self.runtime)}
         command = delivery.compose(env, "ps")
-        self.assertEqual(command, ["sudo", "-n", "--preserve-env=KAILO_RUNTIME_DIR", "docker", "compose",
+        self.assertEqual(command, ["sudo", "-n", "--preserve-env=KAILO_RUNTIME_DIR,DOCKER_HOST", "docker", "compose",
                                    "--env-file", str(self.runtime / ".env"), "-f", "compose.yaml", "ps"])
         self.assertEqual(delivery.compose_env(env)["KAILO_RUNTIME_DIR"], str(self.runtime))
         with self.assertRaises(delivery.Refused):

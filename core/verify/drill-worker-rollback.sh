@@ -10,7 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 . core/verify/integration-env.sh
-DC() { sudo -n docker compose --env-file deploy/local/.env -f deploy/local/compose.yaml "$@"; }
+DC() { sudo -n --preserve-env=DOCKER_HOST docker compose --env-file deploy/local/.env -f deploy/local/compose.yaml "$@"; }
 PSQL() { psql "$DATABASE_URL" -Atc "$1"; }
 step() { printf '\n== %s（%s）\n' "$1" "$(date -u +%T)"; }
 
@@ -28,7 +28,7 @@ echo "  workspace $ws membership $wm"
 
 step "1. 标记当前 Worker 镜像为回滚点"
 img=$(DC images worker --format json | python3 -c 'import json,sys;d=json.load(sys.stdin);d=d[0] if isinstance(d,list) else d;print(d["Repository"]+":"+d["Tag"])')
-sudo -n docker tag "$img" "${img%%:*}:rollback"
+sudo -n --preserve-env=DOCKER_HOST docker tag "$img" "${img%%:*}:rollback"
 echo "  $img → ${img%%:*}:rollback"
 
 step "2. 停 Relay，启动撤权，等它进入按轮等待"
@@ -70,7 +70,7 @@ echo "  Core 投影：$(PSQL "select status||' '||coalesce(waiting_reason,'') fr
 
 step "4. 按镜像回滚 Worker（不重新构建）"
 cp /tmp/rb04_ct.go worker/workflows/component_task.go
-sudo -n docker tag "${img%%:*}:rollback" "$img"
+sudo -n --preserve-env=DOCKER_HOST docker tag "${img%%:*}:rollback" "$img"
 DC up -d --no-build --force-recreate worker >/dev/null 2>&1
 echo "  已回滚到 ${img%%:*}:rollback"
 
@@ -86,4 +86,4 @@ rm -f /tmp/rb04.hold
 wait "$fixture_pid" || true
 tail -1 /tmp/rb04.fixture.err
 rm -f /tmp/rb04.fixture /tmp/rb04.fixture.err
-sudo -n docker rmi "${img%%:*}:rollback" >/dev/null
+sudo -n --preserve-env=DOCKER_HOST docker rmi "${img%%:*}:rollback" >/dev/null

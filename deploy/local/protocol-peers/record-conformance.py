@@ -41,7 +41,7 @@ HERE = os.path.dirname(os.path.realpath(__file__))
 ROOT = os.path.realpath(os.path.join(HERE, "..", "..", ".."))
 COMPOSE = os.path.join(ROOT, "deploy", "local", "compose.yaml")
 DIRECTORY = os.path.join(HERE, "directory.json")
-DOCKER = ["sudo", "-n", "docker"]
+DOCKER = ["sudo", "-n", "--preserve-env=DOCKER_HOST", "docker"]
 # Core's MCP client: rmcp 3.1.2 `().serve(transport)` = ClientInfo::default() (core/Cargo.lock pins rmcp =3.1.2).
 CLIENT_INITIALIZE = {"protocolVersion": "2025-11-25", "capabilities": {},
                      "clientInfo": {"name": "rmcp", "version": "3.1.2"}}

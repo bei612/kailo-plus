@@ -105,7 +105,7 @@ env:
     # DD-151 推送轮询间隔（秒）
     PUSH_POLL_SECONDS: "15"
     # DD-133(3)(6)：组件专属 client 与其 07 §4.7.5 back-channel 接收端（云盘、知识工程、数据建模）
-    NATIVE_OIDC_CLIENTS: kailo-cells-native-browser=http://192.168.0.193:58092/auth/kailo/backchannel-logout,kailo-knowledge-native=http://192.168.0.193:58094/api/v1/auth/oidc/backchannel-logout,platform-local-wren-native-browser=http://192.168.0.193:58095/oauth/backchannel-logout
+    NATIVE_OIDC_CLIENTS: kailo-cells-native-browser=http://192.168.0.149:58092/auth/kailo/backchannel-logout,kailo-knowledge-native=http://192.168.0.149:58094/api/v1/auth/oidc/backchannel-logout,platform-local-wren-native-browser=http://192.168.0.149:58095/oauth/backchannel-logout
     # DD-133(4)、07 §4.7.4：三个组件部署单元的成员目录 client（由上方 idp 段声明、凭据写入运行目录
     # secrets/component-directory/<组件>/client_secret）；binding 以 component-bind.mjs --directory-client-id 登记同一值
     COMPONENT_DIRECTORY_CLIENTS: file-storage=kailo-cells-directory,knowledge=kailo-knowledge-directory,data-query=kailo-wren-directory
@@ -158,24 +158,24 @@ delivery:
 #            仓库在 repository 键中（只核对等于 <REGISTRY>/<产物>，不改写）。REGISTRY 取 CI 配置 environment。
 components:
   file-storage:
-    env: /volumes/data/kailo/components/cells/deploy.env
+    env: /var/lib/kailo-runtime/components/cells/deploy.env
     project: ${CELLS_COMPOSE_PROJECT}
     pins:
       CELLS_IMAGE: file-storage-service
   document-editor:
-    env: /volumes/data/kailo/components/document-editor/native.env
+    env: /var/lib/kailo-runtime/components/document-editor/native.env
     project: ${DOCUMENT_EDITOR_COMPOSE_PROJECT}
     pins:
       DOCUMENT_EDITOR_IMAGE: document-editor
   knowledge:
-    env: /volumes/data/kailo/components/knowledge/native.env
+    env: /var/lib/kailo-runtime/components/knowledge/native.env
     project: kailo-knowledge
     pins:
       KNOWLEDGE_APP_DIGEST: {artifact: knowledge-service, repository: KNOWLEDGE_APP_REPOSITORY}
       KNOWLEDGE_UI_DIGEST: {artifact: knowledge-native-ui, repository: KNOWLEDGE_UI_REPOSITORY}
       KNOWLEDGE_DOCREADER_DIGEST: {artifact: knowledge-document-reader, repository: KNOWLEDGE_DOCREADER_REPOSITORY}
   data-query:
-    env: /volumes/data/kailo/components/data-query/native.env
+    env: /var/lib/kailo-runtime/components/data-query/native.env
     project: ${WREN_COMPOSE_PROJECT_NAME}
     pins:
       WREN_UI_IMAGE: data-query-ui
@@ -193,7 +193,7 @@ node:
   # ci/config.json environment 中供 start-core.sh 与迁移容器使用的受限资源参数
   ci_environment: [CHECK_CPUS, CHECK_MEMORY, BUILDX_BUILDER]
   backups: /volumes/data/kailo/backups/release
-  journal: /volumes/data/kailo/releases
+  journal: /var/lib/kailo-runtime/releases
 
 # 部署附带损伤判定（ADR-20 §7）：只比较有重启策略的长期运行容器；以下 Compose 项目按命名约定
 # 由一致性与接收方演练脚本独立建拆，不属于生产运行面。

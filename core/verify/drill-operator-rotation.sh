@@ -10,7 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 . core/verify/integration-env.sh
-DC() { sudo -n docker compose --env-file deploy/local/.env -f deploy/local/compose.yaml "$@"; }
+DC() { sudo -n --preserve-env=DOCKER_HOST docker compose --env-file deploy/local/.env -f deploy/local/compose.yaml "$@"; }
 PSQL() { psql "$DATABASE_URL" -Atc "$1"; }
 step() { printf '\n== %s（%s）\n' "$1" "$(date -u +%T)"; }
 S=deploy/local/secrets
@@ -20,7 +20,7 @@ core_up() {
   # 引导凭据是一次性投递（DD-70）：每次启动都经 start-core.sh 现取
   deploy/local/start-core.sh >/dev/null 2>&1 || return 2
   for _ in $(seq 1 60); do
-    st=$(sudo -n docker inspect -f '{{.State.Status}}' "$(DC ps -aq core-bff)")
+    st=$(sudo -n --preserve-env=DOCKER_HOST docker inspect -f '{{.State.Status}}' "$(DC ps -aq core-bff)")
     [ "$st" = exited ] && return 1
     curl -fsS -o /dev/null "$VERIFY_BFF_URL/healthz" && return 0
     sleep 1

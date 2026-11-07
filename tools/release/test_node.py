@@ -15,6 +15,60 @@ PIN = "sha256:" + "e" * 64
 REF = "127.0.0.1:55000/metering@" + PIN
 
 
+class DockerEndpoint(unittest.TestCase):
+    """ADR-20 §13: Kailo's dockerd is selected only by the CI configuration, never by the default daemon."""
+    KAILO = "unix:///run/kailo-docker/docker.sock"
+
+    def cfg(self, host):
+        return {"environment": {"DOCKER_HOST": host}} if host is not None else {"environment": {}}
+
+    def test_configured_endpoint_is_exported_for_every_later_call(self):
+        environ = {}
+        self.assertEqual(node.select_docker_host(self.cfg(self.KAILO), environ), self.KAILO)
+        self.assertEqual(environ["DOCKER_HOST"], self.KAILO)
+
+    def test_sudo_keeps_the_endpoint_for_direct_and_compose_calls(self):
+        self.assertEqual(node.DOCKER, ["sudo", "-n", "--preserve-env=DOCKER_HOST", "docker"])
+        argv, _ = node.compose_argv("/tree", "/runtime", [])
+        self.assertIn("--preserve-env=DOCKER_HOST", argv[:argv.index("docker")])
+        self.assertIn("--preserve-env=KAILO_RUNTIME_DIR", argv[:argv.index("docker")])
+
+    def test_same_caller_endpoint_is_accepted(self):
+        environ = {"DOCKER_HOST": self.KAILO}
+        self.assertEqual(node.select_docker_host(self.cfg(self.KAILO), environ), self.KAILO)
+
+    def test_a_second_source_is_refused(self):
+        with self.assertRaises(node.NodeError):
+            node.select_docker_host(self.cfg(self.KAILO), {"DOCKER_HOST": "unix:///var/run/docker.sock"})
+        with self.assertRaises(node.NodeError):
+            node.select_docker_host(self.cfg(self.KAILO), {"DOCKER_CONTEXT": "default"})
+
+    def test_only_a_local_socket_is_accepted(self):
+        for host in ("tcp://10.203.194.2:2376", "unix://", "unix:///run/x docker.sock"):
+            with self.assertRaises(node.NodeError):
+                node.select_docker_host(self.cfg(host), {})
+
+    def test_without_the_key_the_caller_environment_is_kept(self):
+        environ = {"DOCKER_HOST": self.KAILO}
+        self.assertEqual(node.select_docker_host(self.cfg(None), environ), self.KAILO)
+        self.assertEqual(node.select_docker_host(self.cfg(None), {}), None)
+
+    def test_reading_the_ci_configuration_selects_the_endpoint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.json")
+            with open(path, "w", encoding="utf-8") as stream:
+                json.dump(dict(runtime="/r", sources="/s", release_proofs="/p", compose_project="platform-local",
+                               queue="/q", environment={"DOCKER_HOST": self.KAILO}), stream)
+            saved = os.environ.pop("DOCKER_HOST", None)
+            try:
+                node.ci_config(path)
+                self.assertEqual(os.environ.get("DOCKER_HOST"), self.KAILO)
+            finally:
+                os.environ.pop("DOCKER_HOST", None)
+                if saved is not None:
+                    os.environ["DOCKER_HOST"] = saved
+
+
 class JudgeImage(unittest.TestCase):
     def test_containerd_store_image_id_is_the_manifest_digest(self):
         self.assertEqual(node.judge_image(PIN, REF, PIN, PIN, True), [])

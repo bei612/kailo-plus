@@ -42,7 +42,7 @@ import subprocess
 import sys
 import tempfile
 
-DOCKER = ["sudo", "-n", "docker"]
+DOCKER = ["sudo", "-n", "--preserve-env=DOCKER_HOST", "docker"]
 
 
 class Refused(Exception):
