@@ -31,7 +31,7 @@ artifacts:
     build_args: [CARGO_BUILD_JOBS]
     inputs: [agent-runtime/]
     source_digest: sha256:da03b0c4532a790acb22370917acadad94be561cb116e59145ae7172a5017c8c
-    artifact_digest: sha256:a041b665ac81992c14f44fb84e18ed74c9b5ab01cb849fa1b1bcebb29ccbf9fe
+    artifact_digest: sha256:e3900efe7e900bee9b4957b5b372a769138083fcd65bbc09cedac5a1fdda0788
 
 source_facts: [SF-COD-01, SF-COD-03, SF-COD-04, SF-COD-10, SF-COD-11, SF-COD-12, SF-COD-15]
 source_seams: [SS-COD-TRACE, SS-COD-RUNTIME, SS-COD-APP]
