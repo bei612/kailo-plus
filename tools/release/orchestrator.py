@@ -337,6 +337,12 @@ def compute_plan(root, node, decl, source):
     # 已固定产物是否仍在 registry（ADR-20 §13）：新节点或 registry 重建后，compose 固定的 digest 不复存在，
     # 源码未变也必须按同一源码重建并重新 pin，否则 deploy 拉不到镜像。
     registry_refs = {image: digest for image, digest in sorted(pinned.items()) if image in by_name}
+    # 自建单元的构建输入里登记的二开产物（如 core-worker 的 agent-runtime）是构建时按记录 digest 拉取的基础镜像
+    build_deps = {u.name: [d for d in units.values() if d.upstream and d.record in u.inputs and d.images
+                           and recorded_artifact(d)] for u in self_units}
+    for deps in build_deps.values():
+        for d in deps:
+            registry_refs.setdefault(d.name, recorded_artifact(d))
     facts = node.inspect(dict(commit=source, public_build_args=public_args, services=sorted(set(managed) | set(operated)), proofs=proofs,
                               registry_refs=registry_refs,
                               delivery_journal=str(decl["node"]["journal"]),
@@ -385,6 +391,12 @@ def compute_plan(root, node, decl, source):
             if entry["state"] != "stale" and (entry["type"] == "self" or name in targets):
                 entry["state"] = "stale"
     rebuild = [n for n, x in sorted(plan["units"].items()) if x["state"] == "stale"]
+    # 同一次发布的构建并行、都取源 commit 的来源记录，依赖产物重建后的新 digest 要先写回 main 才能被消费
+    for name in rebuild:
+        missing = [d.name for d in build_deps.get(name, []) if registry.get(d.name) is False]
+        if missing:
+            raise ReleaseError(f"{name} 的构建依赖 {', '.join(missing)}，其登记的 digest 不在 registry：先 kailo-ci submit "
+                               f"<main commit> build {missing[0]}，把写回的来源记录经分支检查合入 main，再以新的 main 发布")
     # 03 §7：自建单元（Core/Worker）先于其余产物
     plan["rebuild"] = sorted(rebuild, key=lambda n: plan["units"][n]["type"] != "self")
     rebuilt = {n: name for name in rebuild for n in pin_names(units[name])}
