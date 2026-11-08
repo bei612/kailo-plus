@@ -52,6 +52,9 @@ def load_policy(path):
             raise RetentionError(f"policy：根 {p!r} 必须是唯一的规范绝对路径")
         if not isinstance(idle, int) or idle < grace:
             raise RetentionError(f"policy：{p} 的 max_idle_seconds 不得小于 grace_seconds")
+        lock = root.get("lock")
+        if lock is not None and (not isinstance(lock, str) or not lock.startswith("/") or _under(lock, p)):
+            raise RetentionError(f"policy：{p} 的 lock 必须是根之外的绝对路径")
         cap = root.get("max_bytes")
         if cap is not None and (not isinstance(cap, int) or cap < 1 << 30):
             raise RetentionError(f"policy：{p} 的 max_bytes 必须是不少于 1 GiB 的整数")
@@ -216,25 +219,59 @@ def run(policy, *, dry_run, now=None, facts=None):
         if not os.path.isdir(path) or os.path.islink(path) or os.path.realpath(path) != path:
             report["roots"].append(dict(path=path, state="缺失或不是规范目录，跳过"))
             continue
-        report["roots"].append(dict(path=path, state="已检查"))
-        for name in sorted(os.listdir(path)):
-            entry = os.path.join(path, name)
-            action, reason, size = decide(entry, now=now, grace=grace, max_idle=root["max_idle_seconds"],
-                                          in_use=facts["in_use"], jobs=facts["jobs"])
-            if action == "keep":
-                report["kept"].append(dict(path=entry, reason=reason))
+        with RootLock(root.get("lock")) as free:
+            if not free:
+                report["roots"].append(dict(path=path, state="锁被占用（有任务在用），跳过"))
                 continue
-            if not dry_run:
-                try:
-                    remove(entry)
-                except OSError as error:
-                    report["kept"].append(dict(path=entry, reason=f"删除失败：{error.strerror}"))
-                    continue
-            report["deleted"].append(dict(path=entry, bytes=size, reason=reason))
-            report["freed_bytes"] += size
-        if root.get("max_bytes"):
-            cap_root(path, root["max_bytes"], report, facts, dry_run)
+            report["roots"].append(dict(path=path, state="已检查"))
+            scan_root(root, path, report, facts, dry_run, now, grace)
     return report
+
+
+class RootLock:
+    """根的 lock（如 check-target 的 slot<N>.lock）：检查任务全程持有（flock）；保留只在不等待就拿到时处理该根。
+    只读打开、不创建：锁文件由检查任务以 CI 用户创建，root 创建的文件会让它之后打不开。"""
+
+    def __init__(self, path):
+        self.path, self.fd = path, None
+
+    def __enter__(self):
+        if not self.path:
+            return True
+        try:
+            self.fd = os.open(self.path, os.O_RDONLY)
+        except FileNotFoundError:
+            return True  # no job has used this slot yet
+        try:
+            fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return False
+        return True
+
+    def __exit__(self, *exc):
+        if self.fd is not None:
+            os.close(self.fd)  # releases the flock
+        return False
+
+
+def scan_root(root, path, report, facts, dry_run, now, grace):
+    for name in sorted(os.listdir(path)):
+        entry = os.path.join(path, name)
+        action, reason, size = decide(entry, now=now, grace=grace, max_idle=root["max_idle_seconds"],
+                                      in_use=facts["in_use"], jobs=facts["jobs"])
+        if action == "keep":
+            report["kept"].append(dict(path=entry, reason=reason))
+            continue
+        if not dry_run:
+            try:
+                remove(entry)
+            except OSError as error:
+                report["kept"].append(dict(path=entry, reason=f"删除失败：{error.strerror}"))
+                continue
+        report["deleted"].append(dict(path=entry, bytes=size, reason=reason))
+        report["freed_bytes"] += size
+    if root.get("max_bytes"):
+        cap_root(path, root["max_bytes"], report, facts, dry_run)
 
 
 def cap_root(path, cap, report, facts, dry_run):

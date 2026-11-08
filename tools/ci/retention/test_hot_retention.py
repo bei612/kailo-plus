@@ -169,6 +169,24 @@ class Cap(unittest.TestCase):
             self.assertEqual([os.path.basename(d["path"]) for d in report["deleted"]], ["check", "clippy"])
             self.assertEqual(sorted(os.listdir(root)), ["held", "test"])
 
+    def test_a_root_whose_lock_is_held_is_skipped(self):
+        import fcntl
+        now = time.time()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = os.path.join(tmp, "slot1")
+            touch(os.path.join(root, "old", "blob"), 5 * DAY, now)
+            age_dir(os.path.join(root, "old"), 5 * DAY, now)
+            lock = os.path.join(tmp, "slot1.lock")
+            policy = dict(grace_seconds=2 * HOUR, roots=[dict(path=root, max_idle_seconds=3 * DAY, lock=lock)])
+            facts = dict(in_use=set(), incomplete=0, jobs=set())
+            with open(lock, "a") as held:  # a running check job
+                fcntl.flock(held, fcntl.LOCK_EX)
+                report = hr.run(policy, dry_run=False, now=now, facts=facts)
+                self.assertEqual(report["deleted"], [])
+                self.assertIn("锁被占用", report["roots"][0]["state"])
+            report = hr.run(policy, dry_run=False, now=now, facts=facts)  # job finished
+            self.assertEqual([os.path.basename(d["path"]) for d in report["deleted"]], ["old"])
+
     def test_a_cap_below_one_gib_is_refused(self):
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
             json.dump(dict(grace_seconds=7200, roots=[dict(path="/a", max_idle_seconds=DAY, max_bytes=1024)]), handle)

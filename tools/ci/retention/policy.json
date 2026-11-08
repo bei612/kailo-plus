@@ -1,5 +1,5 @@
 {
-  "comment": "07 §2.1 热目录定时保留：直接子项 grace_seconds 内有活动、被进程或容器使用、或属于未结束的 CI 任务即保留；其余超过 max_idle_seconds 才删除；可选 max_bytes：超过上限按最久未用删除未被占用的子项；docker_build_cache：每轮 buildx prune --keep-storage（Kailo dockerd）",
+  "comment": "07 §2.1 热目录定时保留：直接子项 grace_seconds 内有活动、被进程或容器使用、或属于未结束的 CI 任务即保留；其余超过 max_idle_seconds 才删除；可选 max_bytes：超过上限按最久未用删除未被占用的子项；docker_build_cache：每轮 buildx prune --keep-storage（Kailo dockerd）；可选 lock：检查任务持有的 flock 文件，拿不到即跳过该根",
   "grace_seconds": 7200,
   "ci_config": "/volumes/kailo/ci/config.json",
   "roots": [
@@ -34,17 +34,20 @@
     {
       "path": "/var/lib/kailo-ci/check-target/kailo-macro/slot1",
       "max_idle_seconds": 259200,
-      "max_bytes": 21474836480
+      "max_bytes": 21474836480,
+      "lock": "/var/lib/kailo-ci/check-target/kailo-macro/slot1.lock"
     },
     {
       "path": "/var/lib/kailo-ci/check-target/kailo-macro/slot2",
       "max_idle_seconds": 259200,
-      "max_bytes": 21474836480
+      "max_bytes": 21474836480,
+      "lock": "/var/lib/kailo-ci/check-target/kailo-macro/slot2.lock"
     },
     {
       "path": "/var/lib/kailo-ci/check-target/kailo-macro/slot3",
       "max_idle_seconds": 259200,
-      "max_bytes": 21474836480
+      "max_bytes": 21474836480,
+      "lock": "/var/lib/kailo-ci/check-target/kailo-macro/slot3.lock"
     },
     {
       "path": "/var/lib/kailo-ci/check-cache/kailo-macro",
