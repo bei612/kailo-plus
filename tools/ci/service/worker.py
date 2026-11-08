@@ -155,7 +155,15 @@ class Worker:
             try:
                 with open(path, encoding="utf-8") as source:
                     request = json.load(source)
+                request["job"], request["stage"]
             except FileNotFoundError:  # claimed by another slot meanwhile
+                continue
+            except (ValueError, KeyError, TypeError):
+                # A malformed request (e.g. an empty file) must not stop the lane: set it aside and go on.
+                try:
+                    os.replace(path, path + ".invalid")
+                except FileNotFoundError:
+                    pass
                 continue
             job = request["job"]
             self.use_repo(request.get("repo"))
