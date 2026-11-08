@@ -24,7 +24,7 @@
 
 **门禁定义在 `tools/check.sh`**，本地与 CI 调用同一个入口。
 
-- **组件构建门禁前移**（2026-10-23）：组件镜像构建内置的格式与静态门禁（wren-ui `next build` 的 next lint/prettier/tsc，Buzz web 与 admin-web 构建的 tsc）由 lint 步骤在检查镜像内按同一配置执行，覆盖范围与依赖缓存见 `07-运行与运维基线.md` §2.1。这是第 1 项门禁「格式与静态检查」的范围补齐，不新增门禁项。
+- **组件构建门禁前移**（2026-10-23）：组件镜像构建内置的格式与静态门禁（wren-ui `next build` 的 next lint/prettier/tsc，Buzz web 与 admin-web 构建的 tsc，Desktop 安装包构建 `tsc && vite build` 中的 tsc）由 lint 步骤在检查镜像内按同一配置执行，覆盖范围与依赖缓存见 `07-运行与运维基线.md` §2.1。Desktop 的依赖与 `fork/packaging/desktop.Dockerfile` 同一安装输入与范围（整个 workspace 不带过滤；`file:` 引用的 `client-kit/ts/{contracts,platform}` 按仓库相对位置放进依赖缓存并计入缓存键），不关闭类型规则、不跳过文件（2026-11-08 补齐：此前 Desktop 类型错误直到发布构建才暴露）。这是第 1 项门禁「格式与静态检查」的范围补齐，不新增门禁项。
 
 - **入口结构**：`tools/check.sh` 按 `03-验证发布与验收门禁.md` §5 的十项分为十个子步骤，每步独立可单独调用（`tools/check.sh <step>`），全部失败以非零码退出。`tools/check-docs.sh` 成为其中「只改文档」的快路径，保持现有行为与独立可执行性。
 - **Git 边界**：代码远端沿用原仓库，`main` 的目录直接提升原 `apps` 子树；保留原 commit 与 tag，不强推、不移动历史 tag。目录迁移与未验收的业务修改分开提交；本地凭据、运行数据、缓存、产物和会话导出不入库。外层历史只作保留记录，不再从外层执行代码提交或 push。

@@ -169,23 +169,30 @@ prepare_check_dependencies() {
 # 命中时直接复用，不重装。安装在同目录临时副本内完成后原子改名，并发或中断不会留下半成品。
 # 不运行依赖的安装脚本（--mode=skip-build/--ignore-scripts）：格式与类型检查不需要原生模块，
 # 也不在检查容器里编译它们。条目内按仓库路径布局（<条目>/<组件目录>），安装目录写入
-# COMPONENT_DEPS；给出的 node_modules 目录链接进快照。
+# COMPONENT_DEPS；给出的 node_modules 目录链接进快照。安装输入相对组件目录，可以是组件目录
+# 之外、仓库之内的路径（如 pnpm `file:` 依赖指向的 ../client-kit/ts/…）：按仓库路径放进条目，
+# `file:` 的相对路径在条目内照样解析；其中的 node_modules（仓库根 pnpm 安装产生）不算安装输入。
 # 用法：component_lint_deps <组件目录> <安装输入（相对路径）…> -- [链接的 node_modules 目录…] -- <安装命令…>
 component_lint_deps() {
   local dir=$1; shift
-  local inputs=() links=() key root entry staging path
+  local inputs=() sources=() links=() key root entry staging path
   while [ "$1" != -- ]; do inputs+=("$1"); shift; done; shift
   while [ "$1" != -- ]; do links+=("$1"); shift; done; shift
+  for path in "${inputs[@]}"; do
+    path=$(realpath -ms --relative-to=. -- "$dir/$path") || return 2
+    [[ "$path" == .. || "$path" == ../* ]] && { echo "拒绝检查：安装输入 $path 在仓库之外" >&2; return 2; }
+    sources+=("$path")
+  done
   key=$( { echo layout=repo-path; node --version; printf '%s\0' "$@"
-           (cd "$dir" && find "${inputs[@]}" -type f -print0 | LC_ALL=C sort -z \
+           (cd "$dir" && find "${inputs[@]}" -name node_modules -prune -o -type f -print0 | LC_ALL=C sort -z \
               | xargs -0 sha256sum); } | sha256sum | cut -c1-32) || return 2
   root=/cache/component-lint/$(printf '%s' "$dir" | tr / _)
   entry="$root/$key"
   mkdir -p "$root" || return 2
   if [ ! -f "$entry/.complete" ]; then
     staging=$(mktemp -d "$root/.staging.XXXXXX") || return 2
-    mkdir -p "$staging/$dir" && (cd "$dir" && find "${inputs[@]}" -type f -print0 | tar --null -T - -cf -) \
-      | tar -xf - -C "$staging/$dir" || { rm -rf -- "$staging"; return 2; }
+    mkdir -p "$staging/$dir" && find "${sources[@]}" -name node_modules -prune -o -type f -print0 \
+      | tar --null -T - -cf - | tar -xf - -C "$staging" || { rm -rf -- "$staging"; return 2; }
     (cd "$staging/$dir" && diag "$@") || { rm -rf -- "$staging"; return 2; }
     touch "$staging/.complete"
     mv -T -- "$staging" "$entry" 2>/dev/null || rm -rf -- "$staging"
@@ -232,6 +239,9 @@ sys.exit(1 if kept or (sys.argv[1] != "0" and total == 0) else 0)' "$1"
 #   js/jsx/ts/tsx（沿用 .eslintrc.json 的忽略项；.less 与生成的 GraphQL 类型不在构建门禁内）。
 #   用构建镜像同一 Node 18（检查镜像 /opt/node18）运行，锁定的 yarn 4.5.3 在 Node 24 下遇下载超时会崩溃。
 # - collaboration/web、admin-web：镜像构建为 `tsc && vite build`。
+# - collaboration/desktop：安装包构建（fork/packaging/desktop.Dockerfile）同为 `tsc && vite build`，
+#   依赖是整个 workspace 不带过滤的 `pnpm install --frozen-lockfile`，其中 @client-kit/* 以
+#   `file:../../client-kit/ts/…` 按副本安装，client-kit 源码因此是安装输入。
 # knowledge/frontend（vite build）、file-storage 前端（build.sh 的 webpack）与 document-editor
 # （grunt 打包，jshint 未注册）的镜像构建不含 lint 或类型门禁，此处不另立判定；前两者的
 # Kailo 集成测试在第 2 步 verify_component_frontends（DD-157）。
@@ -277,21 +287,23 @@ lint_wren_ui() {
 
 lint_component_frontends() {
   lint_wren_ui
-  local buzz=collaboration manager tooling
+  local buzz=collaboration manager tooling pnpm
+  populated "$buzz/web/src" || populated "$buzz/admin-web/src" || populated "$buzz/desktop/src" || return 0
+  ran=1
+  manager=$(node -p "require('./$buzz/package.json').packageManager") || return 0
+  if [[ ! "$manager" =~ ^pnpm@[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    fail "$buzz/package.json 的 packageManager 不是固定 pnpm 版本"; return 0
+  fi
+  tooling="$HOME/tooling/$manager"
+  pnpm="$tooling/node_modules/.bin/pnpm"
+  [ -x "$pnpm" ] \
+    || diag npm install --prefix "$tooling" --no-audit --no-fund "$manager" \
+    || { fail "安装 $manager 失败"; return 0; }
+  # 与 collaboration/Dockerfile web-builder 阶段同一安装输入与过滤范围。
   if populated "$buzz/web/src" || populated "$buzz/admin-web/src"; then
-    ran=1
-    manager=$(node -p "require('./$buzz/package.json').packageManager") || return 0
-    if [[ ! "$manager" =~ ^pnpm@[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-      fail "$buzz/package.json 的 packageManager 不是固定 pnpm 版本"; return 0
-    fi
-    tooling="$HOME/tooling/$manager"
-    [ -x "$tooling/node_modules/.bin/pnpm" ] \
-      || diag npm install --prefix "$tooling" --no-audit --no-fund "$manager" \
-      || { fail "安装 $manager 失败"; return 0; }
-    # 与 collaboration/Dockerfile web-builder 阶段同一安装输入与过滤范围。
     if component_lint_deps "$buzz" package.json pnpm-lock.yaml pnpm-workspace.yaml patches \
          web/package.json admin-web/package.json -- node_modules web/node_modules admin-web/node_modules -- \
-         "$tooling/node_modules/.bin/pnpm" install --frozen-lockfile --ignore-scripts \
+         "$pnpm" install --frozen-lockfile --ignore-scripts \
            --filter buzz-web --filter buzz-admin-web; then
       local app
       for app in web admin-web; do
@@ -303,7 +315,40 @@ lint_component_frontends() {
       fail "collaboration web 依赖安装失败，组件类型检查无法执行"
     fi
   fi
+  populated "$buzz/desktop/src" && lint_buzz_desktop "$buzz" "$pnpm"
   return 0
+}
+
+# 与 fork/packaging/desktop.Dockerfile 同一安装输入（collaboration/ 下的 workspace 清单与
+# client-kit/ts/{contracts,platform}）与过滤范围（整个 workspace，无 --filter）。
+# 快照里 desktop/node_modules 由 prepare_check_dependencies 链到 web-client 的安装，供 verify 的
+# web-client 测试解析 Desktop 共享组件；类型检查期间把它与 workspace 根 node_modules 换成本安装，
+# 结束后原样复原，不改变后续步骤所见。
+lint_buzz_desktop() {
+  local buzz=$1 pnpm=$2 deps path rc=0
+  local -A saved=()
+  if ! component_lint_deps "$buzz" package.json pnpm-lock.yaml pnpm-workspace.yaml patches \
+       web/package.json admin-web/package.json desktop/package.json \
+       ../client-kit/ts/contracts ../client-kit/ts/platform -- -- \
+       "$pnpm" install --frozen-lockfile --ignore-scripts; then
+    fail "collaboration desktop 依赖安装失败，Desktop 类型检查无法执行"; return 0
+  fi
+  deps=$COMPONENT_DEPS
+  for path in node_modules desktop/node_modules; do
+    [ -d "$deps/$path" ] || { fail "Desktop 依赖安装结果缺少 $buzz/$path"; return 0; }
+    if [ -L "$buzz/$path" ]; then saved[$path]=$(readlink -- "$buzz/$path")
+    elif [ -e "$buzz/$path" ]; then fail "$buzz/$path 不是检查环境建立的链接，拒绝替换"; return 0
+    fi
+  done
+  for path in node_modules desktop/node_modules; do
+    ln -sfn -- "$deps/$path" "$buzz/$path" || rc=2
+  done
+  [ "$rc" -eq 0 ] && (cd "$buzz/desktop" && diag node_modules/.bin/tsc) || rc=1
+  for path in node_modules desktop/node_modules; do
+    if [ -n "${saved[$path]:-}" ]; then ln -sfn -- "${saved[$path]}" "$buzz/$path"
+    else rm -f -- "$buzz/$path"; fi || { fail "复原 $buzz/$path 失败"; rc=1; }
+  done
+  [ "$rc" -eq 0 ] && pass "buzz desktop tsc（镜像构建同一命令）" || fail "buzz desktop tsc（镜像构建同一命令）"
 }
 
 step_lint() {
