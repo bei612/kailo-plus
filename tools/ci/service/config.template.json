@@ -106,7 +106,8 @@
         "CHECK_POSTGRES_SHM": "1g",
         "DOCKER_CONFIG": "/var/lib/kailo-ci/docker-config-kailo-macro"
       },
-      "concurrency": 3
+      "concurrency": 3,
+      "min_job_free_bytes": 25769803776
     }
   }
 }

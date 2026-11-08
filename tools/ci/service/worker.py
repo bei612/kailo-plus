@@ -158,6 +158,7 @@ class Worker:
             except FileNotFoundError:  # claimed by another slot meanwhile
                 continue
             job = request["job"]
+            self.use_repo(request.get("repo"))
             if not self.admit(job, request["stage"]):
                 time.sleep(15)
                 continue
@@ -170,13 +171,14 @@ class Worker:
             self.execute(job)
 
     def admit(self, job, stage):
-        need = int(self.cfg.get("admission", {}).get(stage, 18 * GIB if stage in ("check", "check-step", "build")
-                                                                else 4 * GIB))
+        # A repository may override both thresholds (repositories.<name>.admission / min_job_free_bytes).
+        admission = {**(self.cfg.get("admission") or {}), **(self.rc.get("admission") or {})}
+        need = int(admission.get(stage, 18 * GIB if stage in ("check", "check-step", "build") else 4 * GIB))
         with open("/proc/meminfo") as source:
             info = {line.split(":")[0]: int(line.split()[1]) * 1024 for line in source}
         free = info.get("MemAvailable", 0)
         disk = shutil.disk_usage(self.tmp_root).free
-        min_disk = int(self.cfg.get("min_job_free_bytes", 32 * GIB))
+        min_disk = int(self.rc.get("min_job_free_bytes", self.cfg.get("min_job_free_bytes", 32 * GIB)))
         if free < need or disk < min_disk:
             self.q.update(job, waiting_for=dict(memory_required=need, memory_available=free,
                                                 disk_required=min_disk, disk_available=disk))
