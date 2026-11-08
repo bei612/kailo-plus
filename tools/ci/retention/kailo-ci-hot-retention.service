@@ -1,11 +1,14 @@
 # 07 §2.1 热目录定时保留；由 tools/ci/retention/setup.sh install 安装，改动先改仓库。
 [Unit]
 Description=Kailo CI hot directory retention (07 §2.1)
-After=docker.service local-fs.target
+After=docker.service kailo-docker.service local-fs.target
 RequiresMountsFor=/var/lib/kailo-ci /volumes/data/kailo/check-cache
 
 [Service]
 Type=oneshot
+# 容器挂载事实与构建缓存清理只看 Kailo dockerd（不碰系统默认 dockerd）；DOCKER_CONFIG 让 root 找到 kailo-builder。
+Environment=DOCKER_HOST=unix:///run/kailo-docker/docker.sock
+Environment=DOCKER_CONFIG=/var/lib/kailo-ci/docker-config
 ExecStart=/usr/bin/python3 -I -B /volumes/kailo/ci/hot-retention/hot-retention.py --policy /volumes/kailo/ci/hot-retention/policy.json
 Nice=19
 IOSchedulingClass=idle

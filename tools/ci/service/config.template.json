@@ -104,7 +104,8 @@
         "CHECK_PROXY": "http://10.239.0.1:10809",
         "CHECK_SCCACHE_SIZE": "20G",
         "CHECK_POSTGRES_SHM": "1g",
-        "DOCKER_CONFIG": "/var/lib/kailo-ci/docker-config-kailo-macro"
+        "DOCKER_CONFIG": "/var/lib/kailo-ci/docker-config-kailo-macro",
+        "CHECK_TARGET_ROOT": "/var/lib/kailo-ci/check-target/kailo-macro"
       },
       "concurrency": 3,
       "min_job_free_bytes": 25769803776

@@ -43,7 +43,8 @@ cat > $ETC/daemon.json.new <<JSON
     {"base": "10.241.0.0/16", "size": 24}
   ],
   "log-driver": "json-file",
-  "log-opts": {"max-size": "50m", "max-file": "5"}
+  "log-opts": {"max-size": "50m", "max-file": "5"},
+  "builder": {"gc": {"enabled": true, "defaultKeepStorage": "30GB"}}
 }
 JSON
 mv $ETC/daemon.json.new $ETC/daemon.json
