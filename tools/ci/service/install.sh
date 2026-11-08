@@ -10,6 +10,18 @@ USER_NAME=${KAILO_CI_USER:-ubuntu}
 export DOCKER_HOST=unix:///run/kailo-docker/docker.sock
 install -d -o "$USER_NAME" -g "$USER_NAME" $CI $CI/sources /var/lib/kailo-ci /var/lib/kailo-ci/{queue,artifacts,release-proofs,tmp,check-cache,retention}
 install -d -o "$USER_NAME" -g "$USER_NAME" $CI/service
+# Host tools the build entries need (tools/release.sh generates SBOMs with syft, ADR-06). Pinned version, official
+# release, verified against the published checksums; downloads go through the node egress proxy when it is present.
+SYFT_VERSION=${KAILO_SYFT_VERSION:-1.57.0}
+if ! syft version 2>/dev/null | grep -q "Version: *$SYFT_VERSION$"; then
+  proxy=(); curl -s -o /dev/null -m 3 -x http://127.0.0.1:10809 https://github.com 2>/dev/null && proxy=(-x http://127.0.0.1:10809)
+  tmp=$(mktemp -d); base=https://github.com/anchore/syft/releases/download/v$SYFT_VERSION
+  curl -sSfL "${proxy[@]}" -o "$tmp/syft_${SYFT_VERSION}_linux_amd64.tar.gz" "$base/syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+  curl -sSfL "${proxy[@]}" -o "$tmp/checksums.txt" "$base/syft_${SYFT_VERSION}_checksums.txt"
+  (cd "$tmp" && grep " syft_${SYFT_VERSION}_linux_amd64.tar.gz$" checksums.txt | sha256sum -c -)
+  tar -xzf "$tmp/syft_${SYFT_VERSION}_linux_amd64.tar.gz" -C "$tmp" syft
+  install -m 0755 "$tmp/syft" /usr/local/bin/syft; rm -rf "$tmp"
+fi
 install -o "$USER_NAME" -g "$USER_NAME" -m 0644 "$HERE"/kci.py "$HERE"/client.py "$HERE"/worker.py $CI/service/
 [ -f $CI/config.json ] || install -o "$USER_NAME" -g "$USER_NAME" -m 0644 "$HERE"/config.template.json $CI/config.json
 if [ ! -d /var/lib/kailo-ci/repo/.git ]; then
