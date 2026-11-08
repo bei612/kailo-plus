@@ -28,7 +28,7 @@ def cmd_check_step(q, a):
 
 
 def cmd_gen(q, a):
-    print(q.submit(a.commit, "gen", repo=a.repo))
+    print(q.submit(a.commit, "gen", [a.target] if getattr(a, "target", None) else [], repo=a.repo))
 
 
 def cmd_status(q, a):
@@ -165,7 +165,9 @@ def parser():
     s.set_defaults(fn=cmd_submit)
     s = sub.add_parser("check-step"); s.add_argument("commit"); s.add_argument("step", help=f"{DEFAULT_REPO}: {', '.join(CHECK_STEPS)}；其他仓库见其 check_steps")
     s.set_defaults(fn=cmd_check_step)
-    s = sub.add_parser("gen"); s.add_argument("commit"); s.set_defaults(fn=cmd_gen)
+    s = sub.add_parser("gen"); s.add_argument("commit")
+    s.add_argument("target", nargs="?", help="生成器名（非默认仓库：kailo/ci/gen/<name>.sh；省略为默认生成）")
+    s.set_defaults(fn=cmd_gen)
     s = sub.add_parser("artifact"); s.add_argument("job"); s.set_defaults(fn=cmd_artifact)
     s = sub.add_parser("status"); s.add_argument("job"); s.set_defaults(fn=cmd_status)
     s = sub.add_parser("logs"); s.add_argument("job"); s.add_argument("--tail", type=int, default=0)
@@ -192,6 +194,10 @@ def main(argv=None):
         a.cmd, a.step = "check-step", a.targets[0]
         a.fn = cmd_check_step
     if a.cmd == "submit" and a.stage == "gen":
+        if len(a.targets) > 1:
+            print("kailo-ci: gen 最多一个生成器名", file=sys.stderr)
+            return 2
+        a.target = a.targets[0] if a.targets else None
         a.fn = cmd_gen
     try:
         q = Queue(load_config())

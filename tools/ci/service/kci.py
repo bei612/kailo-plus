@@ -152,6 +152,10 @@ class Queue:
             unknown = [t for t in targets if t not in known]
             if unknown:
                 raise CIError(f"未登记的构建目标：{', '.join(unknown)}")
+        if stage == "gen" and targets:
+            # Non-default repositories may name one generator: `gen <sha> <name>` runs `<check_entry> gen <name>`.
+            if rc["default"] or len(targets) != 1 or not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", targets[0]):
+                raise CIError("gen 只接受一个生成器名（小写字母、数字、- 或 _），且仅限非默认仓库")
         if stage == "check-step":
             # Non-default repositories may pass one argument to their step: `cargo:<crate>`.
             step, _, arg = (targets or [""])[0].partition(":")
