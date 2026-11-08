@@ -78,9 +78,17 @@ class Job:
 
 class Worker:
     def __init__(self):
+        self.base_environ = dict(os.environ)
+        self.reload()
+
+    def reload(self):
+        """Re-read config.json. Called before every job so an edited config (e.g. a new build arg) applies to the
+        next job without restarting a lane that is still draining its queue."""
         self.cfg = load_config()
         self.q = Queue(self.cfg)
         self.env = {k: str(v) for k, v in (self.cfg.get("environment") or {}).items()}
+        os.environ.clear()
+        os.environ.update(self.base_environ)
         os.environ.update(self.env)  # docker CLI calls (incl. cleanup) target the Kailo dockerd
         self.repo = self.cfg["source_repository"]
         self.tmp_root = self.env.get("TMPDIR", "/var/lib/kailo-ci/tmp")
@@ -110,6 +118,7 @@ class Worker:
             path = self.next_request()
             if not path:
                 return
+            self.reload()
             with open(path, encoding="utf-8") as source:
                 request = json.load(source)
             job = request["job"]
