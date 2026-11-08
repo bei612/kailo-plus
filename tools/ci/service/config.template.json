@@ -20,19 +20,42 @@
     "CHECK_POSTGRES_IMAGE": "postgres:16-alpine",
     "CARGO_BUILD_JOBS": "8",
     "https_proxy": "",
-    "HTTPS_PROXY": ""
+    "HTTPS_PROXY": "",
+    "PLATFORM_DISPLAY_NAME": "Kailo",
+    "CELLS_VERSION": "5.0.3-dev",
+    "DOCKER_ENTRYPOINT_SRC_DIR": "tools/docker/images/cells",
+    "GOPROXY_ARG": "https://proxy.golang.org,direct",
+    "VERSION_ARG": "0.8.0",
+    "COMMIT_ID_ARG": "2be7bd40631dda1dd485306038f07a62e9ee287e",
+    "BUILD_TIME_ARG": "kailo-release",
+    "GO_VERSION_ARG": "unknown"
   },
   "build_targets": {
     "core-worker": {},
-    "web-client": {}, "desktop-client": {}, "mobile-client": {},
-    "agent-runtime": {}, "metering": {}, "model-gateway": {}, "collaboration-relay": {}, "document-editor": {},
-    "data-query-ui": {}, "data-query-ai-service": {}, "data-query-engine": {}, "data-query-ibis": {},
-    "file-storage-adapter": {}, "file-storage-service": {},
-    "knowledge-adapter": {}, "knowledge-service": {}, "knowledge-native-ui": {}, "knowledge-document-reader": {}
+    "web-client": {},
+    "desktop-client": {},
+    "mobile-client": {},
+    "agent-runtime": {},
+    "metering": {},
+    "model-gateway": {},
+    "collaboration-relay": {},
+    "document-editor": {},
+    "data-query-ui": {},
+    "data-query-ai-service": {},
+    "data-query-engine": {},
+    "data-query-ibis": {},
+    "file-storage-adapter": {},
+    "file-storage-service": {},
+    "knowledge-adapter": {},
+    "knowledge-service": {},
+    "knowledge-native-ui": {},
+    "knowledge-document-reader": {}
   },
   "retention": {
     "journal": "/var/lib/kailo-runtime/releases",
     "receipts": "/var/lib/kailo-ci/retention/receipts",
-    "scratch": ["/home/ubuntu/scratch"]
+    "scratch": [
+      "/home/ubuntu/scratch"
+    ]
   }
 }
