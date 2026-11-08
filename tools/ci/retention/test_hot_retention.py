@@ -40,8 +40,15 @@ class Policy(unittest.TestCase):
         paths = [r["path"] for r in policy["roots"]]
         self.assertEqual(paths, ["/home/ubuntu/scratch", "/home/ubuntu/branch-core", "/home/ubuntu/branch-nvme",
                                  "/var/lib/kailo-ci/tmp", "/var/lib/kailo-ci/branch", "/var/lib/kailo-ci/slots/work",
-                                 "/volumes/data/kailo/check-cache"])
+                                 "/volumes/data/kailo/check-cache",
+                                 "/var/lib/kailo-ci/check-target/kailo-macro/slot1",
+                                 "/var/lib/kailo-ci/check-target/kailo-macro/slot2",
+                                 "/var/lib/kailo-ci/check-target/kailo-macro/slot3",
+                                 "/var/lib/kailo-ci/check-cache/kailo-macro"])
         self.assertEqual(policy["grace_seconds"], 2 * HOUR)
+        # cargo targets: three slots of at most 20 GiB (60 GiB in total)
+        self.assertEqual(sum(r.get("max_bytes", 0) for r in policy["roots"]), 60 * 2**30)
+        self.assertEqual(policy["docker_build_cache"]["keep_storage"], "30GB")
 
     def test_invalid_policies_are_refused(self):
         for bad in (dict(grace_seconds=60, roots=[dict(path="/a", max_idle_seconds=DAY)]),
@@ -140,6 +147,34 @@ class Run(unittest.TestCase):
         report = hr.run(policy, dry_run=False, now=self.now, facts=self.facts())
         self.assertEqual(report["deleted"], [])
         self.assertIn("old", os.listdir(self.root))
+
+
+class Cap(unittest.TestCase):
+    def test_over_the_cap_deletes_least_recently_used_unheld_entries(self):
+        now = time.time()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = os.path.join(tmp, "slot1")
+            for name, age in (("clippy", 3 * HOUR), ("test", 30 * 60), ("check", 5 * HOUR), ("held", 9 * HOUR)):
+                touch(os.path.join(root, name, "blob"), age, now, text="x" * (2 << 20))
+                age_dir(os.path.join(root, name), age, now)
+            policy = dict(grace_seconds=2 * HOUR,
+                          roots=[dict(path=root, max_idle_seconds=3 * DAY, max_bytes=1 << 30)])
+            facts = dict(in_use={os.path.join(root, "held", "blob")}, incomplete=0, jobs=set())
+            # The cap is 1 GiB, far above these 2 MiB entries: nothing goes.
+            self.assertEqual(hr.run(policy, dry_run=False, now=now, facts=facts)["deleted"], [])
+            # Pretend the cap is 5 MiB (below load_policy's floor, so call cap_root directly): the oldest unheld go
+            # first until the rest fit; the held entry stays although it is the oldest.
+            report = dict(deleted=[], kept=[], freed_bytes=0)
+            hr.cap_root(root, 5 << 20, report, facts, dry_run=False)
+            self.assertEqual([os.path.basename(d["path"]) for d in report["deleted"]], ["check", "clippy"])
+            self.assertEqual(sorted(os.listdir(root)), ["held", "test"])
+
+    def test_a_cap_below_one_gib_is_refused(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
+            json.dump(dict(grace_seconds=7200, roots=[dict(path="/a", max_idle_seconds=DAY, max_bytes=1024)]), handle)
+        self.addCleanup(os.unlink, handle.name)
+        with self.assertRaises(hr.RetentionError):
+            hr.load_policy(handle.name)
 
 
 class Activity(unittest.TestCase):

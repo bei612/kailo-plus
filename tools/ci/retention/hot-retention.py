@@ -3,13 +3,16 @@
 
   hot-retention.py --policy policy.json [--dry-run] [--json]
 
-对 policy.json 声明的每个根（~/scratch、~/branch-core、/var/lib/kailo-ci/tmp、/var/lib/kailo-ci/branch、检查缓存），逐个判定其
-直接子项：
+对 policy.json 声明的每个根（~/scratch、~/branch-core、/var/lib/kailo-ci/tmp、/var/lib/kailo-ci/branch、检查缓存、按槽位的
+cargo target），逐个判定其直接子项：
   保留  任一文件 grace_seconds（2 小时）内有变化；或有进程以其为工作目录/根/可执行文件、打开或映射其中文件；
         或有容器（含已停止的）以其中路径为挂载来源；或名字是 CI 队列中未结束任务的 ID；或闲置未超过该根的 max_idle_seconds
   删除  其余（目录整体删除，软链接只删链接本身，不跟随）
 活动时间：目录与软链接取 mtime，普通文件取 mtime 与 atime 的较新者（relatime 下读取每天至多更新一次 atime，
 缓存只被读取也算活动；本程序只做 lstat 与列目录，不读文件内容）。
+
+根可带 max_bytes：闲置判定后仍超过上限时，按最近活动从旧到新删除未被使用的子项（见 cap_root）。policy.docker_build_cache
+给出 BuildKit 构建缓存的保留上限，每轮对列出的 builder 执行 buildx prune --keep-storage。
 
 安全：进程或容器事实读不全（非 root 运行、docker 不可用）即整轮不删除；根必须是规范绝对路径且不是软链接；每个子项
 在删除前重新判定。同一时刻只运行一份（flock）。输出不含文件内容，只有路径、大小与原因。
@@ -49,6 +52,9 @@ def load_policy(path):
             raise RetentionError(f"policy：根 {p!r} 必须是唯一的规范绝对路径")
         if not isinstance(idle, int) or idle < grace:
             raise RetentionError(f"policy：{p} 的 max_idle_seconds 不得小于 grace_seconds")
+        cap = root.get("max_bytes")
+        if cap is not None and (not isinstance(cap, int) or cap < 1 << 30):
+            raise RetentionError(f"policy：{p} 的 max_bytes 必须是不少于 1 GiB 的整数")
         seen.add(p)
     if any(a != b and b.startswith(a + "/") for a in seen for b in seen):
         raise RetentionError("policy：根之间不得相互包含")
@@ -226,7 +232,57 @@ def run(policy, *, dry_run, now=None, facts=None):
                     continue
             report["deleted"].append(dict(path=entry, bytes=size, reason=reason))
             report["freed_bytes"] += size
+        if root.get("max_bytes"):
+            cap_root(path, root["max_bytes"], report, facts, dry_run)
     return report
+
+
+def cap_root(path, cap, report, facts, dry_run):
+    """容量上限：闲置判定之后，根下剩余子项合计超过 max_bytes 时，按最近活动从旧到新删除，直到不超过上限。
+    被进程或容器使用、属于未结束任务的子项不删（正在跑的检查任务的 target 目录由其 cargo/rustc 进程持有）；
+    不看 2 小时宽限，否则连续有任务时上限永远不生效。"""
+    gone = {d["path"] for d in report["deleted"]}
+    entries = []
+    for name in sorted(os.listdir(path)) if os.path.isdir(path) else []:
+        entry = os.path.join(path, name)
+        if entry in gone:
+            continue
+        newest, size, _ = entry_activity(entry)
+        real = os.path.realpath(entry) if not os.path.islink(entry) else entry
+        held = name in facts["jobs"] or any(_under(p, real) or _under(p, entry) for p in facts["in_use"])
+        entries.append((newest, size, entry, held))
+    total = sum(size for _, size, _, _ in entries)
+    for newest, size, entry, held in sorted(entries):
+        if total <= cap:
+            break
+        if held:
+            continue
+        if not dry_run:
+            try:
+                remove(entry)
+            except OSError as error:
+                report["kept"].append(dict(path=entry, reason=f"删除失败：{error.strerror}"))
+                continue
+        total -= size
+        report["deleted"].append(dict(path=entry, bytes=size, reason=f"超过容量上限 {cap / 2**30:.0f} GiB，最久未用"))
+        report["freed_bytes"] += size
+
+
+def prune_build_cache(policy, report, dry_run):
+    """BuildKit 构建缓存上限（policy.docker_build_cache）：对每个 builder 执行 buildx prune --keep-storage。
+    只作用于 DOCKER_HOST 指向的 dockerd（unit 里固定为 Kailo dockerd）。"""
+    spec = policy.get("docker_build_cache")
+    if not spec:
+        return
+    keep = spec["keep_storage"]
+    for builder in spec.get("builders", ["default"]):
+        argv = DOCKER + ["buildx", "prune", "--force", "--builder", builder, "--keep-storage", keep]
+        if dry_run:
+            report.setdefault("build_cache", []).append(dict(builder=builder, keep_storage=keep, state="dry-run"))
+            continue
+        r = subprocess.run(argv, capture_output=True, text=True)
+        state = "ok" if r.returncode == 0 else f"失败：{(r.stderr or r.stdout).strip()[-200:]}"
+        report.setdefault("build_cache", []).append(dict(builder=builder, keep_storage=keep, state=state))
 
 
 def say(message):
@@ -249,6 +305,8 @@ def main():
                 say("另一轮保留正在执行，跳过")
                 return
             report = run(policy, dry_run=args.dry_run)
+            if not report.get("aborted"):
+                prune_build_cache(policy, report, args.dry_run)
     except (RetentionError, OSError, ValueError) as error:
         say(f"保留失败：{error}")
         sys.exit(1)
@@ -263,6 +321,8 @@ def main():
     for item in report["deleted"]:
         say(f"{verb} {item['path']}（{item['bytes'] / 2**30:.2f} GiB，{item['reason']}）")
     say(f"{verb} {len(report['deleted'])} 项，约 {report['freed_bytes'] / 2**30:.1f} GiB；保留 {len(report['kept'])} 项")
+    for item in report.get("build_cache", []):
+        say(f"构建缓存 {item['builder']}：保留上限 {item['keep_storage']}，{item['state']}")
 
 
 if __name__ == "__main__":
