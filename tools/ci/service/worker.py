@@ -424,7 +424,9 @@ class Worker:
         net = url = None
         if "gen" in self.rc.get("postgres_steps", []):
             net, url = self.postgres(job)
-        job.run(["bash", self.entry, "gen"], cwd=work, env=self.check_env(job, net, url), label="gen")
+        target = (job.status.get("targets") or [None])[0]
+        job.run(["bash", self.entry, "gen", *([target] if target else [])], cwd=work,
+                env=self.check_env(job, net, url), label=f"gen {target}" if target else "gen")
         job.run(["git", "-C", work, "add", "--all"], label="git add")
         changed = job.output(["git", "-C", work, "diff", "--cached", "--name-only"]).splitlines()
         patch = job.output(["git", "-C", work, "diff", "--cached", "--binary"])
@@ -433,7 +435,8 @@ class Worker:
         bundle = os.path.join(self.cfg.get("artifacts", "/var/lib/kailo-ci/artifacts"), job.id, "gen.tar.gz")
         os.makedirs(os.path.dirname(bundle), exist_ok=True)
         manifest = dict(repo=self.rc["name"], commit=job.status["commit"], job=job.id, image_id=image, changed=changed,
-                        validation=f"{self.entry} gen ok",
+                        generator=target or "default",
+                        validation=f"{self.entry} gen{' ' + target if target else ''} ok",
                         files={f: hashlib.sha256(open(os.path.join(work, f), "rb").read()).hexdigest()
                                for f in changed if os.path.isfile(os.path.join(work, f))})
         with tarfile.open(bundle, "w:gz") as tar:
