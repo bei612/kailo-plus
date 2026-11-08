@@ -5,7 +5,8 @@ import type { ComponentProps } from "react";
 import type { AgentDefinitionsPage } from "@client-kit/platform/react/pages";
 import { invokeTauri } from "@/shared/api/tauri";
 
-export type DesktopSnapshotExportHost = NonNullable<ComponentProps<typeof AgentDefinitionsPage>["snapshotExportHost"]>;
+// The page export can be typed as `Props | undefined` (lazy/re-exported component), so strip that first.
+export type DesktopSnapshotExportHost = NonNullable<NonNullable<ComponentProps<typeof AgentDefinitionsPage>>["snapshotExportHost"]>;
 
 export const snapshotExportHost: DesktopSnapshotExportHost = {
   save: (view) => invokeTauri<boolean>("platform_export_package_save", { assetId: view.packageAssetId, fileName: view.fileName }),
