@@ -87,6 +87,16 @@ class Worker:
         self.cfg = load_config()
         self.q = Queue(self.cfg)
         self.env = {k: str(v) for k, v in (self.cfg.get("environment") or {}).items()}
+        # Build secrets (e.g. the Android upload keystore) live in a 0600 env file outside config.json, which the
+        # control container mounts; values never enter status, logs or the client. KEY=VALUE lines, # comments.
+        secret_file = self.cfg.get("secret_env_file")
+        if secret_file and os.path.exists(secret_file):
+            with open(secret_file, encoding="utf-8") as source:
+                for line in source:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, value = line.split("=", 1)
+                        self.env[key.strip()] = value
         os.environ.clear()
         os.environ.update(self.base_environ)
         os.environ.update(self.env)  # docker CLI calls (incl. cleanup) target the Kailo dockerd
