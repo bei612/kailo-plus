@@ -256,9 +256,16 @@ class Worker:
         job.cleanup.append(lambda: subprocess.run(docker + ["network", "rm", net], capture_output=True))
         # PostgreSQL 18 images keep data under /var/lib/postgresql (their VOLUME); <=17 under .../data.
         data = self.env.get("CHECK_POSTGRES_DATA", "/var/lib/postgresql/data")
-        job.run(docker + ["run", "-d", "--name", name, "--network", net, "--cpus", "1", "--memory", "2g",
-                          "--tmpfs", f"{data}:size=1g", "-e", f"POSTGRES_PASSWORD={password}",
-                          image], label="pg start")
+        # Sizing and server flags are per repository (environment overlay); defaults keep the original 1 CPU / 2 GiB /
+        # 1 GiB tmpfs. CHECK_POSTGRES_ARGS are postgres flags (e.g. "-c fsync=off -c max_locks_per_transaction=8192").
+        cpus = self.env.get("CHECK_POSTGRES_CPUS", "1")
+        memory = self.env.get("CHECK_POSTGRES_MEMORY", "2g")
+        tmpfs = self.env.get("CHECK_POSTGRES_TMPFS", "1g")
+        parent = self.env.get("CHECK_CGROUP_PARENT")
+        job.run(docker + ["run", "-d", "--name", name, "--network", net, "--cpus", cpus, "--memory", memory,
+                          *(["--cgroup-parent", parent] if parent else []),
+                          "--tmpfs", f"{data}:size={tmpfs}", "-e", f"POSTGRES_PASSWORD={password}",
+                          image, *self.env.get("CHECK_POSTGRES_ARGS", "").split()], label="pg start")
 
         def remove():
             subprocess.run(docker + ["rm", "-f", "-v", name], capture_output=True)
@@ -347,6 +354,8 @@ class Worker:
         self.fetch(job)
         self.require_reachable(job, main_only=False)
         work = self.checkout(job, os.path.join(job.tmp, "apps"))
+        if not self.rc["default"]:
+            return self.gen_repo(job, work)
         # check.sh `status` builds/loads the check SDK image and prints its immutable ID.
         job.run(["bash", "tools/check.sh", "status"], cwd=work, env=self.check_env(job), label="check sdk")
         recipe = hashlib.sha256(open(os.path.join(work, "tools/check.Dockerfile"), "rb").read()).hexdigest()
@@ -381,6 +390,38 @@ class Worker:
                 tar.add(path, arcname=name)
         digest = hashlib.sha256(open(bundle, "rb").read()).hexdigest()
         job.update(artifact=dict(path=bundle, sha256=digest), artifacts_path=os.path.dirname(bundle))
+
+    def gen_repo(self, job, work):
+        """Generated files of a non-default repository: `<check_entry> gen` regenerates them in the fixed checkout (with
+        a temporary PostgreSQL when gen is in postgres_steps); the CI packs the resulting diff. Same artifact layout as
+        the default repository: files/<path>, changes.patch (binary git diff, new and deleted files included),
+        manifest.json. The developer applies the patch and pushes it; the CI never writes to GitHub."""
+        net = url = None
+        if "gen" in self.rc.get("postgres_steps", []):
+            net, url = self.postgres(job)
+        job.run(["bash", self.entry, "gen"], cwd=work, env=self.check_env(job, net, url), label="gen")
+        job.run(["git", "-C", work, "add", "--all"], label="git add")
+        changed = job.output(["git", "-C", work, "diff", "--cached", "--name-only"]).splitlines()
+        patch = job.output(["git", "-C", work, "diff", "--cached", "--binary"])
+        image_file = os.path.join(work, ".git", "kailo-image")
+        image = open(image_file, encoding="utf-8").read().strip() if os.path.exists(image_file) else ""
+        bundle = os.path.join(self.cfg.get("artifacts", "/var/lib/kailo-ci/artifacts"), job.id, "gen.tar.gz")
+        os.makedirs(os.path.dirname(bundle), exist_ok=True)
+        manifest = dict(repo=self.rc["name"], commit=job.status["commit"], job=job.id, image_id=image, changed=changed,
+                        validation=f"{self.entry} gen ok",
+                        files={f: hashlib.sha256(open(os.path.join(work, f), "rb").read()).hexdigest()
+                               for f in changed if os.path.isfile(os.path.join(work, f))})
+        with tarfile.open(bundle, "w:gz") as tar:
+            for f in manifest["files"]:
+                tar.add(os.path.join(work, f), arcname=f"files/{f}")
+            for name, data in (("changes.patch", patch), ("manifest.json", json.dumps(manifest, indent=1))):
+                path = os.path.join(job.tmp, name)
+                with open(path, "w", encoding="utf-8") as sink:
+                    sink.write(data)
+                tar.add(path, arcname=name)
+        digest = hashlib.sha256(open(bundle, "rb").read()).hexdigest()
+        job.say(f"gen: {len(changed)} changed file(s)")
+        job.update(artifact=dict(path=bundle, sha256=digest), artifacts_path=os.path.dirname(bundle), changed=changed)
 
     def stage_build(self, job):
         self.fetch(job)

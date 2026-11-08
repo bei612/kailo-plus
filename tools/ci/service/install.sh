@@ -9,7 +9,9 @@ CI=/volumes/kailo/ci
 USER_NAME=${KAILO_CI_USER:-ubuntu}
 export DOCKER_HOST=unix:///run/kailo-docker/docker.sock
 install -d -o "$USER_NAME" -g "$USER_NAME" $CI $CI/sources /var/lib/kailo-ci /var/lib/kailo-ci/{queue,artifacts,release-proofs,tmp,check-cache,retention}
-install -d -o "$USER_NAME" -g "$USER_NAME" $CI/service
+install -d -o "$USER_NAME" -g "$USER_NAME" $CI/service $CI/handoff
+# `kailo-ci handoff` reads $CI/handoff/handoff.json (ops-maintained JSON list; see the CI-CD 手册)
+[ -f $CI/handoff/handoff.json ] || { echo '[]' > $CI/handoff/handoff.json; chown "$USER_NAME:$USER_NAME" $CI/handoff/handoff.json; }
 # Host tools the build entries need (tools/release.sh generates SBOMs with syft, ADR-06). Pinned version, official
 # release, verified against the published checksums; downloads go through the node egress proxy when it is present.
 SYFT_VERSION=${KAILO_SYFT_VERSION:-1.57.0}

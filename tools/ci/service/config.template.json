@@ -66,15 +66,42 @@
       "sources": "/volumes/kailo/ci/sources-kailo-macro",
       "check_entry": "kailo/ci/check.sh",
       "lane": "feedback-kailo-macro",
-      "stages": ["fetch", "check-step"],
-      "check_steps": ["cargo", "web", "migrate"],
-      "postgres_steps": ["migrate"],
+      "stages": [
+        "fetch",
+        "check-step",
+        "gen"
+      ],
+      "check_steps": [
+        "cargo",
+        "web",
+        "migrate",
+        "go",
+        "lint",
+        "test",
+        "sqlx",
+        "verify",
+        "full"
+      ],
+      "postgres_steps": [
+        "migrate",
+        "test",
+        "sqlx",
+        "gen",
+        "verify",
+        "full"
+      ],
       "environment": {
         "CHECK_POSTGRES_IMAGE": "pgvector/pgvector:pg18",
         "CHECK_POSTGRES_DATA": "/var/lib/postgresql",
+        "CHECK_POSTGRES_CPUS": "4",
+        "CHECK_POSTGRES_MEMORY": "8g",
+        "CHECK_POSTGRES_TMPFS": "4g",
+        "CHECK_POSTGRES_ARGS": "-c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_wal_size=4GB -c checkpoint_timeout=30min -c max_locks_per_transaction=8192 -c max_connections=500",
         "CHECK_CPUS": "8",
         "CHECK_MEMORY": "20g",
-        "CHECK_CACHE_ROOT": "/var/lib/kailo-ci/check-cache/kailo-macro"
+        "CHECK_CACHE_ROOT": "/var/lib/kailo-ci/check-cache/kailo-macro",
+        "CHECK_PROXY": "http://10.239.0.1:10809",
+        "CHECK_SCCACHE_SIZE": "40G"
       }
     }
   }

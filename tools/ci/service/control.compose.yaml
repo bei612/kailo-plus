@@ -1,5 +1,5 @@
 # kailo-ci-control: the client endpoint `kailo-ci` execs into (docker --context kailo-ci exec kailo-ci-control ...).
-# Runs on the Kailo dockerd; only mounts the CI code (read-only), config (read-only), queue and artifacts.
+# Runs on the Kailo dockerd; only mounts the CI code, config and handoff (read-only), queue and artifacts.
 name: kailo-ci
 services:
   control:
@@ -10,9 +10,12 @@ services:
     user: "1000:1000"
     environment:
       KAILO_CI_CONFIG: /volumes/kailo/ci/config.json
+      KAILO_CI_HANDOFF: /volumes/kailo/ci/handoff/handoff.json
     volumes:
       - /volumes/kailo/ci/service:/ci:ro
       - /volumes/kailo/ci/config.json:/volumes/kailo/ci/config.json:ro
+      # directory mount: handoff.json may be replaced atomically (rename) and the container still sees the new file
+      - /volumes/kailo/ci/handoff:/volumes/kailo/ci/handoff:ro
       - /var/lib/kailo-ci/queue:/var/lib/kailo-ci/queue
       - /var/lib/kailo-ci/artifacts:/var/lib/kailo-ci/artifacts:ro
     network_mode: none

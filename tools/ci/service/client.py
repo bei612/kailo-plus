@@ -132,8 +132,20 @@ def cmd_clean(q, a):
     out(dict(apply=a.apply, archived=victims))
 
 
+def handoff_path():
+    """The ops-maintained handoff list. kailo-ci-control mounts the handoff *directory* read-only (a single-file bind
+    mount would keep showing the old inode after an atomic rename), and points KAILO_CI_HANDOFF at the file in it."""
+    if os.environ.get("KAILO_CI_HANDOFF"):
+        return os.environ["KAILO_CI_HANDOFF"]
+    base = os.path.dirname(os.environ.get("KAILO_CI_CONFIG", "/volumes/kailo/ci/config.json"))
+    for path in (os.path.join(base, "handoff", "handoff.json"), os.path.join(base, "handoff.json")):
+        if os.path.exists(path):
+            return path
+    return os.path.join(base, "handoff", "handoff.json")
+
+
 def cmd_handoff(q, a):
-    path = os.path.join(os.path.dirname(q.cfg.get("config_path", "/volumes/kailo/ci/config.json")), "handoff.json")
+    path = handoff_path()
     if os.path.exists(path):
         with open(path, encoding="utf-8") as source:
             items = json.load(source)
