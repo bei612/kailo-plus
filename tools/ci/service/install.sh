@@ -28,9 +28,24 @@ if [ ! -d /var/lib/kailo-ci/repo/.git ]; then
   sudo -u "$USER_NAME" git clone --no-checkout "${KAILO_CI_ORIGIN:-git@github.com:bei612/kailo-plus.git}" /var/lib/kailo-ci/repo \
     || echo "WARNING: GitHub clone failed (add the CI deploy key); jobs will fail at fetch until it succeeds" >&2
 fi
-for lane in release feedback; do
-  unit=kailo-ci-worker; [ $lane = feedback ] && unit=kailo-ci-feedback
-  dir=/var/lib/kailo-ci/queue/pending; [ $lane = feedback ] && dir=/var/lib/kailo-ci/queue/pending/feedback
+# Additional repositories (config.repositories.<name>): one full GitHub mirror each (origin is usually an
+# ~/.ssh/config Host alias bound to that repository's read-only deploy key) and, optionally, their own lane.
+REPOS_PY='import json,sys
+for n,r in (json.load(open(sys.argv[1])).get("repositories") or {}).items(): print(n, r["origin"], r["source_repository"])'
+python3 -c "$REPOS_PY" $CI/config.json | while read -r name origin mirror; do
+  if [ ! -f "$mirror/HEAD" ] && [ ! -d "$mirror/.git" ]; then
+    install -d -o "$USER_NAME" -g "$USER_NAME" "$(dirname "$mirror")"
+    sudo -u "$USER_NAME" git clone --no-checkout "$origin" "$mirror" \
+      || echo "WARNING: clone of $name failed (deploy key / ssh alias); its jobs fail at fetch" >&2
+  fi
+done
+LANES_PY='import json,sys
+c=json.load(open(sys.argv[1]))
+print(" ".join(sorted({"release","feedback"}|{r.get("lane","feedback") for r in (c.get("repositories") or {}).values()})))'
+LANES=$(python3 -c "$LANES_PY" $CI/config.json)
+for lane in $LANES; do
+  unit=kailo-ci-worker; [ $lane = release ] || unit=kailo-ci-$lane
+  dir=/var/lib/kailo-ci/queue/pending; [ $lane = release ] || dir=/var/lib/kailo-ci/queue/pending/$lane
   install -d -o "$USER_NAME" -g "$USER_NAME" $dir
   cat > /etc/systemd/system/$unit.service <<UNIT
 [Unit]
@@ -64,6 +79,6 @@ WantedBy=multi-user.target
 UNIT
 done
 systemctl daemon-reload
-systemctl enable --now kailo-ci-worker.path kailo-ci-feedback.path
+systemctl enable --now kailo-ci-worker.path $(for lane in $LANES; do [ $lane = release ] || echo kailo-ci-$lane.path; done)
 docker compose -f "$HERE"/control.compose.yaml up -d
 docker exec kailo-ci-control python3 /ci/client.py list >/dev/null && echo "kailo-ci service installed"
