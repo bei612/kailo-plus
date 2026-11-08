@@ -102,7 +102,8 @@
         "CHECK_MEMORY": "20g",
         "CHECK_CACHE_ROOT": "/var/lib/kailo-ci/check-cache/kailo-macro",
         "CHECK_PROXY": "http://10.239.0.1:10809",
-        "CHECK_SCCACHE_SIZE": "40G"
+        "CHECK_SCCACHE_SIZE": "40G",
+        "CHECK_POSTGRES_SHM": "1g"
       }
     }
   }

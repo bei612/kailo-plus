@@ -20,6 +20,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kci import CIError, Queue, load_config, repo_config  # noqa: E402
 
 LANE = os.environ.get("KAILO_CI_LANE", "release")
+HERE = os.path.dirname(os.path.abspath(__file__))
+STARTED = time.time()
 GIB = 1 << 30
 
 
@@ -132,12 +134,20 @@ class Worker:
                        if n.endswith(".json"))
         return os.path.join(lane_dir, names[0][1]) if names else None
 
+    def code_changed(self):
+        """True once install.sh has replaced the service code this process started with."""
+        return any(os.path.getmtime(os.path.join(HERE, name)) > STARTED for name in ("worker.py", "kci.py")
+                   if os.path.exists(os.path.join(HERE, name)))
+
     def loop(self):
         self.recover()
         while True:
             path = self.next_request()
             if not path:
                 return
+            if self.code_changed():
+                # A lane that never drains would otherwise run the old code forever; restart between jobs.
+                os.execv(sys.executable, [sys.executable, os.path.abspath(__file__)])
             self.reload()
             with open(path, encoding="utf-8") as source:
                 request = json.load(source)
@@ -257,13 +267,15 @@ class Worker:
         # PostgreSQL 18 images keep data under /var/lib/postgresql (their VOLUME); <=17 under .../data.
         data = self.env.get("CHECK_POSTGRES_DATA", "/var/lib/postgresql/data")
         # Sizing and server flags are per repository (environment overlay); defaults keep the original 1 CPU / 2 GiB /
-        # 1 GiB tmpfs. CHECK_POSTGRES_ARGS are postgres flags (e.g. "-c fsync=off -c max_locks_per_transaction=8192").
+        # 1 GiB tmpfs. CHECK_POSTGRES_ARGS are postgres flags (e.g. "-c fsync=off -c max_locks_per_transaction=8192"),
+        # CHECK_POSTGRES_SHM the container's /dev/shm size.
         cpus = self.env.get("CHECK_POSTGRES_CPUS", "1")
         memory = self.env.get("CHECK_POSTGRES_MEMORY", "2g")
         tmpfs = self.env.get("CHECK_POSTGRES_TMPFS", "1g")
         parent = self.env.get("CHECK_CGROUP_PARENT")
+        shm = self.env.get("CHECK_POSTGRES_SHM")  # parallel queries and many test databases outgrow docker's 64 MiB
         job.run(docker + ["run", "-d", "--name", name, "--network", net, "--cpus", cpus, "--memory", memory,
-                          *(["--cgroup-parent", parent] if parent else []),
+                          *(["--cgroup-parent", parent] if parent else []), *(["--shm-size", shm] if shm else []),
                           "--tmpfs", f"{data}:size={tmpfs}", "-e", f"POSTGRES_PASSWORD={password}",
                           image, *self.env.get("CHECK_POSTGRES_ARGS", "").split()], label="pg start")
 
