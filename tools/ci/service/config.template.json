@@ -80,7 +80,8 @@
         "test",
         "sqlx",
         "verify",
-        "full"
+        "full",
+        "infra-smoke"
       ],
       "postgres_steps": [
         "migrate",
