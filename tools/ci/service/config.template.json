@@ -58,5 +58,24 @@
       "/home/ubuntu/scratch"
     ]
   },
-  "secret_env_file": "/var/lib/kailo-ci/private/build-secrets.env"
+  "secret_env_file": "/var/lib/kailo-ci/private/build-secrets.env",
+  "repositories": {
+    "kailo-macro": {
+      "origin": "git@github-macro:bei612/kailo-macro.git",
+      "source_repository": "/var/lib/kailo-ci/repo-kailo-macro",
+      "sources": "/volumes/kailo/ci/sources-kailo-macro",
+      "check_entry": "kailo/ci/check.sh",
+      "lane": "feedback-kailo-macro",
+      "stages": ["fetch", "check-step"],
+      "check_steps": ["cargo", "web", "migrate"],
+      "postgres_steps": ["migrate"],
+      "environment": {
+        "CHECK_POSTGRES_IMAGE": "pgvector/pgvector:pg18",
+        "CHECK_POSTGRES_DATA": "/var/lib/postgresql",
+        "CHECK_CPUS": "8",
+        "CHECK_MEMORY": "20g",
+        "CHECK_CACHE_ROOT": "/var/lib/kailo-ci/check-cache/kailo-macro"
+      }
+    }
+  }
 }

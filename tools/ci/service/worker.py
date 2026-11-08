@@ -17,7 +17,7 @@ import tarfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kci import CIError, Queue, load_config  # noqa: E402
+from kci import CIError, Queue, load_config, repo_config  # noqa: E402
 
 LANE = os.environ.get("KAILO_CI_LANE", "release")
 GIB = 1 << 30
@@ -100,9 +100,19 @@ class Worker:
         os.environ.clear()
         os.environ.update(self.base_environ)
         os.environ.update(self.env)  # docker CLI calls (incl. cleanup) target the Kailo dockerd
-        self.repo = self.cfg["source_repository"]
+        self.use_repo(None)
         self.tmp_root = self.env.get("TMPDIR", "/var/lib/kailo-ci/tmp")
         os.makedirs(self.tmp_root, exist_ok=True)
+
+    def use_repo(self, name):
+        """Select the job's repository: source mirror, fixed-source root, check entry and environment overlay."""
+        self.rc = repo_config(self.cfg, name)
+        self.repo = self.rc["source_repository"]
+        self.sources = self.rc["sources"]
+        self.entry = self.rc["check_entry"]
+        overlay = {k: str(v) for k, v in (self.rc.get("environment") or {}).items()}
+        self.env.update(overlay)
+        os.environ.update(overlay)
 
     # -- lifecycle -------------------------------------------------------------------------------------------
     def recover(self):
@@ -155,6 +165,7 @@ class Worker:
     # -- execution -------------------------------------------------------------------------------------------
     def execute(self, job_id):
         job = Job(self, job_id)
+        self.use_repo(job.status.get("repo"))
         job.tmp_job = os.path.join(job.tmp, "tmp")
         os.makedirs(job.tmp_job, exist_ok=True)
         job.update(state="RUNNING", started_at=now(), worker_pid=os.getpid(), waiting_for=None)
@@ -181,7 +192,8 @@ class Worker:
 
     # -- source ----------------------------------------------------------------------------------------------
     def fetch(self, job):
-        with open(os.path.join(self.q.root, "source.lock"), "a+") as lock:
+        lock_name = "source.lock" if self.rc["default"] else f"source-{self.rc['name']}.lock"
+        with open(os.path.join(self.q.root, lock_name), "a+") as lock:
             import fcntl
             fcntl.flock(lock, fcntl.LOCK_EX)
             job.run(["git", "-C", self.repo, "fetch", "--prune", "origin",
@@ -204,13 +216,17 @@ class Worker:
         # promisor too, so blobs not yet in the shared store (branch-only files, design tree) are fetched on demand
         # instead of silently producing an incomplete tree.
         upstream = job.output(["git", "-C", self.repo, "remote", "get-url", "origin"]).strip()
-        for key, value in (("remote.origin.url", upstream), ("remote.origin.promisor", "true"),
-                           ("remote.origin.partialclonefilter", "blob:none")):
+        partial = subprocess.run(["git", "-C", self.repo, "config", "--get", "remote.origin.partialclonefilter"],
+                                 capture_output=True).returncode == 0
+        settings = [("remote.origin.url", upstream)]
+        if partial:  # a full mirror (e.g. kailo-macro) needs no promisor
+            settings += [("remote.origin.promisor", "true"), ("remote.origin.partialclonefilter", "blob:none")]
+        for key, value in settings:
             job.run(["git", "-C", dest, "config", key, value], label="git config")
         job.run(["git", "-C", dest, "-c", "advice.detachedHead=false", "checkout", "--quiet", commit],
                 label="git checkout")
         missing = job.output(["git", "-C", dest, "status", "--porcelain"]).strip()
-        if missing or not os.path.exists(os.path.join(dest, "tools", "check.sh")):
+        if missing or not os.path.exists(os.path.join(dest, self.entry)):
             raise CIError(f"检出不完整（{commit[:12]}）：源码对象缺失，GitHub 补取失败")
         # The copy keeps origin/* refs so check.sh can archive DESIGN_COMMIT (design-authority) and pinned refs.
         job.run(["git", "-C", dest, "fetch", "--quiet", self.repo, "+refs/remotes/origin/*:refs/remotes/origin/*"],
@@ -222,7 +238,9 @@ class Worker:
         docker = ["docker"]
         image = self.env.get("CHECK_POSTGRES_IMAGE", "")
         try:
-            prod = job.output(docker + ["inspect", "-f", "{{.Image}}", f"{self.cfg['compose_project']}-core-db-1"]).strip()
+            # Only the default repository mirrors the production Core DB image; others use their configured image.
+            prod = job.output(docker + ["inspect", "-f", "{{.Image}}", f"{self.cfg['compose_project']}-core-db-1"]
+                              ).strip() if self.rc["default"] else ""
             if prod:
                 image = prod
         except subprocess.CalledProcessError:
@@ -236,12 +254,14 @@ class Worker:
         # package downloads. PostgreSQL publishes no ports, so it is only reachable from this per-job network.
         job.run(docker + ["network", "create", net], label="pg network")
         job.cleanup.append(lambda: subprocess.run(docker + ["network", "rm", net], capture_output=True))
+        # PostgreSQL 18 images keep data under /var/lib/postgresql (their VOLUME); <=17 under .../data.
+        data = self.env.get("CHECK_POSTGRES_DATA", "/var/lib/postgresql/data")
         job.run(docker + ["run", "-d", "--name", name, "--network", net, "--cpus", "1", "--memory", "2g",
-                          "--tmpfs", "/var/lib/postgresql/data:size=1g", "-e", f"POSTGRES_PASSWORD={password}",
+                          "--tmpfs", f"{data}:size=1g", "-e", f"POSTGRES_PASSWORD={password}",
                           image], label="pg start")
 
         def remove():
-            subprocess.run(docker + ["rm", "-f", name], capture_output=True)
+            subprocess.run(docker + ["rm", "-f", "-v", name], capture_output=True)
             job.update(postgres=dict(job.status.get("postgres") or {}, cleaned_up=True))
         job.cleanup.append(remove)
         for _ in range(60):
@@ -271,7 +291,7 @@ class Worker:
 
     def prepare_tree(self, job):
         commit = job.status["commit"]
-        base = os.path.join(self.cfg["sources"], commit)
+        base = os.path.join(self.sources, commit)
         apps = os.path.join(base, "apps")
         if not os.path.exists(os.path.join(base, "ready.json")):
             shutil.rmtree(base, ignore_errors=True)
@@ -293,6 +313,16 @@ class Worker:
         self.require_reachable(job, main_only=False)
         step = job.status["targets"][0]
         work = self.checkout(job, os.path.join(job.tmp, "apps"))
+        if not self.rc["default"]:
+            # Other repositories own their steps in check_entry (`<entry> <step> [arg]`); the CI only adds a
+            # temporary PostgreSQL for the steps listed in postgres_steps.
+            name, _, arg = step.partition(":")
+            net = url = None
+            if name in self.rc.get("postgres_steps", []):
+                net, url = self.postgres(job)
+            job.run(["bash", self.entry, name, *([arg] if arg else [])], cwd=work,
+                    env=self.check_env(job, net, url), label=f"check {step}")
+            return
         if step in ("migrate", "verify"):
             net, url = self.postgres(job)
             env = self.check_env(job, net, url)

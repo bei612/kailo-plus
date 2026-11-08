@@ -5,6 +5,11 @@ status.json (state, stage, commit, targets, exit_code, reason, ...) and log.txt.
 <queue>/pending/<id>.json (release lane: build, deploy) or <queue>/pending/feedback/<id>.json (feedback lane:
 fetch, docs, check, check-step, gen). Archived jobs move to <queue>/archive/<id>/ and stay readable.
 Only the standard library is used so the client runs in a plain python image.
+
+Multiple repositories: the top-level config keys describe the default repository (kailo-plus). Others are listed in
+config.repositories.<name> (origin, source_repository, sources, check_entry, lane, environment, check_steps,
+postgres_steps, stages). Each job's status carries `repo`; a repository with its own `lane` gets its own pending
+directory (<queue>/pending/<lane>) and worker unit, so it never queues behind the default repository.
 """
 import fcntl
 import json
@@ -36,11 +41,38 @@ def load_config(path=None):
     return cfg
 
 
-def lane_of(stage):
+DEFAULT_REPO = "kailo-plus"
+
+
+def repo_config(cfg, name=None):
+    """Per-repository view. The default repository keeps reading the top-level keys (node.py compatibility)."""
+    name = name or DEFAULT_REPO
+    if name == DEFAULT_REPO:
+        return dict(name=name, source_repository=cfg.get("source_repository"), sources=cfg["sources"],
+                    check_entry="tools/check.sh", lane="feedback", environment={},
+                    build_targets=cfg.get("build_targets") or {}, check_steps=list(CHECK_STEPS),
+                    stages=list(FEEDBACK_STAGES + RELEASE_STAGES), default=True)
+    spec = (cfg.get("repositories") or {}).get(name)
+    if not spec:
+        raise CIError(f"未登记的仓库：{name}（已登记：{', '.join([DEFAULT_REPO, *(cfg.get('repositories') or {})])}）")
+    rc = dict(check_entry="tools/check.sh", lane="feedback", environment={}, build_targets={},
+              check_steps=list(CHECK_STEPS), postgres_steps=[], stages=["fetch", "check-step"])
+    rc.update(spec)
+    rc.update(name=name, default=False)
+    return rc
+
+
+def lanes(cfg):
+    names = {"release", "feedback"}
+    names.update(spec.get("lane", "feedback") for spec in (cfg.get("repositories") or {}).values())
+    return sorted(names)
+
+
+def lane_of(stage, rc=None):
     if stage in RELEASE_STAGES:
         return "release"
     if stage in FEEDBACK_STAGES:
-        return "feedback"
+        return (rc or {}).get("lane", "feedback")
     raise CIError(f"未知 stage：{stage}")
 
 
@@ -50,8 +82,8 @@ class Queue:
         self.root = cfg["queue"]
         self.jobs = os.path.join(self.root, "jobs")
         self.archive = os.path.join(self.root, "archive")
-        self.pending = {"release": os.path.join(self.root, "pending"),
-                        "feedback": os.path.join(self.root, "pending", "feedback")}
+        self.pending = {lane: os.path.join(self.root, "pending", *([] if lane == "release" else [lane]))
+                        for lane in lanes(cfg)}
         for path in (self.jobs, self.archive, *self.pending.values()):
             os.makedirs(path, exist_ok=True)
 
@@ -103,31 +135,39 @@ class Queue:
         return hits[0]
 
     # -- submission ------------------------------------------------------------------------------------------
-    def submit(self, commit, stage, targets=(), extra=None):
+    def submit(self, commit, stage, targets=(), extra=None, repo=None):
         if not re.fullmatch(r"[0-9a-f]{40}", commit or ""):
             raise CIError("commit 必须是 40 位完整 SHA")
-        lane = lane_of(stage)
+        rc = repo_config(self.cfg, repo)
+        repo = rc["name"]
+        if stage not in rc["stages"]:
+            raise CIError(f"仓库 {repo} 未开放 stage {stage}（已开放：{', '.join(rc['stages'])}）")
+        lane = lane_of(stage, rc)
         targets = list(targets)
         if stage == "build":
             if not targets:
                 raise CIError("build 需要至少一个 target")
-            known = set((self.cfg.get("build_targets") or {}).keys()) if isinstance(self.cfg.get("build_targets"), dict) \
-                else set(self.cfg.get("build_targets") or [])
+            known = set(rc["build_targets"].keys()) if isinstance(rc["build_targets"], dict) \
+                else set(rc["build_targets"])
             unknown = [t for t in targets if t not in known]
             if unknown:
                 raise CIError(f"未登记的构建目标：{', '.join(unknown)}")
         if stage == "check-step":
-            if len(targets) != 1 or targets[0] not in CHECK_STEPS:
-                raise CIError(f"check-step 需要且只能有一个步骤：{', '.join(CHECK_STEPS)}")
+            # Non-default repositories may pass one argument to their step: `cargo:<crate>`.
+            step, _, arg = (targets or [""])[0].partition(":")
+            if (len(targets) != 1 or step not in rc["check_steps"] or (arg and rc["default"])
+                    or not re.fullmatch(r"[A-Za-z0-9_.-]*", arg)):
+                raise CIError(f"check-step 需要且只能有一个步骤：{', '.join(rc['check_steps'])}")
         with self.lock():
             for job in self.all_ids():
                 status = self.read(job)
                 if (status.get("state") in ACTIVE and status.get("commit") == commit
+                        and status.get("repo", DEFAULT_REPO) == repo
                         and status.get("stage") == stage and status.get("targets") == targets):
                     return job
             job = uuid.uuid4().hex
             os.makedirs(os.path.join(self.jobs, job))
-            status = dict(job=job, commit=commit, stage=stage, targets=targets, lane=lane, state="QUEUED",
+            status = dict(job=job, repo=repo, commit=commit, stage=stage, targets=targets, lane=lane, state="QUEUED",
                           exit_code=None, reason="", submitted_at=time.time(), started_at=None,
                           finished_at=None, archived=False)
             if extra:
@@ -136,6 +176,6 @@ class Queue:
             open(os.path.join(self.job_dir(job), "log.txt"), "a").close()
             request = os.path.join(self.pending[lane], f"{job}.json")
             with open(request + ".tmp", "w", encoding="utf-8") as sink:
-                json.dump(dict(job=job, commit=commit, stage=stage, targets=targets), sink)
+                json.dump(dict(job=job, repo=repo, commit=commit, stage=stage, targets=targets), sink)
             os.replace(request + ".tmp", request)
             return job

@@ -12,7 +12,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kci import ACTIVE, CHECK_STEPS, TERMINAL, CIError, Queue, load_config  # noqa: E402
+from kci import ACTIVE, CHECK_STEPS, DEFAULT_REPO, TERMINAL, CIError, Queue, load_config  # noqa: E402
 
 
 def out(obj):
@@ -20,15 +20,15 @@ def out(obj):
 
 
 def cmd_submit(q, a):
-    print(q.submit(a.commit, a.stage, a.targets))
+    print(q.submit(a.commit, a.stage, a.targets, repo=a.repo))
 
 
 def cmd_check_step(q, a):
-    print(q.submit(a.commit, "check-step", [a.step]))
+    print(q.submit(a.commit, "check-step", [a.step], repo=a.repo))
 
 
 def cmd_gen(q, a):
-    print(q.submit(a.commit, "gen"))
+    print(q.submit(a.commit, "gen", repo=a.repo))
 
 
 def cmd_status(q, a):
@@ -60,8 +60,11 @@ def cmd_list(q, a):
     rows = []
     for job in q.all_ids(archived=a.all):
         s = q.read(job)
+        s.setdefault("repo", DEFAULT_REPO)
+        if a.repo and s["repo"] != a.repo:
+            continue
         if a.all or s.get("state") in ACTIVE or s.get("state") == "UNKNOWN":
-            rows.append({k: s.get(k) for k in ("job", "commit", "stage", "targets", "state", "started_at",
+            rows.append({k: s.get(k) for k in ("job", "repo", "commit", "stage", "targets", "state", "started_at",
                                                "reason", "archived")})
     out(rows)
 
@@ -94,7 +97,8 @@ def cmd_retry(q, a):
     s = q.read(job)
     if s.get("state") not in ("FAILED", "CANCELLED") or s.get("stage") == "deploy":
         raise CIError("只能重试 FAILED/CANCELLED 的非部署任务")
-    print(q.submit(s["commit"], s["stage"], s.get("targets") or [], extra=dict(retry_of=job)))
+    print(q.submit(s["commit"], s["stage"], s.get("targets") or [], extra=dict(retry_of=job),
+                   repo=s.get("repo", DEFAULT_REPO)))
 
 
 def cmd_artifact(q, a):
@@ -132,17 +136,22 @@ def cmd_handoff(q, a):
     path = os.path.join(os.path.dirname(q.cfg.get("config_path", "/volumes/kailo/ci/config.json")), "handoff.json")
     if os.path.exists(path):
         with open(path, encoding="utf-8") as source:
-            out(json.load(source))
+            items = json.load(source)
+        if a.repo and isinstance(items, list):
+            items = [i for i in items if not isinstance(i, dict) or i.get("repo", DEFAULT_REPO) == a.repo]
+        out(items)
     else:
         out([])
 
 
 def parser():
     p = argparse.ArgumentParser(prog="kailo-ci")
+    p.add_argument("--repo", default=None,
+                   help=f"仓库名（默认 {DEFAULT_REPO}；list/handoff 不带时显示全部）")
     sub = p.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("submit"); s.add_argument("commit"); s.add_argument("stage"); s.add_argument("targets", nargs="*")
     s.set_defaults(fn=cmd_submit)
-    s = sub.add_parser("check-step"); s.add_argument("commit"); s.add_argument("step", choices=CHECK_STEPS)
+    s = sub.add_parser("check-step"); s.add_argument("commit"); s.add_argument("step", help=f"{DEFAULT_REPO}: {', '.join(CHECK_STEPS)}；其他仓库见其 check_steps")
     s.set_defaults(fn=cmd_check_step)
     s = sub.add_parser("gen"); s.add_argument("commit"); s.set_defaults(fn=cmd_gen)
     s = sub.add_parser("artifact"); s.add_argument("job"); s.set_defaults(fn=cmd_artifact)
@@ -157,16 +166,18 @@ def parser():
     s = sub.add_parser("clean"); s.add_argument("--apply", action="store_true")
     s.add_argument("--older-than-days", type=int, default=7); s.set_defaults(fn=cmd_clean)
     s = sub.add_parser("handoff"); s.set_defaults(fn=cmd_handoff)
+    for name in ("submit", "check-step", "gen", "list", "handoff"):  # `--repo` also accepted after the subcommand
+        sub.choices[name].add_argument("--repo", default=argparse.SUPPRESS)
     return p
 
 
 def main(argv=None):
     a = parser().parse_args(argv)
     if a.cmd == "submit" and a.stage == "check-step":
-        a.cmd, a.step = "check-step", (a.targets or [None])[0]
-        if a.step not in CHECK_STEPS:
-            print(f"kailo-ci: check-step 需要一个步骤：{', '.join(CHECK_STEPS)}", file=sys.stderr)
+        if len(a.targets) != 1:
+            print("kailo-ci: check-step 需要且只能有一个步骤", file=sys.stderr)
             return 2
+        a.cmd, a.step = "check-step", a.targets[0]
         a.fn = cmd_check_step
     if a.cmd == "submit" and a.stage == "gen":
         a.fn = cmd_gen
