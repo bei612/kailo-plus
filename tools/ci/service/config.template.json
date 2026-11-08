@@ -57,5 +57,6 @@
     "scratch": [
       "/home/ubuntu/scratch"
     ]
-  }
+  },
+  "secret_env_file": "/var/lib/kailo-ci/private/build-secrets.env"
 }
