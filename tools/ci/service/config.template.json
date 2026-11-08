@@ -95,8 +95,8 @@
         "CHECK_POSTGRES_IMAGE": "pgvector/pgvector:pg18",
         "CHECK_POSTGRES_DATA": "/var/lib/postgresql",
         "CHECK_POSTGRES_CPUS": "4",
-        "CHECK_POSTGRES_MEMORY": "8g",
-        "CHECK_POSTGRES_TMPFS": "4g",
+        "CHECK_POSTGRES_MEMORY": "6g",
+        "CHECK_POSTGRES_TMPFS": "3g",
         "CHECK_POSTGRES_ARGS": "-c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_wal_size=4GB -c checkpoint_timeout=30min -c max_locks_per_transaction=8192 -c max_connections=500",
         "CHECK_CPUS": "8",
         "CHECK_MEMORY": "20g",
@@ -105,7 +105,8 @@
         "CHECK_SCCACHE_SIZE": "20G",
         "CHECK_POSTGRES_SHM": "1g",
         "DOCKER_CONFIG": "/var/lib/kailo-ci/docker-config-kailo-macro"
-      }
+      },
+      "concurrency": 3
     }
   }
 }
