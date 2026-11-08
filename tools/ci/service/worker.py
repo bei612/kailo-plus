@@ -20,6 +20,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kci import CIError, Queue, load_config, repo_config  # noqa: E402
 
 LANE = os.environ.get("KAILO_CI_LANE", "release")
+# A lane may run several workers (config repositories.<name>.concurrency; install.sh makes one unit per slot). Each claims
+# a request by renaming it, so exactly one worker takes it; check entries get CHECK_SLOT for per-slot caches.
+SLOT = os.environ.get("KAILO_CI_SLOT", "1")
 HERE = os.path.dirname(os.path.abspath(__file__))
 STARTED = time.time()
 GIB = 1 << 30
@@ -149,23 +152,33 @@ class Worker:
                 # A lane that never drains would otherwise run the old code forever; restart between jobs.
                 os.execv(sys.executable, [sys.executable, os.path.abspath(__file__)])
             self.reload()
-            with open(path, encoding="utf-8") as source:
-                request = json.load(source)
+            try:
+                with open(path, encoding="utf-8") as source:
+                    request = json.load(source)
+            except FileNotFoundError:  # claimed by another slot meanwhile
+                continue
             job = request["job"]
+            self.use_repo(request.get("repo"))
             if not self.admit(job, request["stage"]):
                 time.sleep(15)
                 continue
-            os.remove(path)
+            claimed = f"{path}.slot{SLOT}"
+            try:
+                os.rename(path, claimed)  # atomic: another slot that got here first wins
+            except FileNotFoundError:
+                continue
+            os.remove(claimed)
             self.execute(job)
 
     def admit(self, job, stage):
-        need = int(self.cfg.get("admission", {}).get(stage, 18 * GIB if stage in ("check", "check-step", "build")
-                                                                else 4 * GIB))
+        # A repository may override both thresholds (repositories.<name>.admission / min_job_free_bytes).
+        admission = {**(self.cfg.get("admission") or {}), **(self.rc.get("admission") or {})}
+        need = int(admission.get(stage, 18 * GIB if stage in ("check", "check-step", "build") else 4 * GIB))
         with open("/proc/meminfo") as source:
             info = {line.split(":")[0]: int(line.split()[1]) * 1024 for line in source}
         free = info.get("MemAvailable", 0)
         disk = shutil.disk_usage(self.tmp_root).free
-        min_disk = int(self.cfg.get("min_job_free_bytes", 32 * GIB))
+        min_disk = int(self.rc.get("min_job_free_bytes", self.cfg.get("min_job_free_bytes", 32 * GIB)))
         if free < need or disk < min_disk:
             self.q.update(job, waiting_for=dict(memory_required=need, memory_available=free,
                                                 disk_required=min_disk, disk_available=disk))
@@ -178,7 +191,7 @@ class Worker:
         self.use_repo(job.status.get("repo"))
         job.tmp_job = os.path.join(job.tmp, "tmp")
         os.makedirs(job.tmp_job, exist_ok=True)
-        job.update(state="RUNNING", started_at=now(), worker_pid=os.getpid(), waiting_for=None)
+        job.update(state="RUNNING", started_at=now(), worker_pid=os.getpid(), worker_slot=SLOT, waiting_for=None)
         stage = job.status["stage"]
         try:
             handler = getattr(self, "stage_" + stage.replace("-", "_"))
@@ -297,7 +310,7 @@ class Worker:
         env = dict(CHECK_CPUS=self.env.get("CHECK_CPUS", "4"), CHECK_MEMORY=self.env.get("CHECK_MEMORY", "16g"),
                    CHECK_NETWORK=network or self.env.get("CHECK_NETWORK", "bridge"),
                    CHECK_CACHE_ROOT=self.env.get("CHECK_CACHE_ROOT", "/var/lib/kailo-ci/check-cache"),
-                   CHECK_SOURCE_REF=job.status["commit"])
+                   CHECK_SOURCE_REF=job.status["commit"], CHECK_SLOT=SLOT)
         if database_url:
             env["DATABASE_URL"] = database_url
         return env

@@ -41,17 +41,26 @@ python3 -c "$REPOS_PY" $CI/config.json | while read -r name origin mirror; do
       || echo "WARNING: clone of $name failed (deploy key / ssh alias); its jobs fail at fetch" >&2
   fi
 done
+# One line per lane: "<lane> <slots>". A repository's `concurrency` (default 1) is the number of workers on its lane; slot 1
+# keeps the historical unit name, slot N>1 is <unit>-N. Each slot has its own .path unit on the same pending directory.
 LANES_PY='import json,sys
 c=json.load(open(sys.argv[1]))
-print(" ".join(sorted({"release","feedback"}|{r.get("lane","feedback") for r in (c.get("repositories") or {}).values()})))'
-LANES=$(python3 -c "$LANES_PY" $CI/config.json)
-for lane in $LANES; do
+lanes={"release":1,"feedback":1}
+for r in (c.get("repositories") or {}).values():
+    lane=r.get("lane","feedback"); lanes[lane]=max(lanes.get(lane,1), int(r.get("concurrency",1)))
+for lane,n in sorted(lanes.items()): print(lane, n)'
+LANE_SLOTS=$(python3 -c "$LANES_PY" $CI/config.json)
+PATH_UNITS=()
+while read -r lane slots; do
+ for slot in $(seq 1 "$slots"); do
   unit=kailo-ci-worker; [ $lane = release ] || unit=kailo-ci-$lane
+  [ "$slot" = 1 ] || unit=$unit-$slot
   dir=/var/lib/kailo-ci/queue/pending; [ $lane = release ] || dir=/var/lib/kailo-ci/queue/pending/$lane
   install -d -o "$USER_NAME" -g "$USER_NAME" $dir
+  PATH_UNITS+=("$unit.path")
   cat > /etc/systemd/system/$unit.service <<UNIT
 [Unit]
-Description=Kailo CI $lane lane (GitHub source only)
+Description=Kailo CI $lane lane, slot $slot (GitHub source only)
 After=kailo-docker.service network-online.target
 Requires=kailo-docker.service
 [Service]
@@ -63,6 +72,7 @@ SupplementaryGroups=docker
 WorkingDirectory=$CI
 Environment=KAILO_CI_CONFIG=$CI/config.json
 Environment=KAILO_CI_LANE=$lane
+Environment=KAILO_CI_SLOT=$slot
 Environment=DOCKER_HOST=unix:///run/kailo-docker/docker.sock
 ExecStart=/usr/bin/python3 $CI/service/worker.py
 UMask=0077
@@ -72,15 +82,16 @@ KillMode=control-group
 UNIT
   cat > /etc/systemd/system/$unit.path <<UNIT
 [Unit]
-Description=Watch Kailo CI $lane requests
+Description=Watch Kailo CI $lane requests (slot $slot)
 [Path]
 PathExistsGlob=$dir/*.json
 Unit=$unit.service
 [Install]
 WantedBy=multi-user.target
 UNIT
-done
+ done
+done <<< "$LANE_SLOTS"
 systemctl daemon-reload
-systemctl enable --now kailo-ci-worker.path $(for lane in $LANES; do [ $lane = release ] || echo kailo-ci-$lane.path; done)
+systemctl enable --now "${PATH_UNITS[@]}"
 docker compose -f "$HERE"/control.compose.yaml up -d
 docker exec kailo-ci-control python3 /ci/client.py list >/dev/null && echo "kailo-ci service installed"

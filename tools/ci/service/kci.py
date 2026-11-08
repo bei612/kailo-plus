@@ -8,7 +8,7 @@ Only the standard library is used so the client runs in a plain python image.
 
 Multiple repositories: the top-level config keys describe the default repository (kailo-plus). Others are listed in
 config.repositories.<name> (origin, source_repository, sources, check_entry, lane, environment, check_steps,
-postgres_steps, stages). Each job's status carries `repo`; a repository with its own `lane` gets its own pending
+postgres_steps, stages, concurrency = workers on its lane). Each job's status carries `repo`; a repository with its own `lane` gets its own pending
 directory (<queue>/pending/<lane>) and worker unit, so it never queues behind the default repository.
 """
 import fcntl
