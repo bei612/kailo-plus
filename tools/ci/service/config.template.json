@@ -99,7 +99,7 @@
         "CHECK_POSTGRES_TMPFS": "3g",
         "CHECK_POSTGRES_ARGS": "-c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_wal_size=4GB -c checkpoint_timeout=30min -c max_locks_per_transaction=8192 -c max_connections=500",
         "CHECK_CPUS": "8",
-        "CHECK_MEMORY": "20g",
+        "CHECK_MEMORY": "16g",
         "CHECK_CACHE_ROOT": "/var/lib/kailo-ci/check-cache/kailo-macro",
         "CHECK_PROXY": "http://10.239.0.1:10809",
         "CHECK_SCCACHE_SIZE": "20G",
