@@ -44,11 +44,15 @@ class Policy(unittest.TestCase):
                                  "/var/lib/kailo-ci/check-target/kailo-macro/slot1",
                                  "/var/lib/kailo-ci/check-target/kailo-macro/slot2",
                                  "/var/lib/kailo-ci/check-target/kailo-macro/slot3",
-                                 "/var/lib/kailo-ci/check-cache/kailo-macro"])
+                                 "/var/lib/kailo-ci/check-cache/kailo-macro",
+                                 "/volumes/data/kailo/capacity/ci/check-cache/kailo-macro"])
         self.assertEqual(policy["grace_seconds"], 2 * HOUR)
         # cargo targets: three slots of at most 20 GiB (60 GiB in total)
         self.assertEqual(sum(r.get("max_bytes", 0) for r in policy["roots"]), 60 * 2**30)
-        self.assertEqual(policy["docker_build_cache"]["keep_storage"], "30GB")
+        # default builder: same limit as daemon.json builder.gc; kailo-builder state lives on the 4T disk (OPS-01)
+        self.assertEqual(policy["docker_build_cache"]["keep_storage"], "60GB")
+        self.assertEqual(policy["docker_build_cache"]["builders"],
+                         ["default", dict(name="kailo-builder", keep_storage="100GB")])
 
     def test_invalid_policies_are_refused(self):
         for bad in (dict(grace_seconds=60, roots=[dict(path="/a", max_idle_seconds=DAY)]),
@@ -209,6 +213,16 @@ class Activity(unittest.TestCase):
             os.utime(os.path.join(tmp, "e"), (now - 10, now - 3 * DAY))  # 目录被列出过
             newest, _, _ = hr.entry_activity(os.path.join(tmp, "e"))
             self.assertLess(newest, now - 2 * DAY)
+
+
+class BuildCache(unittest.TestCase):
+    def test_per_builder_keep_storage(self):
+        policy = dict(docker_build_cache=dict(keep_storage="60GB",
+                                              builders=["default", dict(name="kailo-builder", keep_storage="100GB")]))
+        report = {}
+        hr.prune_build_cache(policy, report, dry_run=True)
+        self.assertEqual([(i["builder"], i["keep_storage"]) for i in report["build_cache"]],
+                         [("default", "60GB"), ("kailo-builder", "100GB")])
 
 
 if __name__ == "__main__":

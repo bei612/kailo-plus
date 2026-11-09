@@ -12,7 +12,7 @@ cargo target），逐个判定其直接子项：
 缓存只被读取也算活动；本程序只做 lstat 与列目录，不读文件内容）。
 
 根可带 max_bytes：闲置判定后仍超过上限时，按最近活动从旧到新删除未被使用的子项（见 cap_root）。policy.docker_build_cache
-给出 BuildKit 构建缓存的保留上限，每轮对列出的 builder 执行 buildx prune --keep-storage。
+给出 BuildKit 构建缓存的保留上限（可按 builder 分别设置），每轮对列出的 builder 执行 buildx prune --keep-storage。
 
 安全：进程或容器事实读不全（非 root 运行、docker 不可用）即整轮不删除；根必须是规范绝对路径且不是软链接；每个子项
 在删除前重新判定。同一时刻只运行一份（flock）。输出不含文件内容，只有路径、大小与原因。
@@ -307,12 +307,14 @@ def cap_root(path, cap, report, facts, dry_run):
 
 def prune_build_cache(policy, report, dry_run):
     """BuildKit 构建缓存上限（policy.docker_build_cache）：对每个 builder 执行 buildx prune --keep-storage。
-    只作用于 DOCKER_HOST 指向的 dockerd（unit 里固定为 Kailo dockerd）。"""
+    builders 的元素是 builder 名（用 keep_storage），或 {"name", "keep_storage"}（该 builder 自己的上限，
+    例如状态目录在大容量盘上的 builder 可以留得更多）。只作用于 DOCKER_HOST 指向的 dockerd（unit 里固定为 Kailo dockerd）。"""
     spec = policy.get("docker_build_cache")
     if not spec:
         return
-    keep = spec["keep_storage"]
-    for builder in spec.get("builders", ["default"]):
+    for item in spec.get("builders", ["default"]):
+        builder, keep = (item, spec["keep_storage"]) if isinstance(item, str) else \
+            (item["name"], item.get("keep_storage", spec["keep_storage"]))
         argv = DOCKER + ["buildx", "prune", "--force", "--builder", builder, "--keep-storage", keep]
         if dry_run:
             report.setdefault("build_cache", []).append(dict(builder=builder, keep_storage=keep, state="dry-run"))

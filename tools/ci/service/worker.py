@@ -32,6 +32,23 @@ def now():
     return time.time()
 
 
+def cgroup_headroom(path):
+    """Memory a new job can still get inside a cgroup v2 group (e.g. /sys/fs/cgroup/kailo.slice): memory.max minus the
+    memory that cannot be reclaimed without swap (anon + shmem; the slices run with MemorySwapMax=0, and the temporary
+    PostgreSQL data on tmpfs is shmem). Page cache is reclaimable and does not count. None when the group has no limit
+    or cannot be read (admission then uses the host figure only)."""
+    try:
+        with open(os.path.join(path, "memory.max")) as source:
+            limit = source.read().strip()
+        if limit == "max":
+            return None
+        with open(os.path.join(path, "memory.stat")) as source:
+            stat = dict(line.split() for line in source if line.strip())
+        return max(0, int(limit) - int(stat.get("anon", 0)) - int(stat.get("shmem", 0)))
+    except (OSError, ValueError):
+        return None
+
+
 class Job:
     def __init__(self, worker, job):
         self.w, self.id = worker, job
@@ -185,6 +202,12 @@ class Worker:
         with open("/proc/meminfo") as source:
             info = {line.split(":")[0]: int(line.split()[1]) * 1024 for line in source}
         free = info.get("MemAvailable", 0)
+        # The Kailo dockerd puts every container under kailo.slice (daemon.json cgroup-parent, 36 GiB): the slice limit,
+        # not the host's free memory, is what a check runs into. admission.cgroup names that group (OPS-01).
+        group = admission.get("cgroup")
+        headroom = cgroup_headroom(group) if isinstance(group, str) else None
+        if headroom is not None:
+            free = min(free, headroom)
         disk = shutil.disk_usage(self.tmp_root).free
         min_disk = int(self.rc.get("min_job_free_bytes", self.cfg.get("min_job_free_bytes", 32 * GIB)))
         if free < need or disk < min_disk:

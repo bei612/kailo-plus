@@ -1,5 +1,5 @@
 {
-  "comment": "07 §2.1 热目录定时保留：直接子项 grace_seconds 内有活动、被进程或容器使用、或属于未结束的 CI 任务即保留；其余超过 max_idle_seconds 才删除；可选 max_bytes：超过上限按最久未用删除未被占用的子项；docker_build_cache：每轮 buildx prune --keep-storage（Kailo dockerd）；可选 lock：检查任务持有的 flock 文件，拿不到即跳过该根",
+  "comment": "07 §2.1 热目录定时保留：直接子项 grace_seconds 内有活动、被进程或容器使用、或属于未结束的 CI 任务即保留；其余超过 max_idle_seconds 才删除；可选 max_bytes：超过上限按最久未用删除未被占用的子项；docker_build_cache：每轮 buildx prune --keep-storage（Kailo dockerd）；可选 lock：检查任务持有的 flock 文件，拿不到即跳过该根；OPS-01（2026-11-09）：kailo-macro 的容量型缓存（sccache、bun、node_modules 快照、cargo registry/git）在 4T 盘 /volumes/data/kailo/capacity/ci/check-cache/kailo-macro，闲置 7 天才删子项；旧 NVMe 根保留条目，目录删除后自动跳过；default builder 与 daemon.json builder.gc 一致保留 60GB，kailo-builder 状态目录在 4T 盘，保留 100GB",
   "grace_seconds": 7200,
   "ci_config": "/volumes/kailo/ci/config.json",
   "roots": [
@@ -52,13 +52,20 @@
     {
       "path": "/var/lib/kailo-ci/check-cache/kailo-macro",
       "max_idle_seconds": 86400
+    },
+    {
+      "path": "/volumes/data/kailo/capacity/ci/check-cache/kailo-macro",
+      "max_idle_seconds": 604800
     }
   ],
   "docker_build_cache": {
-    "keep_storage": "30GB",
+    "keep_storage": "60GB",
     "builders": [
       "default",
-      "kailo-builder"
+      {
+        "name": "kailo-builder",
+        "keep_storage": "100GB"
+      }
     ]
   }
 }
