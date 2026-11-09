@@ -203,7 +203,12 @@ cmd_builder() {
     || die "现有 builder 限额不完整（memory=$memory swap=$swap quota=$quota period=$period），拒绝在无限额状态下重建"
 
   # 缺省沿用现有容器的镜像（按 digest），重建只改配置不换 BuildKit 版本。新实例不带任何 env.* driver-opt（不设代理）。
-  [ -n "$BUILDKIT_IMAGE" ] || BUILDKIT_IMAGE=$(docker inspect --format '{{.Image}}' "$CONTAINER")
+  if [ -z "$BUILDKIT_IMAGE" ]; then
+    BUILDKIT_IMAGE=$(docker inspect --format '{{.Image}}' "$CONTAINER")
+    # 以 仓库@digest 记录（实例文件可读、镜像被清理后仍可重新拉取），没有 RepoDigests 时退回镜像 ID
+    BUILDKIT_IMAGE=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$BUILDKIT_IMAGE" \
+      | head -n 1 | grep . || printf '%s' "$BUILDKIT_IMAGE")
+  fi
   docker image inspect "$BUILDKIT_IMAGE" >/dev/null 2>&1 || docker pull -q "$BUILDKIT_IMAGE" >/dev/null \
     || die "无法取得 BuildKit 镜像 $BUILDKIT_IMAGE，未改动现有 builder"
 
