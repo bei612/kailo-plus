@@ -17,11 +17,13 @@ MEM=${KAILO_SLICE_MEMORY_MAX:-36G}
 CI_MEM=${KAILO_CI_SLICE_MEMORY_MAX:-24G}
 # default builder 的构建缓存上限（与 tools/ci/retention/policy.json 的 default 一致）；镜像层与该缓存在共用 containerd 的 NVMe 上
 KEEP=${KAILO_BUILDER_KEEP_STORAGE:-60GB}
-# dockerd 自身拉镜像用的出网代理（不注入容器）；节点上为 http://10.239.0.1:10809，留空则不写
-PROXY=${KAILO_DOCKERD_PROXY:-}
-proxies=
-[ -z "$PROXY" ] || proxies="
-  \"proxies\": {\"http-proxy\": \"$PROXY\", \"https-proxy\": \"$PROXY\", \"no-proxy\": \"localhost,127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16\"},"
+# 出网：节点不设任何代理，dockerd 直连（路由器 OpenWrt 透明代理负责，OPS-02）。
+# Docker Hub 拉取先经本机拉取缓存（tools/ci/registry-mirror，数据在 4T 容量盘）；缓存不可用时 dockerd 自动回退原站。
+# 设为空串则不写 registry-mirrors。
+MIRROR=${KAILO_DOCKERD_REGISTRY_MIRROR-http://127.0.0.1:55001}
+mirrors=
+[ -z "$MIRROR" ] || mirrors="
+  \"registry-mirrors\": [\"$MIRROR\"],"
 ETC=/etc/kailo-docker
 install -d -m 0755 $ETC /var/lib/kailo-docker /run/kailo-docker
 install -d -m 0700 $ETC/tls
@@ -51,7 +53,7 @@ cat > $ETC/daemon.json.new <<JSON
     {"base": "10.241.0.0/16", "size": 24}
   ],
   "log-driver": "json-file",
-  "log-opts": {"max-size": "50m", "max-file": "5"},$proxies
+  "log-opts": {"max-size": "50m", "max-file": "5"},$mirrors
   "cgroup-parent": "kailo.slice",
   "builder": {"gc": {"enabled": true, "defaultKeepStorage": "$KEEP"}}
 }

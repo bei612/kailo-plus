@@ -13,13 +13,13 @@ install -d -o "$USER_NAME" -g "$USER_NAME" $CI/service $CI/handoff
 # `kailo-ci handoff` reads $CI/handoff/handoff.json (ops-maintained JSON list; see the CI-CD 手册)
 [ -f $CI/handoff/handoff.json ] || { echo '[]' > $CI/handoff/handoff.json; chown "$USER_NAME:$USER_NAME" $CI/handoff/handoff.json; }
 # Host tools the build entries need (tools/release.sh generates SBOMs with syft, ADR-06). Pinned version, official
-# release, verified against the published checksums; downloads go through the node egress proxy when it is present.
+# release, verified against the published checksums; downloaded directly (the node has no proxy; egress is the
+# router's transparent proxy, OPS-02).
 SYFT_VERSION=${KAILO_SYFT_VERSION:-1.57.0}
 if ! syft version 2>/dev/null | grep -q "Version: *$SYFT_VERSION$"; then
-  proxy=(); curl -s -o /dev/null -m 3 -x http://127.0.0.1:10809 https://github.com 2>/dev/null && proxy=(-x http://127.0.0.1:10809)
   tmp=$(mktemp -d); base=https://github.com/anchore/syft/releases/download/v$SYFT_VERSION
-  curl -sSfL "${proxy[@]}" -o "$tmp/syft_${SYFT_VERSION}_linux_amd64.tar.gz" "$base/syft_${SYFT_VERSION}_linux_amd64.tar.gz"
-  curl -sSfL "${proxy[@]}" -o "$tmp/checksums.txt" "$base/syft_${SYFT_VERSION}_checksums.txt"
+  curl -sSfL --retry 5 --retry-all-errors -o "$tmp/syft_${SYFT_VERSION}_linux_amd64.tar.gz" "$base/syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+  curl -sSfL --retry 5 --retry-all-errors -o "$tmp/checksums.txt" "$base/syft_${SYFT_VERSION}_checksums.txt"
   (cd "$tmp" && grep " syft_${SYFT_VERSION}_linux_amd64.tar.gz$" checksums.txt | sha256sum -c -)
   tar -xzf "$tmp/syft_${SYFT_VERSION}_linux_amd64.tar.gz" -C "$tmp" syft
   install -m 0755 "$tmp/syft" /usr/local/bin/syft; rm -rf "$tmp"
