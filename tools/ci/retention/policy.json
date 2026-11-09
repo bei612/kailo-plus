@@ -1,5 +1,5 @@
 {
-  "comment": "07 §2.1 热目录定时保留：直接子项 grace_seconds 内有活动、被进程或容器使用、或属于未结束的 CI 任务即保留；其余超过 max_idle_seconds 才删除；可选 max_bytes：超过上限按最久未用删除未被占用的子项；docker_build_cache：每轮 buildx prune --keep-storage（Kailo dockerd）；可选 lock：检查任务持有的 flock 文件，拿不到即跳过该根；OPS-01（2026-11-09）：kailo-macro 的容量型缓存（sccache、bun、node_modules 快照、cargo registry/git）在 4T 盘 /volumes/data/kailo/capacity/ci/check-cache/kailo-macro，闲置 7 天才删子项；旧 NVMe 根保留条目，目录删除后自动跳过；default builder 与 daemon.json builder.gc 一致保留 60GB，kailo-builder 状态目录在 4T 盘，保留 100GB",
+  "comment": "07 §2.1 热目录定时保留：直接子项 grace_seconds 内有活动、被进程或容器使用、或属于未结束的 CI 任务即保留；其余超过 max_idle_seconds 才删除；可选 max_bytes：超过上限按最久未用删除未被占用的子项；docker_build_cache：每轮 buildx prune --keep-storage（Kailo dockerd）；可选 lock：检查任务持有的 flock 文件，拿不到即跳过该根；OPS-01（2026-11-09）：kailo-macro 的缓存根在 4T 盘 /volumes/data/kailo/capacity/ci/check-cache/kailo-macro（cargo registry/git、Go 缓存等容量型数据），闲置 7 天才删子项；其中 sccache/ 与 bun/ 是从 NVMe bind mount 进来的随机读热点（CI-08：sccache 在 /var/lib/kailo-ci/sccache/kailo-macro，自身上限 CHECK_SCCACHE_SIZE=60G），node_modules 快照在 NVMe CHECK_NODE_MODULES_ROOT；旧 NVMe 根保留条目，目录删除后自动跳过；default builder 与 daemon.json builder.gc 一致保留 60GB，kailo-builder 状态目录在 4T 盘，保留 100GB",
   "grace_seconds": 7200,
   "ci_config": "/volumes/kailo/ci/config.json",
   "roots": [

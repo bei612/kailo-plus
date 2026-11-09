@@ -102,10 +102,11 @@
         "CHECK_CPUS": "8",
         "CHECK_MEMORY": "16g",
         "CHECK_CACHE_ROOT": "/volumes/data/kailo/capacity/ci/check-cache/kailo-macro",
-        "CHECK_SCCACHE_SIZE": "200G",
+        "CHECK_SCCACHE_SIZE": "60G",
         "CHECK_POSTGRES_SHM": "1g",
         "DOCKER_CONFIG": "/var/lib/kailo-ci/docker-config-kailo-macro",
-        "CHECK_TARGET_ROOT": "/var/lib/kailo-ci/check-target/kailo-macro"
+        "CHECK_TARGET_ROOT": "/var/lib/kailo-ci/check-target/kailo-macro",
+        "CHECK_NODE_MODULES_ROOT": "/var/lib/kailo-ci/node-modules/kailo-macro"
       },
       "concurrency": 3,
       "min_job_free_bytes": 25769803776
