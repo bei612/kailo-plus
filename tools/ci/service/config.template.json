@@ -8,6 +8,9 @@
   "source_repository": "/var/lib/kailo-ci/repo",
   "web_build_info_path": "/usr/share/nginx/html/build-info.json",
   "min_job_free_bytes": 34359738368,
+  "admission": {
+    "cgroup": "/sys/fs/cgroup/kailo.slice"
+  },
   "environment": {
     "DOCKER_HOST": "unix:///run/kailo-docker/docker.sock",
     "REGISTRY": "127.0.0.1:55000",
@@ -100,9 +103,9 @@
         "CHECK_POSTGRES_ARGS": "-c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_wal_size=4GB -c checkpoint_timeout=30min -c max_locks_per_transaction=8192 -c max_connections=500",
         "CHECK_CPUS": "8",
         "CHECK_MEMORY": "16g",
-        "CHECK_CACHE_ROOT": "/var/lib/kailo-ci/check-cache/kailo-macro",
+        "CHECK_CACHE_ROOT": "/volumes/data/kailo/capacity/ci/check-cache/kailo-macro",
         "CHECK_PROXY": "http://10.239.0.1:10809",
-        "CHECK_SCCACHE_SIZE": "20G",
+        "CHECK_SCCACHE_SIZE": "200G",
         "CHECK_POSTGRES_SHM": "1g",
         "DOCKER_CONFIG": "/var/lib/kailo-ci/docker-config-kailo-macro",
         "CHECK_TARGET_ROOT": "/var/lib/kailo-ci/check-target/kailo-macro"

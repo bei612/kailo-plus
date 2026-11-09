@@ -5,7 +5,8 @@
 #   - 共用宿主 containerd，但用独立 namespace（kailo / kailo-plugins），互不可见
 #   - iptables=false：不改默认 dockerd 的 DOCKER 链；出网 NAT 由本脚本装的 nft 表 kailo_nat 负责，端口发布走 userland-proxy
 #   - 经 WG 以 mTLS 监听 tcp://<wg 地址>:2376
-#   - 运行在 kailo.slice（硬内存上限，缺省 36G），CI 检查进 kailo-ci.slice（缺省 24G）
+#   - dockerd 与它的全部容器（daemon.json cgroup-parent）运行在 kailo.slice（硬内存上限，缺省 36G）；
+#     kailo-ci.slice（缺省 24G）是其子 slice，装 CI worker 进程，检查容器显式 CHECK_CGROUP_PARENT 时也可进入
 # 幂等：重复执行结果不变；只写 Kailo 自己的路径，不碰 /etc/docker、docker.service、默认 docker0/网络。
 # 用法（CI 节点 root）：install.sh <tls 目录> [wg 地址...]
 #   tls 目录需含 ca.pem server-cert.pem server-key.pem（由 tls.sh 生成）
@@ -14,6 +15,13 @@ TLS=${1:?tls dir}; shift
 ADDRS=("$@"); [ ${#ADDRS[@]} -gt 0 ] || ADDRS=(10.203.194.2)
 MEM=${KAILO_SLICE_MEMORY_MAX:-36G}
 CI_MEM=${KAILO_CI_SLICE_MEMORY_MAX:-24G}
+# default builder 的构建缓存上限（与 tools/ci/retention/policy.json 的 default 一致）；镜像层与该缓存在共用 containerd 的 NVMe 上
+KEEP=${KAILO_BUILDER_KEEP_STORAGE:-60GB}
+# dockerd 自身拉镜像用的出网代理（不注入容器）；节点上为 http://10.239.0.1:10809，留空则不写
+PROXY=${KAILO_DOCKERD_PROXY:-}
+proxies=
+[ -z "$PROXY" ] || proxies="
+  \"proxies\": {\"http-proxy\": \"$PROXY\", \"https-proxy\": \"$PROXY\", \"no-proxy\": \"localhost,127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16\"},"
 ETC=/etc/kailo-docker
 install -d -m 0755 $ETC /var/lib/kailo-docker /run/kailo-docker
 install -d -m 0700 $ETC/tls
@@ -43,8 +51,9 @@ cat > $ETC/daemon.json.new <<JSON
     {"base": "10.241.0.0/16", "size": 24}
   ],
   "log-driver": "json-file",
-  "log-opts": {"max-size": "50m", "max-file": "5"},
-  "builder": {"gc": {"enabled": true, "defaultKeepStorage": "30GB"}}
+  "log-opts": {"max-size": "50m", "max-file": "5"},$proxies
+  "cgroup-parent": "kailo.slice",
+  "builder": {"gc": {"enabled": true, "defaultKeepStorage": "$KEEP"}}
 }
 JSON
 mv $ETC/daemon.json.new $ETC/daemon.json
