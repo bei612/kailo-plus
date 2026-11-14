@@ -107,10 +107,72 @@ class Queue:
 
     def write(self, job, status):
         path = os.path.join(self.job_dir(job), "status.json")
-        tmp = path + ".tmp"
+        # A private temporary name: the worker and the client (cancel) may write the same job at once, and a shared
+        # "status.json.tmp" interleaved their bytes (a status.json with a trailing "}", 2026-11-14).
+        tmp = f"{path}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp"
         with open(tmp, "w", encoding="utf-8") as sink:
             json.dump(status, sink, ensure_ascii=False, indent=1, sort_keys=True)
         os.replace(tmp, path)
+        self.index_put(job, status)
+
+    # -- status index ----------------------------------------------------------------------------------------
+    # <queue>/index.json holds every job's latest status, updated by write(). `list`, `resolve` and duplicate
+    # detection read this one file instead of every jobs/<id>/status.json (hundreds of files per call, OPS-03).
+    # It is a cache: a missing or unreadable index is rebuilt from the job directories.
+    def _index_path(self):
+        return os.path.join(self.root, "index.json")
+
+    def _index_lock(self):
+        handle = open(os.path.join(self.root, "index.lock"), "a+")
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        return handle
+
+    def _index_load(self):
+        try:
+            with open(self._index_path(), encoding="utf-8") as source:
+                index = json.load(source)
+            return index if isinstance(index, dict) else None
+        except (OSError, ValueError):
+            return None
+
+    def _index_store(self, index):
+        tmp = f"{self._index_path()}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp"
+        with open(tmp, "w", encoding="utf-8") as sink:
+            json.dump(index, sink, ensure_ascii=False, separators=(",", ":"))
+        os.replace(tmp, self._index_path())
+
+    def _index_rebuild(self):
+        index = {}
+        for base in (self.jobs, self.archive):
+            for job in os.listdir(base):
+                if not re.fullmatch(r"[0-9a-f]{32}", job):
+                    continue
+                try:
+                    with open(os.path.join(base, job, "status.json"), encoding="utf-8") as source:
+                        index[job] = json.load(source)
+                except (OSError, ValueError):
+                    continue
+        return index
+
+    def index_put(self, job, status):
+        try:
+            with self._index_lock():
+                index = self._index_load()
+                if index is None:
+                    index = self._index_rebuild()
+                index[job] = status
+                self._index_store(index)
+        except OSError:
+            pass  # the index is a cache; readers fall back to the job directories
+
+    def index(self):
+        """{job: status} for every job (active and archived)."""
+        index = self._index_load()
+        if index is None:
+            with self._index_lock():
+                index = self._index_load() or self._index_rebuild()
+                self._index_store(index)
+        return index
 
     def update(self, job, **fields):
         status = self.read(job)
@@ -127,7 +189,9 @@ class Queue:
     def resolve(self, prefix):
         if not re.fullmatch(r"[0-9a-f]{8,32}", prefix or ""):
             raise CIError("任务 ID 需为 8–32 位十六进制前缀")
-        hits = [i for i in self.all_ids(archived=True) if i.startswith(prefix)]
+        hits = [i for i in self.index() if i.startswith(prefix)]
+        if len(hits) != 1:  # the index may lag a job created by an older writer: ask the directories
+            hits = [i for i in self.all_ids(archived=True) if i.startswith(prefix)]
         if not hits:
             raise CIError(f"任务不存在：{prefix}")
         if len(hits) > 1:
@@ -163,8 +227,7 @@ class Queue:
                     or not re.fullmatch(r"[A-Za-z0-9_.-]*", arg)):
                 raise CIError(f"check-step 需要且只能有一个步骤：{', '.join(rc['check_steps'])}")
         with self.lock():
-            for job in self.all_ids():
-                status = self.read(job)
+            for job, status in self.index().items():
                 if (status.get("state") in ACTIVE and status.get("commit") == commit
                         and status.get("repo", DEFAULT_REPO) == repo
                         and status.get("stage") == stage and status.get("targets") == targets):

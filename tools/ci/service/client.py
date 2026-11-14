@@ -35,18 +35,45 @@ def cmd_status(q, a):
     out(q.read(q.resolve(a.job)))
 
 
+def status_changes(path):
+    """A function that blocks up to `seconds` until something in directory `path` is replaced or written (inotify via
+    libc; the client is standard library only). Falls back to sleeping when inotify is unavailable."""
+    import ctypes
+    import select
+    try:
+        libc = ctypes.CDLL(None, use_errno=True)
+        fd = libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC)
+        # IN_CLOSE_WRITE | IN_MOVED_TO: status.json is replaced by rename (Queue.write)
+        if fd < 0 or libc.inotify_add_watch(fd, os.fsencode(path), 0x00000008 | 0x00000080) < 0:
+            raise OSError(ctypes.get_errno(), "inotify")
+    except (OSError, AttributeError):
+        return lambda seconds: time.sleep(min(seconds, 3))
+
+    def block(seconds):
+        ready, _, _ = select.select([fd], [], [], seconds)
+        if ready:
+            try:
+                os.read(fd, 65536)
+            except BlockingIOError:
+                pass
+    return block
+
+
 def cmd_wait(q, a):
     job = q.resolve(a.job)
     deadline = time.monotonic() + a.timeout
+    block = status_changes(q.job_dir(job))
     while True:
         status = q.read(job)
         if status.get("state") in TERMINAL:
             out(status)
             return 0 if status["state"] == "SUCCEEDED" else 1
-        if time.monotonic() >= deadline:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
             out(status)
             return 124
-        time.sleep(3)
+        # Woken by the worker's status write; the periodic re-read only covers a job moved to the archive.
+        block(min(remaining, 60))
 
 
 def cmd_logs(q, a):
@@ -58,8 +85,10 @@ def cmd_logs(q, a):
 
 def cmd_list(q, a):
     rows = []
-    for job in q.all_ids(archived=a.all):
-        s = q.read(job)
+    for job, s in sorted(q.index().items()):
+        if s.get("archived") and not a.all:
+            continue
+        s = dict(s)
         s.setdefault("repo", DEFAULT_REPO)
         if a.repo and s["repo"] != a.repo:
             continue
