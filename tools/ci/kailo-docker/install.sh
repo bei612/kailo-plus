@@ -6,7 +6,7 @@
 #   - iptables=false：不改默认 dockerd 的 DOCKER 链；出网 NAT 由本脚本装的 nft 表 kailo_nat 负责，端口发布走 userland-proxy
 #   - 经 WG 以 mTLS 监听 tcp://<wg 地址>:2376
 #   - dockerd 与它的全部容器（daemon.json cgroup-parent）运行在 kailo.slice（硬内存上限，缺省 48G）；
-#     kailo-ci.slice（缺省 24G）是其子 slice，装 CI worker 进程，检查容器显式 CHECK_CGROUP_PARENT 时也可进入
+#     其下 kailo-prod.slice（部署）与 kailo-ci.slice（缺省 40G：CI worker、检查容器、镜像构建，dockerd 默认 cgroup-parent）
 # 幂等：重复执行结果不变；只写 Kailo 自己的路径，不碰 /etc/docker、docker.service、默认 docker0/网络。
 # 用法（CI 节点 root）：install.sh <tls 目录> [wg 地址...]
 #   tls 目录需含 ca.pem server-cert.pem server-key.pem（由 tls.sh 生成）
@@ -16,7 +16,16 @@ ADDRS=("$@"); [ ${#ADDRS[@]} -gt 0 ] || ADDRS=(10.203.194.2)
 # 48G（A-03，2026-11-14，主 Agent 批准）：62G 节点上留 14G 给系统、IntelligenceStation（实测峰值约 2.7G）与 slice 外页缓存；
 # 36G 时 slice 内 anon 仅约 11G、文件页 21G，memory.events max 达 186 万次，部署容器的文件页反复回收（sync-service 曾因此被 OOM）。
 MEM=${KAILO_SLICE_MEMORY_MAX:-48G}
-CI_MEM=${KAILO_CI_SLICE_MEMORY_MAX:-24G}
+# OPS-03（2026-11-14）：部署与 CI/构建分 slice，IO 与内存按 slice 隔离（手册「IO 隔离（OPS-03）」）。
+#   kailo-prod.slice：部署 compose 项目（up.sh 的 KAILO_CGROUP_PARENT），IO/CPU 权重高，MemoryLow 保护；
+#   kailo-ci.slice：dockerd 的默认 cgroup-parent，即 CI 检查容器、镜像构建（BuildKit 执行器、kailo-builder）与临时容器，
+#   IO 权重低并有写入上限。权重要靠 iocost 生效（tools/ci/host-io/setup.sh）。
+CI_MEM=${KAILO_CI_SLICE_MEMORY_MAX:-40G}
+PROD_MEM_LOW=${KAILO_PROD_SLICE_MEMORY_LOW:-16G}
+PARENT=${KAILO_DOCKERD_CGROUP_PARENT:-kailo-ci.slice}
+# CI 写入上限（kailo-ci.slice 合计，作用于 data-root 所在整盘）；空串则不设。按 OPS-03 实测标定（手册）。
+CI_WBPS=${KAILO_CI_WRITE_BPS-150M}
+CI_WIOPS=${KAILO_CI_WRITE_IOPS-4000}
 # default builder 的 GC 策略（A-03，2026-11-14，主 Agent 批准；kailo-builder 同策略见 registry-mirror/buildkitd.toml）。
 # 只写 defaultKeepStorage 时 BuildKit 第一条默认规则把构建上下文与缓存挂载合计压到约 8.3GiB，一次构建上下文就挤掉
 # apt/bun/cargo 缓存挂载。这里分开限额：上下文 20GB、git 检出 5GB、缓存挂载 80GB，全部记录保留 60GB、上限 120GB
@@ -66,7 +75,7 @@ cat > $ETC/daemon.json.new <<JSON
   ],
   "log-driver": "json-file",
   "log-opts": {"max-size": "50m", "max-file": "5"},$mirrors
-  "cgroup-parent": "kailo.slice",
+  "cgroup-parent": "$PARENT",
   "builder": {"gc": {"enabled": true, "policy": [
     {"filter": ["type=source.local"], "maxUsedSpace": "$GC_CONTEXTS"},
     {"filter": ["type=source.git.checkout"], "maxUsedSpace": "$GC_GIT"},
@@ -86,13 +95,31 @@ MemoryMax=$MEM
 MemorySwapMax=0
 CPUWeight=80
 UNIT
+# data-root 所在整盘（io.max 与 io.weight 只作用于整盘设备）
+DISK=/dev/$(lsblk -no PKNAME "$(findmnt -no SOURCE -T /var/lib/kailo-docker)" | head -n 1)
+[ -b "$DISK" ] || { echo "cannot resolve the disk of /var/lib/kailo-docker" >&2; exit 1; }
+ci_io=
+[ -z "$CI_WBPS" ] || ci_io="$ci_io
+IOWriteBandwidthMax=$DISK $CI_WBPS"
+[ -z "$CI_WIOPS" ] || ci_io="$ci_io
+IOWriteIOPSMax=$DISK $CI_WIOPS"
+cat > /etc/systemd/system/kailo-prod.slice <<UNIT
+[Unit]
+Description=Kailo deployment (compose project kailo; sub-slice of kailo.slice), weighted above CI and builds
+[Slice]
+MemoryLow=$PROD_MEM_LOW
+MemorySwapMax=0
+CPUWeight=400
+IOWeight=1000
+UNIT
 cat > /etc/systemd/system/kailo-ci.slice <<UNIT
 [Unit]
-Description=Kailo CI checks and builds (sub-slice of kailo.slice)
+Description=Kailo CI checks, image builds and ad-hoc containers (sub-slice of kailo.slice; dockerd's cgroup-parent)
 [Slice]
 MemoryMax=$CI_MEM
 MemorySwapMax=0
 CPUWeight=50
+IOWeight=25$ci_io
 UNIT
 cat > /usr/local/sbin/kailo-docker-net <<'NET'
 #!/bin/sh

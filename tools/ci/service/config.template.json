@@ -9,7 +9,7 @@
   "web_build_info_path": "/usr/share/nginx/html/build-info.json",
   "min_job_free_bytes": 34359738368,
   "admission": {
-    "cgroup": "/sys/fs/cgroup/kailo.slice"
+    "cgroup": ["/sys/fs/cgroup/kailo.slice", "/sys/fs/cgroup/kailo.slice/kailo-ci.slice"]
   },
   "environment": {
     "DOCKER_HOST": "unix:///run/kailo-docker/docker.sock",

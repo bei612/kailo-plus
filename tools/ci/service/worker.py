@@ -212,12 +212,14 @@ class Worker:
         with open("/proc/meminfo") as source:
             info = {line.split(":")[0]: int(line.split()[1]) * 1024 for line in source}
         free = info.get("MemAvailable", 0)
-        # The Kailo dockerd puts every container under kailo.slice (daemon.json cgroup-parent, 36 GiB): the slice limit,
-        # not the host's free memory, is what a check runs into. admission.cgroup names that group (OPS-01).
-        group = admission.get("cgroup")
-        headroom = cgroup_headroom(group) if isinstance(group, str) else None
-        if headroom is not None:
-            free = min(free, headroom)
+        # Checks run inside cgroup limits, not on the host's free memory: kailo.slice (OPS-01) and, since OPS-03, the
+        # kailo-ci.slice below it (dockerd's cgroup-parent for CI and builds, memory capped under the deployment's).
+        # admission.cgroup names one group or a list; the smallest headroom counts. tmpfs pages are shmem and count.
+        groups = admission.get("cgroup")
+        for group in [groups] if isinstance(groups, str) else (groups or []):
+            headroom = cgroup_headroom(group) if isinstance(group, str) else None
+            if headroom is not None:
+                free = min(free, headroom)
         disk = shutil.disk_usage(self.tmp_root).free
         min_disk = int(self.rc.get("min_job_free_bytes", self.cfg.get("min_job_free_bytes", 32 * GIB)))
         if free < need or disk < min_disk:
