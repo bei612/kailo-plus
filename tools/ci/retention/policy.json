@@ -115,6 +115,11 @@
             "role": "CI scratch"
           },
           {
+            "path": "/var/lib/kailo-ci/check-cache",
+            "cap": "20G",
+            "role": "kailo-plus check build caches (rust-target, go-build); its download caches are bind mounts from the HDD"
+          },
+          {
             "path": "/var/lib/kailo-ci/queue",
             "cap": "2G",
             "role": "CI queue and job logs"
@@ -162,6 +167,11 @@
             "path": "/volumes/data/kailo/capacity/ci/check-cache",
             "cap": "200G",
             "role": "cargo registry/git, Go modules"
+          },
+          {
+            "path": "/volumes/data/kailo/capacity/ci/check-cache/kailo-plus",
+            "cap": "50G",
+            "role": "kailo-plus download caches (cargo registry/git, Go modules, npm, pub; bound into /var/lib/kailo-ci/check-cache)"
           },
           {
             "path": "/volumes/data/kailo/capacity/ci/buildkit",
