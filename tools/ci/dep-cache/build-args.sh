@@ -9,7 +9,7 @@
 #        npm 客户端没有多源回退，健康探测之后缓存若中途失败，构建会以连接错误失败（明确报错，不静默改源）。
 #   Go   缓存健康时投递 GOPROXY=<缓存>|https://proxy.golang.org,direct：`|` 使缓存的任何错误（含连接失败）都回退原站；
 #        不健康时投递 GOPROXY=https://proxy.golang.org,direct。
-# 环境：KAILO_NPM_CACHE_URL / KAILO_GO_CACHE_URL 覆盖缓存地址（缺省本机回环 55002/55003，见 tools/ci/dep-cache/setup.sh），
+# 环境：KAILO_NPM_CACHE_URL / KAILO_GO_CACHE_URL 覆盖缓存地址（缺省 kailo0 网关 10.239.0.1 的 55002/55003，见 tools/ci/dep-cache/setup.sh），
 #       设为空串即不用缓存。
 GO_ORIGIN_PROXY="https://proxy.golang.org,direct"
 
@@ -19,8 +19,8 @@ dependency_cache_probe() {  # <url>：缓存健康返回 0
 
 dependency_cache_args() {
   local dockerfile=$1
-  local npm=${KAILO_NPM_CACHE_URL-http://127.0.0.1:${NPM_CACHE_PORT:-55002}}
-  local go=${KAILO_GO_CACHE_URL-http://127.0.0.1:${GO_CACHE_PORT:-55003}}
+  local npm=${KAILO_NPM_CACHE_URL-http://${DEP_CACHE_BIND:-10.239.0.1}:${NPM_CACHE_PORT:-55002}}
+  local go=${KAILO_GO_CACHE_URL-http://${DEP_CACHE_BIND:-10.239.0.1}:${GO_CACHE_PORT:-55003}}
   DEPENDENCY_CACHE_ARGS=()
   [ -f "$dockerfile" ] || { echo "依赖缓存：找不到 $dockerfile" >&2; return 2; }
   if grep -qE '^[[:space:]]*ARG[[:space:]]+NPM_REGISTRY([[:space:]=]|$)' "$dockerfile"; then

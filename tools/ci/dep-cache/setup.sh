@@ -11,6 +11,7 @@
 #   DEP_CACHE_DATA            数据根（默认 /volumes/data/kailo/capacity/dep-cache，4T 容量盘；包与模块按内容只写一次、读多）
 #   DEP_CACHE_RUNTIME         运行副本目录：compose.yaml、verdaccio.yaml、.env（默认 /volumes/kailo/ci/dep-cache）
 #   NPM_CACHE_PORT / GO_CACHE_PORT   本机回环端口（默认 55002 / 55003，须与 build-args.sh 的缺省一致）
+#   DEP_CACHE_BIND            三个缓存的监听地址（默认 10.239.0.1，Kailo dockerd 的 kailo0 网关；bridge 网络的容器与构建也可达）
 #   CRATES_CACHE_PORT         crates.io 缓存端口（默认 55007）
 #   CRATES_INDEX_UPSTREAM     sparse 索引上游（默认 https://rsproxy.cn/index/）
 #   CRATES_DL_UPSTREAM        crate 文件上游前缀，后接 <crate>/<version>.crate（默认 https://lf9-static.rsproxy.cn/obj/rsproxy/crates/，
@@ -35,6 +36,9 @@ NPM_CACHE_PORT=${NPM_CACHE_PORT:-55002}
 NPM_UPLINKS=${NPM_UPLINKS:-https://registry.npmmirror.com/ https://mirrors.cloud.tencent.com/npm/}
 GO_CACHE_PORT=${GO_CACHE_PORT:-55003}
 CRATES_CACHE_PORT=${CRATES_CACHE_PORT:-55007}
+# Listen address of all three caches: the Kailo dockerd's kailo0 gateway, reachable from the host, host-network
+# builds, and bridged containers and builds (their RUN steps), but not from the LAN (OPS-03).
+DEP_CACHE_BIND=${DEP_CACHE_BIND:-10.239.0.1}
 CRATES_INDEX_UPSTREAM=${CRATES_INDEX_UPSTREAM:-https://rsproxy.cn/index/}
 CRATES_DL_UPSTREAM=${CRATES_DL_UPSTREAM:-https://lf9-static.rsproxy.cn/obj/rsproxy/crates/}
 
@@ -75,32 +79,32 @@ PY
   resolver=$(awk '$1 == "nameserver" { print $2; exit }' /etc/resolv.conf)
   [ -n "$resolver" ] || die "no nameserver in /etc/resolv.conf for the crates cache"
   python3 -I - "$here/crates-nginx.conf" "$DEP_CACHE_RUNTIME/crates-nginx.conf.tmp" "$CRATES_CACHE_PORT" \
-    "$CRATES_INDEX_UPSTREAM" "$CRATES_DL_UPSTREAM" "$resolver" <<'PY'
+    "$CRATES_INDEX_UPSTREAM" "$CRATES_DL_UPSTREAM" "$resolver" "$DEP_CACHE_BIND" <<'PY'
 import re, sys
-src, dst, port, index, dl, resolver = sys.argv[1:7]
+src, dst, port, index, dl, resolver, bind = sys.argv[1:8]
 for url in (index, dl):
     if not re.fullmatch(r"https://[^\s;'\"]+/", url):
         sys.exit("CRATES_INDEX_UPSTREAM / CRATES_DL_UPSTREAM must be https:// URLs ending in /")
 text = open(src).read()
-for key, value in (("@PORT@", port), ("@INDEX_UPSTREAM@", index), ("@DL_UPSTREAM@", dl), ("@RESOLVER@", resolver),
+for key, value in (("@BIND@", bind), ("@PORT@", port), ("@INDEX_UPSTREAM@", index), ("@DL_UPSTREAM@", dl), ("@RESOLVER@", resolver),
                    ("@INDEX_MAX@", "5g"), ("@FILES_MAX@", "100g")):
     text = text.replace(key, value)
 open(dst, "w").write(text)
 PY
   chmod 0644 "$DEP_CACHE_RUNTIME/crates-nginx.conf.tmp"
   mv "$DEP_CACHE_RUNTIME/crates-nginx.conf.tmp" "$DEP_CACHE_RUNTIME/crates-nginx.conf"
-  printf 'DEP_CACHE_DATA=%s\nDEP_CACHE_USER=%s\nNPM_CACHE_PORT=%s\nGO_CACHE_PORT=%s\nCRATES_CACHE_PORT=%s\n' \
-    "$DEP_CACHE_DATA" "$(stat -c %u:%g "$DEP_CACHE_DATA")" "$NPM_CACHE_PORT" "$GO_CACHE_PORT" "$CRATES_CACHE_PORT" \
+  printf 'DEP_CACHE_DATA=%s\nDEP_CACHE_USER=%s\nDEP_CACHE_BIND=%s\nNPM_CACHE_PORT=%s\nGO_CACHE_PORT=%s\nCRATES_CACHE_PORT=%s\n' \
+    "$DEP_CACHE_DATA" "$(stat -c %u:%g "$DEP_CACHE_DATA")" "$DEP_CACHE_BIND" "$NPM_CACHE_PORT" "$GO_CACHE_PORT" "$CRATES_CACHE_PORT" \
     > "$DEP_CACHE_RUNTIME/.env.tmp"
   chmod 0600 "$DEP_CACHE_RUNTIME/.env.tmp"
   mv "$DEP_CACHE_RUNTIME/.env.tmp" "$DEP_CACHE_RUNTIME/.env"
 }
 
 cmd_probe() {
-  local npm="http://127.0.0.1:$NPM_CACHE_PORT" go="http://127.0.0.1:$GO_CACHE_PORT"
+  local npm="http://$DEP_CACHE_BIND:$NPM_CACHE_PORT" go="http://$DEP_CACHE_BIND:$GO_CACHE_PORT"
   curl -fsS --noproxy '*' -m 10 -o /dev/null "$npm/-/ping" || die "npm 缓存未在 $npm 响应"
   curl -fsS --noproxy '*' -m 10 -o /dev/null "$go/healthz" || die "Go 缓存未在 $go 响应"
-  local crates="http://127.0.0.1:$CRATES_CACHE_PORT"
+  local crates="http://$DEP_CACHE_BIND:$CRATES_CACHE_PORT"
   curl -fsS --noproxy '*' -m 60 "$crates/index/se/rd/serde" | grep -q '"vers":"1.0.200"' || die "crates 缓存未返回 serde 的索引"
   curl -fsS --noproxy '*' -m 120 -o /dev/null "$crates/crates/serde/1.0.200.crate" || die "crates 缓存未返回 serde 1.0.200"
   echo "crates 缓存：serde 索引与 1.0.200 文件可取"
@@ -139,16 +143,17 @@ cmd_up() {
     compose up -d --force-recreate --wait --wait-timeout 120 crates
   fi
   cmd_probe
-  printf '依赖缓存就绪：npm 127.0.0.1:%s、Go 127.0.0.1:%s，数据 %s，运行副本 %s\n' \
-    "$NPM_CACHE_PORT" "$GO_CACHE_PORT" "$DEP_CACHE_DATA" "$DEP_CACHE_RUNTIME"
+  printf '依赖缓存就绪：npm %s:%s、Go %s:%s、crates %s:%s，数据 %s，运行副本 %s\n' \
+    "$DEP_CACHE_BIND" "$NPM_CACHE_PORT" "$DEP_CACHE_BIND" "$GO_CACHE_PORT" "$DEP_CACHE_BIND" "$CRATES_CACHE_PORT" \
+    "$DEP_CACHE_DATA" "$DEP_CACHE_RUNTIME"
 }
 
 cmd_status() {
   compose ps
   du -sh "$DEP_CACHE_DATA"/npm "$DEP_CACHE_DATA"/go 2>/dev/null || true
   findmnt -n -o SOURCE --target "$DEP_CACHE_DATA"
-  curl -sS --noproxy '*' -m 5 -o /dev/null -w "npm /-/ping HTTP %{http_code}\n" "http://127.0.0.1:$NPM_CACHE_PORT/-/ping" || true
-  curl -sS --noproxy '*' -m 5 -o /dev/null -w "go /healthz HTTP %{http_code}\n" "http://127.0.0.1:$GO_CACHE_PORT/healthz" || true
+  curl -sS --noproxy '*' -m 5 -o /dev/null -w "npm /-/ping HTTP %{http_code}\n" "http://$DEP_CACHE_BIND:$NPM_CACHE_PORT/-/ping" || true
+  curl -sS --noproxy '*' -m 5 -o /dev/null -w "go /healthz HTTP %{http_code}\n" "http://$DEP_CACHE_BIND:$GO_CACHE_PORT/healthz" || true
 }
 
 case "${1:-}" in
