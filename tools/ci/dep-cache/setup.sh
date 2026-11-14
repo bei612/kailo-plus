@@ -21,6 +21,10 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 apps=$(cd "$here/../../.." && pwd)
 export DOCKER_CONFIG=${DOCKER_CONFIG:-/var/lib/kailo-ci/docker-config}
+# Always the Kailo dockerd: without DOCKER_HOST the docker CLI talks to the system dockerd, where these caches must
+# never run (2026-11-14 a run without it created both containers there; they were removed).
+export DOCKER_HOST=${DOCKER_HOST:-unix:///run/kailo-docker/docker.sock}
+[ "$DOCKER_HOST" = unix:///run/kailo-docker/docker.sock ] || { echo "dep-cache: DOCKER_HOST must be the Kailo dockerd" >&2; exit 2; }
 DEP_CACHE_DATA=${DEP_CACHE_DATA:-/volumes/data/kailo/capacity/dep-cache}
 DEP_CACHE_RUNTIME=${DEP_CACHE_RUNTIME:-/volumes/kailo/ci/dep-cache}
 NPM_CACHE_PORT=${NPM_CACHE_PORT:-55002}
