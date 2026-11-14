@@ -50,12 +50,6 @@
       "lock": "/var/lib/kailo-ci/check-target/kailo-macro/slot3.lock"
     },
     {
-      "path": "/var/lib/kailo-ci/check-target/kailo-macro/slot4",
-      "max_idle_seconds": 259200,
-      "max_bytes": 21474836480,
-      "lock": "/var/lib/kailo-ci/check-target/kailo-macro/slot4.lock"
-    },
-    {
       "path": "/var/lib/kailo-ci/check-cache/kailo-macro",
       "max_idle_seconds": 86400
     },

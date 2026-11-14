@@ -44,12 +44,11 @@ class Policy(unittest.TestCase):
                                  "/var/lib/kailo-ci/check-target/kailo-macro/slot1",
                                  "/var/lib/kailo-ci/check-target/kailo-macro/slot2",
                                  "/var/lib/kailo-ci/check-target/kailo-macro/slot3",
-                                 "/var/lib/kailo-ci/check-target/kailo-macro/slot4",
                                  "/var/lib/kailo-ci/check-cache/kailo-macro",
                                  "/volumes/data/kailo/capacity/ci/check-cache/kailo-macro"])
         self.assertEqual(policy["grace_seconds"], 2 * HOUR)
-        # cargo targets: four slots of at most 20 GiB (80 GiB in total)
-        self.assertEqual(sum(r.get("max_bytes", 0) for r in policy["roots"]), 80 * 2**30)
+        # cargo targets: three slots of at most 20 GiB (60 GiB in total)
+        self.assertEqual(sum(r.get("max_bytes", 0) for r in policy["roots"]), 60 * 2**30)
         # default builder: same limit as daemon.json builder.gc; kailo-builder state lives on the 4T disk (OPS-01)
         self.assertEqual(policy["docker_build_cache"]["keep_storage"], "120GB")
         self.assertEqual(policy["docker_build_cache"]["builders"],
