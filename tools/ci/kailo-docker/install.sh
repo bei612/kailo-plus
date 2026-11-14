@@ -19,9 +19,13 @@ MEM=${KAILO_SLICE_MEMORY_MAX:-48G}
 CI_MEM=${KAILO_CI_SLICE_MEMORY_MAX:-24G}
 # default builder 的 GC 策略（A-03，2026-11-14，主 Agent 批准；kailo-builder 同策略见 registry-mirror/buildkitd.toml）。
 # 只写 defaultKeepStorage 时 BuildKit 第一条默认规则把构建上下文与缓存挂载合计压到约 8.3GiB，一次构建上下文就挤掉
-# apt/bun/cargo 缓存挂载。这里分开限额：上下文 20GB/48h，缓存挂载 80GB/720h，全部记录保留 60GB、上限 120GB
+# apt/bun/cargo 缓存挂载。这里分开限额：上下文 20GB、git 检出 5GB、缓存挂载 80GB，全部记录保留 60GB、上限 120GB
 # （NVMe 至少留约 100G 给检查槽位、sccache、data-root 与部署数据库）。retention/policy.json 的 default 上限须一致。
+# daemon.json 语法（dockerd 29 实测）：filter 写 "type=<值>"（dockerd 自己补成 ==），一条规则只能有一个值，否则 dockerd
+# 启动失败（"filters expect only one value"）；keepDuration 对自定义规则不生效，故不写。`dockerd --validate` 查不出这两点，
+# 改动后先在 docker:dind 里用同一 builder 段起一次并看 `docker buildx inspect default`。
 GC_CONTEXTS=${KAILO_BUILDER_GC_CONTEXTS:-20GB}
+GC_GIT=${KAILO_BUILDER_GC_GIT:-5GB}
 GC_CACHEMOUNTS=${KAILO_BUILDER_GC_CACHEMOUNTS:-80GB}
 GC_RESERVED=${KAILO_BUILDER_GC_RESERVED:-60GB}
 GC_MAX=${KAILO_BUILDER_GC_MAX:-120GB}
@@ -64,9 +68,10 @@ cat > $ETC/daemon.json.new <<JSON
   "log-opts": {"max-size": "50m", "max-file": "5"},$mirrors
   "cgroup-parent": "kailo.slice",
   "builder": {"gc": {"enabled": true, "policy": [
-    {"filter": ["type==source.local", "type==source.git.checkout"], "keepDuration": "48h", "maxUsedSpace": "$GC_CONTEXTS"},
-    {"filter": ["type==exec.cachemount"], "keepDuration": "720h", "maxUsedSpace": "$GC_CACHEMOUNTS"},
-    {"keepDuration": "1440h", "reservedSpace": "$GC_RESERVED", "maxUsedSpace": "$GC_MAX"},
+    {"filter": ["type=source.local"], "maxUsedSpace": "$GC_CONTEXTS"},
+    {"filter": ["type=source.git.checkout"], "maxUsedSpace": "$GC_GIT"},
+    {"filter": ["type=exec.cachemount"], "maxUsedSpace": "$GC_CACHEMOUNTS"},
+    {"reservedSpace": "$GC_RESERVED", "maxUsedSpace": "$GC_MAX"},
     {"all": true, "reservedSpace": "$GC_RESERVED", "maxUsedSpace": "$GC_MAX"}
   ]}}
 }
