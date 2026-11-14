@@ -24,21 +24,27 @@ CI_MEM=${KAILO_CI_SLICE_MEMORY_MAX:-40G}
 PROD_MEM_LOW=${KAILO_PROD_SLICE_MEMORY_LOW:-16G}
 PARENT=${KAILO_DOCKERD_CGROUP_PARENT:-kailo-ci.slice}
 # CI 写入上限（kailo-ci.slice 合计，作用于 data-root 所在整盘）；空串则不设。按 OPS-03 实测标定（手册）。
-CI_WBPS=${KAILO_CI_WRITE_BPS-150M}
-CI_WIOPS=${KAILO_CI_WRITE_IOPS-4000}
+CI_WBPS=${KAILO_CI_WRITE_BPS-60M}
+CI_WIOPS=${KAILO_CI_WRITE_IOPS-2500}
 CI_RBPS=${KAILO_CI_READ_BPS-300M}
 # default builder 的 GC 策略（A-03，2026-11-14，主 Agent 批准；kailo-builder 同策略见 registry-mirror/buildkitd.toml）。
 # 只写 defaultKeepStorage 时 BuildKit 第一条默认规则把构建上下文与缓存挂载合计压到约 8.3GiB，一次构建上下文就挤掉
-# apt/bun/cargo 缓存挂载。这里分开限额：上下文 20GB、git 检出 5GB、缓存挂载 80GB，全部记录保留 60GB、上限 120GB
-# （NVMe 至少留约 100G 给检查槽位、sccache、data-root 与部署数据库）。retention/policy.json 的 default 上限须一致。
+# apt/bun/cargo 缓存挂载。这里分开限额：上下文 20GB、git 检出 5GB、缓存挂载 80GB、层 60GB，全部记录保留 60GB、上限 160GB
+# （NVMe 至少留约 100G 给检查槽位、sccache、data-root 与部署数据库）。retention/policy.json 的上限与部署 KAILO_BUILD_CACHE_LIMIT 须一致。
 # daemon.json 语法（dockerd 29 实测）：filter 写 "type=<值>"（dockerd 自己补成 ==），一条规则只能有一个值，否则 dockerd
 # 启动失败（"filters expect only one value"）；keepDuration 对自定义规则不生效，故不写。`dockerd --validate` 查不出这两点，
 # 改动后先在 docker:dind 里用同一 builder 段起一次并看 `docker buildx inspect default`。
 GC_CONTEXTS=${KAILO_BUILDER_GC_CONTEXTS:-20GB}
 GC_GIT=${KAILO_BUILDER_GC_GIT:-5GB}
 GC_CACHEMOUNTS=${KAILO_BUILDER_GC_CACHEMOUNTS:-80GB}
+GC_LAYERS=${KAILO_BUILDER_GC_LAYERS:-60GB}
 GC_RESERVED=${KAILO_BUILDER_GC_RESERVED:-60GB}
-GC_MAX=${KAILO_BUILDER_GC_MAX:-120GB}
+GC_MAX=${KAILO_BUILDER_GC_MAX:-160GB}
+# Why a layer rule and a 160GB total (2026-11-14): BuildKit deletes by a mix of least-recently and least-frequently
+# used, so when the all-records rules fire, fresh cache mounts (usage count 1) go before old layers. Measured: at
+# ~117GB of 120GB the apt/cargo mounts of one build were gone before the next. Layers (type regular; ~53GB of them are
+# shared with images) get their own 60GB rule, so the total stays below the all-records cap in normal use;
+# 60 + 80 (cache mounts) + 20 + 5 fits 160GB, leaving ~100G free on the NVMe.
 # 出网：节点不设任何代理，dockerd 直连（路由器 OpenWrt 透明代理负责，OPS-02）。
 # Docker Hub 拉取先经本机拉取缓存（tools/ci/registry-mirror，数据在 4T 容量盘）；缓存不可用时 dockerd 自动回退原站。
 # 设为空串则不写 registry-mirrors。
@@ -81,6 +87,7 @@ cat > $ETC/daemon.json.new <<JSON
     {"filter": ["type=source.local"], "maxUsedSpace": "$GC_CONTEXTS"},
     {"filter": ["type=source.git.checkout"], "maxUsedSpace": "$GC_GIT"},
     {"filter": ["type=exec.cachemount"], "maxUsedSpace": "$GC_CACHEMOUNTS"},
+    {"filter": ["type=regular"], "maxUsedSpace": "$GC_LAYERS"},
     {"reservedSpace": "$GC_RESERVED", "maxUsedSpace": "$GC_MAX"},
     {"all": true, "reservedSpace": "$GC_RESERVED", "maxUsedSpace": "$GC_MAX"}
   ]}}

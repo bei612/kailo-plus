@@ -50,9 +50,9 @@ class Policy(unittest.TestCase):
         # cargo targets: three slots of at most 20 GiB (60 GiB in total)
         self.assertEqual(sum(r.get("max_bytes", 0) for r in policy["roots"]), 60 * 2**30)
         # default builder: same limit as daemon.json builder.gc; kailo-builder state lives on the 4T disk (OPS-01)
-        self.assertEqual(policy["docker_build_cache"]["keep_storage"], "120GB")
+        self.assertEqual(policy["docker_build_cache"]["keep_storage"], "160GB")
         self.assertEqual(policy["docker_build_cache"]["builders"],
-                         ["default", dict(name="kailo-builder", keep_storage="120GB")])
+                         ["default", dict(name="kailo-builder", keep_storage="160GB")])
 
     def test_invalid_policies_are_refused(self):
         for bad in (dict(grace_seconds=60, roots=[dict(path="/a", max_idle_seconds=DAY)]),
@@ -218,11 +218,11 @@ class Activity(unittest.TestCase):
 class BuildCache(unittest.TestCase):
     def test_per_builder_keep_storage(self):
         policy = dict(docker_build_cache=dict(keep_storage="60GB",
-                                              builders=["default", dict(name="kailo-builder", keep_storage="120GB")]))
+                                              builders=["default", dict(name="kailo-builder", keep_storage="160GB")]))
         report = {}
         hr.prune_build_cache(policy, report, dry_run=True)
         self.assertEqual([(i["builder"], i["keep_storage"]) for i in report["build_cache"]],
-                         [("default", "60GB"), ("kailo-builder", "120GB")])
+                         [("default", "60GB"), ("kailo-builder", "160GB")])
 
 
 if __name__ == "__main__":

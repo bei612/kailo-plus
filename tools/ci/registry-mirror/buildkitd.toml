@@ -45,10 +45,14 @@
     maxUsedSpace = "80GB"
 
   [[worker.oci.gcpolicy]]
+    filters = ["type==regular"]
+    maxUsedSpace = "60GB"
+
+  [[worker.oci.gcpolicy]]
     reservedSpace = "60GB"
-    maxUsedSpace = "120GB"
+    maxUsedSpace = "160GB"
 
   [[worker.oci.gcpolicy]]
     all = true
     reservedSpace = "60GB"
-    maxUsedSpace = "120GB"
+    maxUsedSpace = "160GB"
