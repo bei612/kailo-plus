@@ -19,5 +19,9 @@ services:
       - /var/lib/kailo-ci/queue:/var/lib/kailo-ci/queue
       - /var/lib/kailo-ci/artifacts:/var/lib/kailo-ci/artifacts:ro
     network_mode: none
-    mem_limit: 256m
+    # Each `kailo-ci status|list|wait` is a python3 client.py process here (~18 MB); with a dozen agents polling, 256m
+    # hit its limit and the container re-read its files from disk at ~140 MB/s (2026-11-14, OPS-03), slowing the
+    # whole node and hanging the clients. 768m covers ~40 concurrent clients.
+    mem_limit: 768m
+    memswap_limit: 768m
     cpus: 0.5

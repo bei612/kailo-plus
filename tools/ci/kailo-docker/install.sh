@@ -19,13 +19,14 @@ MEM=${KAILO_SLICE_MEMORY_MAX:-48G}
 # OPS-03（2026-11-14）：部署与 CI/构建分 slice，IO 与内存按 slice 隔离（手册「IO 隔离（OPS-03）」）。
 #   kailo-prod.slice：部署 compose 项目（up.sh 的 KAILO_CGROUP_PARENT），IO/CPU 权重高，MemoryLow 保护；
 #   kailo-ci.slice：dockerd 的默认 cgroup-parent，即 CI 检查容器、镜像构建（BuildKit 执行器、kailo-builder）与临时容器，
-#   IO 权重低并有写入上限。权重要靠 iocost 生效（tools/ci/host-io/setup.sh）。
+#   IO 有读写上限（io.max；iocost 在本盘不可用，见 tools/ci/host-io/setup.sh，IOWeight 仅在启用 iocost/BFQ 时生效）。
 CI_MEM=${KAILO_CI_SLICE_MEMORY_MAX:-40G}
 PROD_MEM_LOW=${KAILO_PROD_SLICE_MEMORY_LOW:-16G}
 PARENT=${KAILO_DOCKERD_CGROUP_PARENT:-kailo-ci.slice}
 # CI 写入上限（kailo-ci.slice 合计，作用于 data-root 所在整盘）；空串则不设。按 OPS-03 实测标定（手册）。
 CI_WBPS=${KAILO_CI_WRITE_BPS-150M}
 CI_WIOPS=${KAILO_CI_WRITE_IOPS-4000}
+CI_RBPS=${KAILO_CI_READ_BPS-300M}
 # default builder 的 GC 策略（A-03，2026-11-14，主 Agent 批准；kailo-builder 同策略见 registry-mirror/buildkitd.toml）。
 # 只写 defaultKeepStorage 时 BuildKit 第一条默认规则把构建上下文与缓存挂载合计压到约 8.3GiB，一次构建上下文就挤掉
 # apt/bun/cargo 缓存挂载。这里分开限额：上下文 20GB、git 检出 5GB、缓存挂载 80GB，全部记录保留 60GB、上限 120GB
@@ -103,6 +104,8 @@ ci_io=
 IOWriteBandwidthMax=$DISK $CI_WBPS"
 [ -z "$CI_WIOPS" ] || ci_io="$ci_io
 IOWriteIOPSMax=$DISK $CI_WIOPS"
+[ -z "$CI_RBPS" ] || ci_io="$ci_io
+IOReadBandwidthMax=$DISK $CI_RBPS"
 cat > /etc/systemd/system/kailo-prod.slice <<UNIT
 [Unit]
 Description=Kailo deployment (compose project kailo; sub-slice of kailo.slice), weighted above CI and builds

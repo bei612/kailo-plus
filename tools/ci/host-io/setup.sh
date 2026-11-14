@@ -4,9 +4,9 @@
 # 背景：系统盘是无 DRAM 的消费级 NVMe（RS512GSSD510，不可更换）。CI 的大量增删让它在每周一次 TRIM 之间耗尽空闲块：
 # 11-14 实测写入 31 MB/s、单次写 328 ms、fsync p50 3.1 s；fstrim（160.9 GiB，75 s）后 18 ms、fsync p50 8.9 ms。
 #   1. fstrim.timer 改为每 6 小时（drop-in），不用 discard 挂载选项（在线 discard 会把延迟摊到每次删除上）。
-#   2. iocost（blk-iocost）在 data-root 所在整盘上启用，kailo-prod.slice / kailo-ci.slice 的 IOWeight 才生效
-#      （mq-deadline/none 调度器本身不认 io.weight）。ctrl=auto 使用内核按 SSD 给出的延迟目标与模型。开机由
-#      kailo-iocost.service 写入；回退：systemctl disable --now kailo-iocost.service 并写 "<maj:min> enable=0"。
+#   2. 不启用 iocost：11-14 实测 `ctrl=auto` 在这块盘上不给延迟目标（rpct=0）且 vrate 下限 1%，饱和时把全机 IO（含 ssh
+#      登录）压到几乎停止，已立即关闭。IO 隔离改用 kailo-ci.slice 的 io.max 硬上限（kailo-docker/install.sh），
+#      部署不设上限；要用权重须先按本盘实测给出 io.cost.model 与 QoS 再评估。
 #   3. 根文件系统 noatime（在线 remount，并写入 fstab；回退：去掉 noatime 再 remount）。
 set -euo pipefail
 cmd=${1:-apply}
@@ -40,22 +40,13 @@ RandomizedDelaySec=10min
 AccuracySec=1min
 UNIT
 
-cat > /etc/systemd/system/kailo-iocost.service <<UNIT
-[Unit]
-Description=Enable blk-iocost on the Kailo data disk so slice IOWeight applies (OPS-03, tools/ci/host-io)
-DefaultDependencies=no
-After=local-fs.target
-Before=kailo-docker.service
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=/bin/sh -c 'echo "$majmin enable=1 ctrl=auto" > /sys/fs/cgroup/io.cost.qos'
-ExecStop=/bin/sh -c 'echo "$majmin enable=0" > /sys/fs/cgroup/io.cost.qos'
-[Install]
-WantedBy=multi-user.target
-UNIT
+# A kailo-iocost.service from an earlier revision is removed (see 2. above).
+if [ -e /etc/systemd/system/kailo-iocost.service ]; then
+  systemctl disable --now kailo-iocost.service || true
+  rm -f /etc/systemd/system/kailo-iocost.service
+fi
+echo "$majmin enable=0" > /sys/fs/cgroup/io.cost.qos 2>/dev/null || true
 systemctl daemon-reload
-systemctl enable --now kailo-iocost.service
 systemctl restart fstrim.timer
 
 # noatime on the root file system: online remount plus fstab (the entry for / keeps its other options).
