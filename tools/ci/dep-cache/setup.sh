@@ -91,9 +91,15 @@ cmd_up() {
   container_require_data_path "$DEP_CACHE_DATA" >/dev/null || die "缓存数据必须位于项目数据根：$DEP_CACHE_DATA"
   grep -q "\${NPM_CACHE_PORT:-$NPM_CACHE_PORT}" "$here/build-args.sh" && grep -q "\${GO_CACHE_PORT:-$GO_CACHE_PORT}" "$here/build-args.sh" \
     || die "build-args.sh 的缺省端口与 NPM_CACHE_PORT/GO_CACHE_PORT 不一致"
+  local before
+  before=$(sha256sum "$DEP_CACHE_RUNTIME/verdaccio.yaml" 2>/dev/null || true)
   install_runtime
   compose config --quiet
   compose up -d --wait --wait-timeout 120
+  # verdaccio.yaml is a single-file bind mount: a replaced file is only seen after the container is recreated.
+  if [ "$before" != "$(sha256sum "$DEP_CACHE_RUNTIME/verdaccio.yaml")" ]; then
+    compose up -d --force-recreate --wait --wait-timeout 120 npm
+  fi
   cmd_probe
   printf '依赖缓存就绪：npm 127.0.0.1:%s、Go 127.0.0.1:%s，数据 %s，运行副本 %s\n' \
     "$NPM_CACHE_PORT" "$GO_CACHE_PORT" "$DEP_CACHE_DATA" "$DEP_CACHE_RUNTIME"
