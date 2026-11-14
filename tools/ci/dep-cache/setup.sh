@@ -71,15 +71,18 @@ PY
   chmod 0644 "$DEP_CACHE_RUNTIME/verdaccio.yaml.tmp"
   mv "$DEP_CACHE_RUNTIME/verdaccio.yaml.tmp" "$DEP_CACHE_RUNTIME/verdaccio.yaml"
   # crates cache: nginx.conf from the template with the configured port and upstreams.
+  local resolver
+  resolver=$(awk '$1 == "nameserver" { print $2; exit }' /etc/resolv.conf)
+  [ -n "$resolver" ] || die "no nameserver in /etc/resolv.conf for the crates cache"
   python3 -I - "$here/crates-nginx.conf" "$DEP_CACHE_RUNTIME/crates-nginx.conf.tmp" "$CRATES_CACHE_PORT" \
-    "$CRATES_INDEX_UPSTREAM" "$CRATES_DL_UPSTREAM" <<'PY'
+    "$CRATES_INDEX_UPSTREAM" "$CRATES_DL_UPSTREAM" "$resolver" <<'PY'
 import re, sys
-src, dst, port, index, dl = sys.argv[1:6]
+src, dst, port, index, dl, resolver = sys.argv[1:7]
 for url in (index, dl):
     if not re.fullmatch(r"https://[^\s;'\"]+/", url):
         sys.exit("CRATES_INDEX_UPSTREAM / CRATES_DL_UPSTREAM must be https:// URLs ending in /")
 text = open(src).read()
-for key, value in (("@PORT@", port), ("@INDEX_UPSTREAM@", index), ("@DL_UPSTREAM@", dl),
+for key, value in (("@PORT@", port), ("@INDEX_UPSTREAM@", index), ("@DL_UPSTREAM@", dl), ("@RESOLVER@", resolver),
                    ("@INDEX_MAX@", "5g"), ("@FILES_MAX@", "100g")):
     text = text.replace(key, value)
 open(dst, "w").write(text)
