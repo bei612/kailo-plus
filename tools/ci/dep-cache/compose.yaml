@@ -25,6 +25,8 @@ services:
       VERDACCIO_ADDRESS: ${DEP_CACHE_BIND:-10.239.0.1}
       VERDACCIO_PORT: ${NPM_CACHE_PORT:-55002}
       VERDACCIO_PROTOCOL: http
+      # The node has no IPv6 route: try IPv4 first instead of timing out on AAAA records (crashed Verdaccio under load).
+      NODE_OPTIONS: --dns-result-order=ipv4first
     volumes:
       - ./verdaccio.yaml:/verdaccio/conf/config.yaml:ro
       - ${DEP_CACHE_DATA:-/volumes/data/kailo/capacity/dep-cache}/npm:/verdaccio/storage

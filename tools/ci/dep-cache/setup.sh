@@ -66,7 +66,7 @@ text = open(src).read()
 start, end = text.index("uplinks:"), text.index("packages:")
 names = [f"up{i + 1}" for i in range(len(urls))]
 block = "uplinks:\n" + "".join(
-    f"  {n}:\n    url: {u.rstrip('/')}/\n    timeout: 60s\n    max_fails: 5\n    fail_timeout: 2m\n    cache: true\n"
+    f"  {n}:\n    url: {u.rstrip('/')}/\n    timeout: 60s\n    maxage: 30m\n    max_fails: 5\n    fail_timeout: 2m\n    cache: true\n"
     f"    agent_options:\n      keepAlive: true\n      maxSockets: 40\n" for n, u in zip(names, urls))
 text = text[:start] + block + text[end:]
 text = re.sub(r"^(\s+proxy:) npmjs$", lambda m: m.group(1) + " " + " ".join(names), text, flags=re.M)
