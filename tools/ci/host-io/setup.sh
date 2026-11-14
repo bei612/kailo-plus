@@ -3,7 +3,7 @@
 #
 # 背景：系统盘是无 DRAM 的消费级 NVMe（RS512GSSD510，不可更换）。CI 的大量增删让它在每周一次 TRIM 之间耗尽空闲块：
 # 11-14 实测写入 31 MB/s、单次写 328 ms、fsync p50 3.1 s；fstrim（160.9 GiB，75 s）后 18 ms、fsync p50 8.9 ms。
-#   1. fstrim.timer 改为每 6 小时（drop-in），不用 discard 挂载选项（在线 discard 会把延迟摊到每次删除上）。
+#   1. fstrim.timer 改为每小时（drop-in；6 小时不够：11-14 构建 3.3 小时后又积压 109 GiB，写回到 430 ms），不用 discard 挂载选项（在线 discard 会把延迟摊到每次删除上）。
 #   2. 不启用 iocost：11-14 实测 `ctrl=auto` 在这块盘上不给延迟目标（rpct=0）且 vrate 下限 1%，饱和时把全机 IO（含 ssh
 #      登录）压到几乎停止，已立即关闭。IO 隔离改用 kailo-ci.slice 的 io.max 硬上限（kailo-docker/install.sh），
 #      部署不设上限；要用权重须先按本盘实测给出 io.cost.model 与 QoS 再评估。
@@ -32,10 +32,10 @@ if [ "$cmd" = status ]; then status; exit 0; fi
 
 install -d /etc/systemd/system/fstrim.timer.d
 cat > /etc/systemd/system/fstrim.timer.d/kailo.conf <<'UNIT'
-# OPS-03: the DRAM-less system NVMe collapses without TRIM under CI churn; trim every 6 hours (tools/ci/host-io).
+# OPS-03: the DRAM-less system NVMe collapses without TRIM under CI churn; trim hourly (tools/ci/host-io).
 [Timer]
 OnCalendar=
-OnCalendar=*-*-* 00/6:00:00
+OnCalendar=hourly
 RandomizedDelaySec=10min
 AccuracySec=1min
 UNIT

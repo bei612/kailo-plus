@@ -62,3 +62,23 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+  # crates.io sparse-index and crate cache (OPS-03): nginx's proxy_cache in front of a crates.io mirror. The index is
+  # revalidated every 10 minutes and served stale when the upstream fails; crate files are immutable and kept. Its
+  # config.json points Cargo's downloads back at this cache. nginx.conf is rendered by setup.sh (CRATES_* settings).
+  crates:
+    <<: *hardening
+    image: nginx:alpine@sha256:713fc2ebfd92e8217db451477182ee91944b123d2b1ee9fd5a8c6e91ca6c3a11
+    entrypoint: ["nginx", "-g", "daemon off;"]
+    volumes:
+      - ./crates-nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${DEP_CACHE_DATA:-/volumes/data/kailo/capacity/dep-cache}/crates:/var/cache/kailo-crates
+    tmpfs: ["/tmp:size=256m"]
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:${CRATES_CACHE_PORT:-55007}/index/config.json"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

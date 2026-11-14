@@ -11,6 +11,10 @@
 #   DEP_CACHE_DATA            数据根（默认 /volumes/data/kailo/capacity/dep-cache，4T 容量盘；包与模块按内容只写一次、读多）
 #   DEP_CACHE_RUNTIME         运行副本目录：compose.yaml、verdaccio.yaml、.env（默认 /volumes/kailo/ci/dep-cache）
 #   NPM_CACHE_PORT / GO_CACHE_PORT   本机回环端口（默认 55002 / 55003，须与 build-args.sh 的缺省一致）
+#   CRATES_CACHE_PORT         crates.io 缓存端口（默认 55007）
+#   CRATES_INDEX_UPSTREAM     sparse 索引上游（默认 https://rsproxy.cn/index/）
+#   CRATES_DL_UPSTREAM        crate 文件上游前缀，后接 <crate>/<version>.crate（默认 https://lf9-static.rsproxy.cn/obj/rsproxy/crates/，
+#                             即 rsproxy 下载跳转的目标）；失败时回源 static.crates.io。数据在 4T：$DEP_CACHE_DATA/crates
 #   NPM_UPLINKS               Verdaccio 依序回源的 npm 源（空格分隔；默认 https://registry.npmmirror.com/
 #                             https://mirrors.cloud.tencent.com/npm/）。11-14 实测本节点到 registry.npmjs.org 的 TLS 被重置，
 #                             npmmirror 6.9 MB 0.59 s、腾讯 1.1 s。构建链：镜像构建 → Verdaccio → 这些源。
@@ -30,6 +34,9 @@ DEP_CACHE_RUNTIME=${DEP_CACHE_RUNTIME:-/volumes/kailo/ci/dep-cache}
 NPM_CACHE_PORT=${NPM_CACHE_PORT:-55002}
 NPM_UPLINKS=${NPM_UPLINKS:-https://registry.npmmirror.com/ https://mirrors.cloud.tencent.com/npm/}
 GO_CACHE_PORT=${GO_CACHE_PORT:-55003}
+CRATES_CACHE_PORT=${CRATES_CACHE_PORT:-55007}
+CRATES_INDEX_UPSTREAM=${CRATES_INDEX_UPSTREAM:-https://rsproxy.cn/index/}
+CRATES_DL_UPSTREAM=${CRATES_DL_UPSTREAM:-https://lf9-static.rsproxy.cn/obj/rsproxy/crates/}
 
 die() { printf 'dep-cache: %s\n' "$*" >&2; exit 2; }
 
@@ -41,7 +48,7 @@ install_runtime() {
   local stamp file
   mkdir -p "$DEP_CACHE_RUNTIME"
   stamp=$(date -u +%Y%m%dT%H%M%SZ)
-  for file in compose.yaml verdaccio.yaml .env; do
+  for file in compose.yaml verdaccio.yaml crates-nginx.conf .env; do
     [ -f "$DEP_CACHE_RUNTIME/$file" ] && cp -a "$DEP_CACHE_RUNTIME/$file" "$DEP_CACHE_RUNTIME/$file.bak-$stamp"
   done
   install -m 0644 "$here/compose.yaml" "$DEP_CACHE_RUNTIME/"
@@ -63,8 +70,24 @@ open(dst, "w").write(text)
 PY
   chmod 0644 "$DEP_CACHE_RUNTIME/verdaccio.yaml.tmp"
   mv "$DEP_CACHE_RUNTIME/verdaccio.yaml.tmp" "$DEP_CACHE_RUNTIME/verdaccio.yaml"
-  printf 'DEP_CACHE_DATA=%s\nDEP_CACHE_USER=%s\nNPM_CACHE_PORT=%s\nGO_CACHE_PORT=%s\n' \
-    "$DEP_CACHE_DATA" "$(stat -c %u:%g "$DEP_CACHE_DATA")" "$NPM_CACHE_PORT" "$GO_CACHE_PORT" \
+  # crates cache: nginx.conf from the template with the configured port and upstreams.
+  python3 -I - "$here/crates-nginx.conf" "$DEP_CACHE_RUNTIME/crates-nginx.conf.tmp" "$CRATES_CACHE_PORT" \
+    "$CRATES_INDEX_UPSTREAM" "$CRATES_DL_UPSTREAM" <<'PY'
+import re, sys
+src, dst, port, index, dl = sys.argv[1:6]
+for url in (index, dl):
+    if not re.fullmatch(r"https://[^\s;'\"]+/", url):
+        sys.exit("CRATES_INDEX_UPSTREAM / CRATES_DL_UPSTREAM must be https:// URLs ending in /")
+text = open(src).read()
+for key, value in (("@PORT@", port), ("@INDEX_UPSTREAM@", index), ("@DL_UPSTREAM@", dl),
+                   ("@INDEX_MAX@", "5g"), ("@FILES_MAX@", "100g")):
+    text = text.replace(key, value)
+open(dst, "w").write(text)
+PY
+  chmod 0644 "$DEP_CACHE_RUNTIME/crates-nginx.conf.tmp"
+  mv "$DEP_CACHE_RUNTIME/crates-nginx.conf.tmp" "$DEP_CACHE_RUNTIME/crates-nginx.conf"
+  printf 'DEP_CACHE_DATA=%s\nDEP_CACHE_USER=%s\nNPM_CACHE_PORT=%s\nGO_CACHE_PORT=%s\nCRATES_CACHE_PORT=%s\n' \
+    "$DEP_CACHE_DATA" "$(stat -c %u:%g "$DEP_CACHE_DATA")" "$NPM_CACHE_PORT" "$GO_CACHE_PORT" "$CRATES_CACHE_PORT" \
     > "$DEP_CACHE_RUNTIME/.env.tmp"
   chmod 0600 "$DEP_CACHE_RUNTIME/.env.tmp"
   mv "$DEP_CACHE_RUNTIME/.env.tmp" "$DEP_CACHE_RUNTIME/.env"
@@ -74,6 +97,10 @@ cmd_probe() {
   local npm="http://127.0.0.1:$NPM_CACHE_PORT" go="http://127.0.0.1:$GO_CACHE_PORT"
   curl -fsS --noproxy '*' -m 10 -o /dev/null "$npm/-/ping" || die "npm 缓存未在 $npm 响应"
   curl -fsS --noproxy '*' -m 10 -o /dev/null "$go/healthz" || die "Go 缓存未在 $go 响应"
+  local crates="http://127.0.0.1:$CRATES_CACHE_PORT"
+  curl -fsS --noproxy '*' -m 60 "$crates/index/se/rd/serde" | grep -q '"vers":"1.0.200"' || die "crates 缓存未返回 serde 的索引"
+  curl -fsS --noproxy '*' -m 120 -o /dev/null "$crates/crates/serde/1.0.200.crate" || die "crates 缓存未返回 serde 1.0.200"
+  echo "crates 缓存：serde 索引与 1.0.200 文件可取"
   # 经缓存实际取内容（未命中即回源一次）：pnpm 的 packument 必须带 npm 原站的签名，Corepack 校验依赖它
   curl -fsS --noproxy '*' -m 180 "$npm/pnpm" | python3 -I -c '
 import json, sys
@@ -91,18 +118,22 @@ cmd_up() {
   [ -f "$apps/tools/container-safety.sh" ] || die "找不到 tools/container-safety.sh"
   # shellcheck source=../../container-safety.sh
   . "$apps/tools/container-safety.sh"
-  mkdir -p "$DEP_CACHE_DATA/npm" "$DEP_CACHE_DATA/go"
+  mkdir -p "$DEP_CACHE_DATA/npm" "$DEP_CACHE_DATA/go" "$DEP_CACHE_DATA/crates"
   container_require_data_path "$DEP_CACHE_DATA" >/dev/null || die "缓存数据必须位于项目数据根：$DEP_CACHE_DATA"
   grep -q "\${NPM_CACHE_PORT:-$NPM_CACHE_PORT}" "$here/build-args.sh" && grep -q "\${GO_CACHE_PORT:-$GO_CACHE_PORT}" "$here/build-args.sh" \
     || die "build-args.sh 的缺省端口与 NPM_CACHE_PORT/GO_CACHE_PORT 不一致"
-  local before
+  local before crates_before
   before=$(sha256sum "$DEP_CACHE_RUNTIME/verdaccio.yaml" 2>/dev/null || true)
+  crates_before=$(sha256sum "$DEP_CACHE_RUNTIME/crates-nginx.conf" 2>/dev/null || true)
   install_runtime
   compose config --quiet
   compose up -d --wait --wait-timeout 120
   # verdaccio.yaml is a single-file bind mount: a replaced file is only seen after the container is recreated.
   if [ "$before" != "$(sha256sum "$DEP_CACHE_RUNTIME/verdaccio.yaml")" ]; then
     compose up -d --force-recreate --wait --wait-timeout 120 npm
+  fi
+  if [ "$crates_before" != "$(sha256sum "$DEP_CACHE_RUNTIME/crates-nginx.conf")" ]; then
+    compose up -d --force-recreate --wait --wait-timeout 120 crates
   fi
   cmd_probe
   printf '依赖缓存就绪：npm 127.0.0.1:%s、Go 127.0.0.1:%s，数据 %s，运行副本 %s\n' \
