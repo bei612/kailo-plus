@@ -108,7 +108,7 @@
         "CHECK_TARGET_ROOT": "/var/lib/kailo-ci/check-target/kailo-macro",
         "CHECK_NODE_MODULES_ROOT": "/var/lib/kailo-ci/node-modules/kailo-macro"
       },
-      "concurrency": 3,
+      "concurrency": 4,
       "min_job_free_bytes": 25769803776
     }
   }

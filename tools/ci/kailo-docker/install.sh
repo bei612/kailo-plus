@@ -5,7 +5,7 @@
 #   - 共用宿主 containerd，但用独立 namespace（kailo / kailo-plugins），互不可见
 #   - iptables=false：不改默认 dockerd 的 DOCKER 链；出网 NAT 由本脚本装的 nft 表 kailo_nat 负责，端口发布走 userland-proxy
 #   - 经 WG 以 mTLS 监听 tcp://<wg 地址>:2376
-#   - dockerd 与它的全部容器（daemon.json cgroup-parent）运行在 kailo.slice（硬内存上限，缺省 36G）；
+#   - dockerd 与它的全部容器（daemon.json cgroup-parent）运行在 kailo.slice（硬内存上限，缺省 48G）；
 #     kailo-ci.slice（缺省 24G）是其子 slice，装 CI worker 进程，检查容器显式 CHECK_CGROUP_PARENT 时也可进入
 # 幂等：重复执行结果不变；只写 Kailo 自己的路径，不碰 /etc/docker、docker.service、默认 docker0/网络。
 # 用法（CI 节点 root）：install.sh <tls 目录> [wg 地址...]
@@ -13,10 +13,18 @@
 set -euo pipefail
 TLS=${1:?tls dir}; shift
 ADDRS=("$@"); [ ${#ADDRS[@]} -gt 0 ] || ADDRS=(10.203.194.2)
-MEM=${KAILO_SLICE_MEMORY_MAX:-36G}
+# 48G（A-03，2026-11-14，主 Agent 批准）：62G 节点上留 14G 给系统、IntelligenceStation（实测峰值约 2.7G）与 slice 外页缓存；
+# 36G 时 slice 内 anon 仅约 11G、文件页 21G，memory.events max 达 186 万次，部署容器的文件页反复回收（sync-service 曾因此被 OOM）。
+MEM=${KAILO_SLICE_MEMORY_MAX:-48G}
 CI_MEM=${KAILO_CI_SLICE_MEMORY_MAX:-24G}
-# default builder 的构建缓存上限（与 tools/ci/retention/policy.json 的 default 一致）；镜像层与该缓存在共用 containerd 的 NVMe 上
-KEEP=${KAILO_BUILDER_KEEP_STORAGE:-60GB}
+# default builder 的 GC 策略（A-03，2026-11-14，主 Agent 批准；kailo-builder 同策略见 registry-mirror/buildkitd.toml）。
+# 只写 defaultKeepStorage 时 BuildKit 第一条默认规则把构建上下文与缓存挂载合计压到约 8.3GiB，一次构建上下文就挤掉
+# apt/bun/cargo 缓存挂载。这里分开限额：上下文 20GB/48h，缓存挂载 80GB/720h，全部记录保留 60GB、上限 120GB
+# （NVMe 至少留约 100G 给检查槽位、sccache、data-root 与部署数据库）。retention/policy.json 的 default 上限须一致。
+GC_CONTEXTS=${KAILO_BUILDER_GC_CONTEXTS:-20GB}
+GC_CACHEMOUNTS=${KAILO_BUILDER_GC_CACHEMOUNTS:-80GB}
+GC_RESERVED=${KAILO_BUILDER_GC_RESERVED:-60GB}
+GC_MAX=${KAILO_BUILDER_GC_MAX:-120GB}
 # 出网：节点不设任何代理，dockerd 直连（路由器 OpenWrt 透明代理负责，OPS-02）。
 # Docker Hub 拉取先经本机拉取缓存（tools/ci/registry-mirror，数据在 4T 容量盘）；缓存不可用时 dockerd 自动回退原站。
 # 设为空串则不写 registry-mirrors。
@@ -55,7 +63,12 @@ cat > $ETC/daemon.json.new <<JSON
   "log-driver": "json-file",
   "log-opts": {"max-size": "50m", "max-file": "5"},$mirrors
   "cgroup-parent": "kailo.slice",
-  "builder": {"gc": {"enabled": true, "defaultKeepStorage": "$KEEP"}}
+  "builder": {"gc": {"enabled": true, "policy": [
+    {"filter": ["type==source.local", "type==source.git.checkout"], "keepDuration": "48h", "maxUsedSpace": "$GC_CONTEXTS"},
+    {"filter": ["type==exec.cachemount"], "keepDuration": "720h", "maxUsedSpace": "$GC_CACHEMOUNTS"},
+    {"keepDuration": "1440h", "reservedSpace": "$GC_RESERVED", "maxUsedSpace": "$GC_MAX"},
+    {"all": true, "reservedSpace": "$GC_RESERVED", "maxUsedSpace": "$GC_MAX"}
+  ]}}
 }
 JSON
 mv $ETC/daemon.json.new $ETC/daemon.json
