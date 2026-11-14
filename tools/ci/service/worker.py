@@ -154,6 +154,11 @@ class Worker:
                        if n.endswith(".json"))
         return os.path.join(lane_dir, names[0][1]) if names else None
 
+    def paused(self):
+        """True while <queue>/paused exists (all lanes): e.g. before a kailo-docker restart, let running jobs finish
+        without starting new ones."""
+        return os.path.exists(os.path.join(self.q.root, "paused"))
+
     def code_changed(self):
         """True once install.sh has replaced the service code this process started with."""
         return any(os.path.getmtime(os.path.join(HERE, name)) > STARTED for name in ("worker.py", "kci.py")
@@ -165,6 +170,11 @@ class Worker:
             path = self.next_request()
             if not path:
                 return
+            if self.paused():
+                # Operator pause (<queue>/paused): take no new job, stay active so the path unit does not respin,
+                # and resume as soon as the file is removed. Running jobs and submissions are unaffected.
+                time.sleep(5)
+                continue
             if self.code_changed():
                 # A lane that never drains would otherwise run the old code forever; restart between jobs.
                 os.execv(sys.executable, [sys.executable, os.path.abspath(__file__)])
