@@ -1,0 +1,14 @@
+# OPS-03 存储分层月报；由 tools/ci/retention/setup.sh install 安装，改动先改仓库。只读，结果在 policy.json tiers.report_dir。
+[Unit]
+Description=Kailo CI node storage tier report (NVMe / 4T HDD / tmpfs against their caps)
+After=kailo-docker.service local-fs.target
+RequiresMountsFor=/var/lib/kailo-ci /volumes/data/kailo/capacity
+
+[Service]
+Type=oneshot
+Environment=DOCKER_HOST=unix:///run/kailo-docker/docker.sock
+ExecStart=/usr/bin/python3 -I -B /volumes/kailo/ci/hot-retention/tier-report.py --policy /volumes/kailo/ci/hot-retention/policy.json
+Nice=19
+IOSchedulingClass=idle
+MemoryMax=256M
+TimeoutStartSec=2h

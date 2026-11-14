@@ -1,0 +1,11 @@
+# OPS-03 存储分层月报：每月 1 日；错过的开机后补跑。
+[Unit]
+Description=Monthly Kailo CI storage tier report
+
+[Timer]
+OnCalendar=*-*-01 03:30:00
+RandomizedDelaySec=600
+Persistent=true
+
+[Install]
+WantedBy=timers.target

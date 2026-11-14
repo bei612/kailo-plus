@@ -67,5 +67,127 @@
         "keep_storage": "120GB"
       }
     ]
+  },
+  "tiers": {
+    "report_dir": "/volumes/data/kailo/capacity/logs/tier-report",
+    "undeclared_bytes": "5G",
+    "build_cache_cap": "120G",
+    "tmpfs_groups": [
+      "/sys/fs/cgroup/kailo.slice",
+      "/sys/fs/cgroup/kailo.slice/kailo-ci.slice"
+    ],
+    "disks": {
+      "nvme": {
+        "mount": "/",
+        "min_free_pct": 20,
+        "watch_roots": [
+          "/var/lib/kailo-ci",
+          "/volumes/kailo"
+        ],
+        "paths": [
+          {
+            "path": "/var/lib/kailo-docker/volumes",
+            "role": "deployment stateful volumes"
+          },
+          {
+            "path": "/var/lib/kailo-ci/check-target/kailo-macro",
+            "cap": "60G",
+            "role": "cargo target slots 3x20G"
+          },
+          {
+            "path": "/var/lib/kailo-ci/sccache/kailo-macro",
+            "cap": "60G",
+            "role": "sccache"
+          },
+          {
+            "path": "/var/lib/kailo-ci/node-modules/kailo-macro",
+            "cap": "20G",
+            "role": "node_modules snapshots"
+          },
+          {
+            "path": "/var/lib/kailo-ci/bun-cache",
+            "cap": "20G",
+            "role": "bun cache"
+          },
+          {
+            "path": "/var/lib/kailo-ci/tmp",
+            "cap": "20G",
+            "role": "CI scratch"
+          },
+          {
+            "path": "/var/lib/kailo-ci/queue",
+            "cap": "2G",
+            "role": "CI queue and job logs"
+          },
+          {
+            "path": "/volumes/kailo/ci",
+            "cap": "10G",
+            "role": "CI service, sources"
+          },
+          {
+            "path": "/volumes/kailo/deploy",
+            "cap": "5G",
+            "role": "deployment state and scripts"
+          },
+          {
+            "path": "/volumes/kailo/kailo-macro",
+            "role": "deployment checkout"
+          },
+          {
+            "path": "/volumes/kailo/acceptance",
+            "cap": "2G",
+            "role": "acceptance work dirs (archive to the HDD)"
+          }
+        ]
+      },
+      "hdd": {
+        "mount": "/volumes/data",
+        "min_free_pct": 10,
+        "paths": [
+          {
+            "path": "/volumes/data/kailo/capacity/ci/registry",
+            "role": "local registry"
+          },
+          {
+            "path": "/volumes/data/kailo/capacity/registry-mirror",
+            "cap": "500G",
+            "role": "pull-through mirrors"
+          },
+          {
+            "path": "/volumes/data/kailo/capacity/dep-cache",
+            "cap": "200G",
+            "role": "Verdaccio, Athens"
+          },
+          {
+            "path": "/volumes/data/kailo/capacity/ci/check-cache",
+            "cap": "200G",
+            "role": "cargo registry/git, Go modules"
+          },
+          {
+            "path": "/volumes/data/kailo/capacity/ci/buildkit",
+            "cap": "130G",
+            "role": "kailo-builder state"
+          },
+          {
+            "path": "/volumes/data/kailo/capacity/ci/artifacts",
+            "cap": "200G",
+            "role": "CI artifacts, gen patches"
+          },
+          {
+            "path": "/volumes/data/kailo/capacity/deploy",
+            "role": "deployment MinIO objects"
+          },
+          {
+            "path": "/volumes/data/kailo/capacity/backup",
+            "role": "backups"
+          },
+          {
+            "path": "/volumes/data/kailo/capacity/logs",
+            "cap": "100G",
+            "role": "log archive, reports"
+          }
+        ]
+      }
+    }
   }
 }

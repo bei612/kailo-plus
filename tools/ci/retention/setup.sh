@@ -27,21 +27,22 @@ cmd_install() {
   check_sources
   stamp=$(date -u +%Y%m%dT%H%M%SZ)
   mkdir -p "$RUNTIME"
-  for file in hot-retention.py policy.json; do
+  for file in hot-retention.py tier-report.py policy.json; do
     if [ -f "$RUNTIME/$file" ] && ! cmp -s "$here/$file" "$RUNTIME/$file"; then
       cp -a "$RUNTIME/$file" "$RUNTIME/$file.bak-$stamp"
     fi
     install -m 0644 "$here/$file" "$RUNTIME/$file.tmp" && mv -f "$RUNTIME/$file.tmp" "$RUNTIME/$file"
   done
-  for file in "$UNIT.service" "$UNIT.timer"; do
+  for file in "$UNIT.service" "$UNIT.timer" kailo-ci-tier-report.service kailo-ci-tier-report.timer; do
     if [ -f "$UNIT_DIR/$file" ] && ! cmp -s "$here/$file" "$UNIT_DIR/$file"; then
       sudo -n cp -a "$UNIT_DIR/$file" "$RUNTIME/$file.bak-$stamp"
     fi
     sudo -n install -m 0644 -o root -g root "$here/$file" "$UNIT_DIR/$file"
   done
-  sudo -n systemd-analyze verify "$UNIT_DIR/$UNIT.service" "$UNIT_DIR/$UNIT.timer"
+  sudo -n systemd-analyze verify "$UNIT_DIR/$UNIT.service" "$UNIT_DIR/$UNIT.timer" \
+    "$UNIT_DIR/kailo-ci-tier-report.service" "$UNIT_DIR/kailo-ci-tier-report.timer"
   sudo -n systemctl daemon-reload
-  sudo -n systemctl enable --now "$UNIT.timer"
+  sudo -n systemctl enable --now "$UNIT.timer" kailo-ci-tier-report.timer
   cmd_status
 }
 
@@ -51,7 +52,7 @@ cmd_run() {
 }
 
 cmd_status() {
-  for file in hot-retention.py policy.json; do
+  for file in hot-retention.py tier-report.py policy.json; do
     if cmp -s "$here/$file" "$RUNTIME/$file"; then echo "运行副本 $file 与仓库一致"; else echo "运行副本 $file 与仓库不同或缺失"; fi
   done
   printf 'timer：%s / %s\n' "$(systemctl is-enabled "$UNIT.timer" 2>&1)" "$(systemctl is-active "$UNIT.timer" 2>&1)"
@@ -60,8 +61,9 @@ cmd_status() {
 }
 
 cmd_uninstall() {
-  sudo -n systemctl disable --now "$UNIT.timer" || true
-  sudo -n rm -f "$UNIT_DIR/$UNIT.service" "$UNIT_DIR/$UNIT.timer"
+  sudo -n systemctl disable --now "$UNIT.timer" kailo-ci-tier-report.timer || true
+  sudo -n rm -f "$UNIT_DIR/$UNIT.service" "$UNIT_DIR/$UNIT.timer" \
+    "$UNIT_DIR/kailo-ci-tier-report.service" "$UNIT_DIR/kailo-ci-tier-report.timer"
   sudo -n systemctl daemon-reload
 }
 
