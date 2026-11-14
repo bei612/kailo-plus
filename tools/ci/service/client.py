@@ -44,8 +44,11 @@ def status_changes(path):
         libc = ctypes.CDLL(None, use_errno=True)
         fd = libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC)
         # IN_CLOSE_WRITE | IN_MOVED_TO: status.json is replaced by rename (Queue.write)
-        if fd < 0 or libc.inotify_add_watch(fd, os.fsencode(path), 0x00000008 | 0x00000080) < 0:
-            raise OSError(ctypes.get_errno(), "inotify")
+        if fd < 0:
+            raise OSError(ctypes.get_errno(), "inotify_init1")
+        if libc.inotify_add_watch(fd, os.fsencode(path), 0x00000008 | 0x00000080) < 0:
+            os.close(fd)
+            raise OSError(ctypes.get_errno(), "inotify_add_watch")
     except (OSError, AttributeError):
         return lambda seconds: time.sleep(min(seconds, 3))
 
@@ -88,7 +91,7 @@ def cmd_list(q, a):
     for job, s in sorted(q.index().items()):
         if s.get("archived") and not a.all:
             continue
-        s = dict(s)
+        s = dict(q.fresh(job, s))
         s.setdefault("repo", DEFAULT_REPO)
         if a.repo and s["repo"] != a.repo:
             continue

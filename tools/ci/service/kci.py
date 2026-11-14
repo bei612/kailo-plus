@@ -106,26 +106,53 @@ class Queue:
             return json.load(source)
 
     def write(self, job, status):
+        with self._status_lock():
+            self._write_locked(job, status)
+
+    def update(self, job, **fields):
+        # Read, change and write under one lock: the worker and the client (cancel) update the same job.
+        with self._status_lock():
+            status = self.read(job)
+            status.update(fields)
+            self._write_locked(job, status)
+        return status
+
+    def _status_lock(self):
+        handle = open(os.path.join(self.root, "index.lock"), "a+")
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        return handle
+
+    def _write_locked(self, job, status):
         path = os.path.join(self.job_dir(job), "status.json")
-        # A private temporary name: the worker and the client (cancel) may write the same job at once, and a shared
-        # "status.json.tmp" interleaved their bytes (a status.json with a trailing "}", 2026-11-14).
+        # A private temporary name: concurrent writers once interleaved a shared "status.json.tmp" (a status.json with
+        # a trailing "}", 2026-11-14). The lock keeps status.json and the index in the same order of writes.
         tmp = f"{path}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp"
         with open(tmp, "w", encoding="utf-8") as sink:
             json.dump(status, sink, ensure_ascii=False, indent=1, sort_keys=True)
         os.replace(tmp, path)
-        self.index_put(job, status)
+        try:
+            index = self._index_load()
+            if index is None:
+                index = self._index_rebuild()
+            index[job] = self._index_entry(status)
+            self._index_store(index)
+        except OSError:
+            pass  # the index is a cache; readers fall back to the job directories
 
     # -- status index ----------------------------------------------------------------------------------------
-    # <queue>/index.json holds every job's latest status, updated by write(). `list`, `resolve` and duplicate
-    # detection read this one file instead of every jobs/<id>/status.json (hundreds of files per call, OPS-03).
-    # It is a cache: a missing or unreadable index is rebuilt from the job directories.
+    # <queue>/index.json holds a summary of every job's latest status (the fields list, resolve and duplicate detection
+    # use), updated under the status lock by every write. `list`, `resolve` and `submit` read this one file instead of
+    # every jobs/<id>/status.json (hundreds of files per call, OPS-03); entries they act on as active are re-read from
+    # status.json, so an index left behind by a writer that predates it cannot mislead them. A missing or unreadable
+    # index is rebuilt from the job directories.
+    INDEX_FIELDS = ("job", "repo", "commit", "stage", "targets", "lane", "state", "started_at", "reason", "archived")
+
+    @classmethod
+    def _index_entry(cls, status):
+        return {k: status.get(k) for k in cls.INDEX_FIELDS}
+
     def _index_path(self):
         return os.path.join(self.root, "index.json")
-
-    def _index_lock(self):
-        handle = open(os.path.join(self.root, "index.lock"), "a+")
-        fcntl.flock(handle, fcntl.LOCK_EX)
-        return handle
 
     def _index_load(self):
         try:
@@ -149,36 +176,31 @@ class Queue:
                     continue
                 try:
                     with open(os.path.join(base, job, "status.json"), encoding="utf-8") as source:
-                        index[job] = json.load(source)
+                        index[job] = self._index_entry(json.load(source))
                 except (OSError, ValueError):
                     continue
         return index
 
-    def index_put(self, job, status):
-        try:
-            with self._index_lock():
-                index = self._index_load()
-                if index is None:
-                    index = self._index_rebuild()
-                index[job] = status
-                self._index_store(index)
-        except OSError:
-            pass  # the index is a cache; readers fall back to the job directories
-
     def index(self):
-        """{job: status} for every job (active and archived)."""
+        """{job: status summary} for every job (active and archived)."""
         index = self._index_load()
         if index is None:
-            with self._index_lock():
-                index = self._index_load() or self._index_rebuild()
-                self._index_store(index)
+            try:
+                with self._status_lock():
+                    index = self._index_load() or self._index_rebuild()
+                    self._index_store(index)
+            except OSError:
+                index = self._index_rebuild()
         return index
 
-    def update(self, job, **fields):
-        status = self.read(job)
-        status.update(fields)
-        self.write(job, status)
-        return status
+    def fresh(self, job, entry):
+        """The index entry, re-read from status.json when the index calls the job active or unknown."""
+        if entry.get("state") in ACTIVE or entry.get("state") == "UNKNOWN":
+            try:
+                return self._index_entry(self.read(job))
+            except (OSError, ValueError, CIError):
+                return entry
+        return entry
 
     def all_ids(self, archived=False):
         ids = sorted(os.listdir(self.jobs))
@@ -228,6 +250,8 @@ class Queue:
                 raise CIError(f"check-step 需要且只能有一个步骤：{', '.join(rc['check_steps'])}")
         with self.lock():
             for job, status in self.index().items():
+                if status.get("state") in ACTIVE:
+                    status = self.fresh(job, status)
                 if (status.get("state") in ACTIVE and status.get("commit") == commit
                         and status.get("repo", DEFAULT_REPO) == repo
                         and status.get("stage") == stage and status.get("targets") == targets):

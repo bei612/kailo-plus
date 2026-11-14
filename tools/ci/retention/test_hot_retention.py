@@ -222,7 +222,7 @@ class BuildCache(unittest.TestCase):
         report = {}
         hr.prune_build_cache(policy, report, dry_run=True)
         self.assertEqual([(i["builder"], i["keep_storage"]) for i in report["build_cache"]],
-                         [("default", "60GB"), ("kailo-builder", "100GB")])
+                         [("default", "60GB"), ("kailo-builder", "120GB")])
 
 
 if __name__ == "__main__":

@@ -10,7 +10,6 @@
 #   3. 根文件系统 noatime（在线 remount，并写入 fstab；回退：去掉 noatime 再 remount）。
 set -euo pipefail
 cmd=${1:-apply}
-root_src=$(findmnt -no SOURCE /)
 disk=/dev/$(lsblk -no PKNAME "$(findmnt -no SOURCE -T /var/lib/kailo-docker)" | head -n 1)
 [ -b "$disk" ] || { echo "cannot resolve the disk of /var/lib/kailo-docker" >&2; exit 1; }
 majmin=$(lsblk -dno MAJ:MIN "$disk" | tr -d ' ')
@@ -22,8 +21,9 @@ status() {
   echo "root mount: $(findmnt -no OPTIONS /)"
   for s in kailo-prod.slice kailo-ci.slice; do
     p=/sys/fs/cgroup/kailo.slice/$s
-    [ -d "$p" ] && echo "$s io.weight=$(tr '\n' ' ' <"$p/io.weight") io.max=$(tr '\n' ' ' <"$p/io.max")"
+    if [ -d "$p" ]; then echo "$s io.weight=$(tr '\n' ' ' <"$p/io.weight") io.max=$(tr '\n' ' ' <"$p/io.max")"; fi
   done
+  return 0
 }
 
 if [ "$cmd" = status ]; then status; exit 0; fi
@@ -49,11 +49,12 @@ echo "$majmin enable=0" > /sys/fs/cgroup/io.cost.qos 2>/dev/null || true
 systemctl daemon-reload
 systemctl restart fstrim.timer
 
-# noatime on the root file system: online remount plus fstab (the entry for / keeps its other options).
-if ! findmnt -no OPTIONS / | tr ',' '\n' | grep -qx noatime; then
+# noatime on the root file system: fstab (checked on its own, so a manual remount does not hide a missing entry) and
+# the live mount.
+if ! awk '$2 == "/" && $1 !~ /^#/ { exit ($4 ~ /(^|,)noatime(,|$)/) ? 0 : 1 }' /etc/fstab; then
   cp -p /etc/fstab "/etc/fstab.bak-$(date +%Y%m%d%H%M%S)-host-io"
   awk '$2 == "/" && $1 !~ /^#/ && $4 !~ /(^|,)noatime(,|$)/ { $4 = $4 ",noatime" } { print }' /etc/fstab >/etc/fstab.new
   mv /etc/fstab.new /etc/fstab
-  mount -o remount,noatime /
 fi
+findmnt -no OPTIONS / | tr ',' '\n' | grep -qx noatime || mount -o remount,noatime /
 status
