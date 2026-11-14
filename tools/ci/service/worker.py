@@ -220,8 +220,13 @@ class Worker:
             headroom = cgroup_headroom(group) if isinstance(group, str) else None
             if headroom is not None:
                 free = min(free, headroom)
-        disk = shutil.disk_usage(self.tmp_root).free
+        usage = shutil.disk_usage(self.tmp_root)
+        disk = usage.free
         min_disk = int(self.rc.get("min_job_free_bytes", self.cfg.get("min_job_free_bytes", 32 * GIB)))
+        # The system NVMe also carries the deployment and degrades badly when nearly full (DRAM-less, OPS-03): no new
+        # job below min_free_percent of the disk (default 15), whatever the absolute figure says.
+        min_pct = float(admission.get("min_free_percent", 15))
+        min_disk = max(min_disk, int(usage.total * min_pct / 100))
         if free < need or disk < min_disk:
             self.q.update(job, waiting_for=dict(memory_required=need, memory_available=free,
                                                 disk_required=min_disk, disk_available=disk))

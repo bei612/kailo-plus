@@ -79,7 +79,7 @@
     "disks": {
       "nvme": {
         "mount": "/",
-        "min_free_pct": 20,
+        "min_free_pct": 15,
         "watch_roots": [
           "/var/lib/kailo-ci",
           "/volumes/kailo"
@@ -90,14 +90,19 @@
             "role": "deployment stateful volumes"
           },
           {
+            "path": "/var/lib/kailo-ci/ci-cache.xfs",
+            "cap": "130G",
+            "role": "loop XFS image holding the kailo-macro CI targets and sccache (own log; sparse, trimmed hourly)"
+          },
+          {
             "path": "/var/lib/kailo-ci/check-target/kailo-macro",
             "cap": "60G",
-            "role": "cargo target slots 3x20G"
+            "role": "cargo target slots 3x20G (inside ci-cache.xfs since 2026-11-14)"
           },
           {
             "path": "/var/lib/kailo-ci/sccache/kailo-macro",
             "cap": "60G",
-            "role": "sccache"
+            "role": "sccache (inside ci-cache.xfs since 2026-11-14)"
           },
           {
             "path": "/var/lib/kailo-ci/node-modules/kailo-macro",

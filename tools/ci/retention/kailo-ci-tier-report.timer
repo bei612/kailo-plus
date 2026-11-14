@@ -1,9 +1,9 @@
-# OPS-03 存储分层月报：每月 1 日；错过的开机后补跑。
+# OPS-03 存储分层报告：每天一次（11-14 NVMe 一天内从 79% 涨到 91%，月报太晚）；错过的开机后补跑。
 [Unit]
-Description=Monthly Kailo CI storage tier report
+Description=Daily Kailo CI storage tier report
 
 [Timer]
-OnCalendar=*-*-01 03:30:00
+OnCalendar=*-*-* 03:30:00
 RandomizedDelaySec=600
 Persistent=true
 
