@@ -11,6 +11,9 @@
 #   DEP_CACHE_DATA            数据根（默认 /volumes/data/kailo/capacity/dep-cache，4T 容量盘；包与模块按内容只写一次、读多）
 #   DEP_CACHE_RUNTIME         运行副本目录：compose.yaml、verdaccio.yaml、.env（默认 /volumes/kailo/ci/dep-cache）
 #   NPM_CACHE_PORT / GO_CACHE_PORT   本机回环端口（默认 55002 / 55003，须与 build-args.sh 的缺省一致）
+#   NPM_UPLINKS               Verdaccio 依序回源的 npm 源（空格分隔；默认 https://registry.npmmirror.com/
+#                             https://mirrors.cloud.tencent.com/npm/）。11-14 实测本节点到 registry.npmjs.org 的 TLS 被重置，
+#                             npmmirror 6.9 MB 0.59 s、腾讯 1.1 s。构建链：镜像构建 → Verdaccio → 这些源。
 #   DOCKER_CONFIG             Docker 客户端配置（默认 /var/lib/kailo-ci/docker-config）
 # 出网：缓存直连上游（路由器 OpenWrt 透明代理负责）；本脚本不读取、不写入任何代理设置（OPS-02）。
 set -euo pipefail
@@ -21,6 +24,7 @@ export DOCKER_CONFIG=${DOCKER_CONFIG:-/var/lib/kailo-ci/docker-config}
 DEP_CACHE_DATA=${DEP_CACHE_DATA:-/volumes/data/kailo/capacity/dep-cache}
 DEP_CACHE_RUNTIME=${DEP_CACHE_RUNTIME:-/volumes/kailo/ci/dep-cache}
 NPM_CACHE_PORT=${NPM_CACHE_PORT:-55002}
+NPM_UPLINKS=${NPM_UPLINKS:-https://registry.npmmirror.com/ https://mirrors.cloud.tencent.com/npm/}
 GO_CACHE_PORT=${GO_CACHE_PORT:-55003}
 
 die() { printf 'dep-cache: %s\n' "$*" >&2; exit 2; }
@@ -36,7 +40,25 @@ install_runtime() {
   for file in compose.yaml verdaccio.yaml .env; do
     [ -f "$DEP_CACHE_RUNTIME/$file" ] && cp -a "$DEP_CACHE_RUNTIME/$file" "$DEP_CACHE_RUNTIME/$file.bak-$stamp"
   done
-  install -m 0644 "$here/compose.yaml" "$here/verdaccio.yaml" "$DEP_CACHE_RUNTIME/"
+  install -m 0644 "$here/compose.yaml" "$DEP_CACHE_RUNTIME/"
+  # Verdaccio's uplinks from NPM_UPLINKS, tried in order: each package rule proxies through all of them.
+  python3 -I - "$here/verdaccio.yaml" "$DEP_CACHE_RUNTIME/verdaccio.yaml.tmp" $NPM_UPLINKS <<'PY'
+import re, sys
+src, dst, urls = sys.argv[1], sys.argv[2], sys.argv[3:]
+if not urls or any(not re.fullmatch(r"https://[^\s]+", u) for u in urls):
+    sys.exit("NPM_UPLINKS must list https:// registry URLs")
+text = open(src).read()
+start, end = text.index("uplinks:"), text.index("packages:")
+names = [f"up{i + 1}" for i in range(len(urls))]
+block = "uplinks:\n" + "".join(
+    f"  {n}:\n    url: {u.rstrip('/')}/\n    timeout: 60s\n    max_fails: 5\n    fail_timeout: 2m\n    cache: true\n"
+    f"    agent_options:\n      keepAlive: true\n      maxSockets: 40\n" for n, u in zip(names, urls))
+text = text[:start] + block + text[end:]
+text = re.sub(r"^(\s+proxy:) npmjs$", lambda m: m.group(1) + " " + " ".join(names), text, flags=re.M)
+open(dst, "w").write(text)
+PY
+  chmod 0644 "$DEP_CACHE_RUNTIME/verdaccio.yaml.tmp"
+  mv "$DEP_CACHE_RUNTIME/verdaccio.yaml.tmp" "$DEP_CACHE_RUNTIME/verdaccio.yaml"
   printf 'DEP_CACHE_DATA=%s\nDEP_CACHE_USER=%s\nNPM_CACHE_PORT=%s\nGO_CACHE_PORT=%s\n' \
     "$DEP_CACHE_DATA" "$(stat -c %u:%g "$DEP_CACHE_DATA")" "$NPM_CACHE_PORT" "$GO_CACHE_PORT" \
     > "$DEP_CACHE_RUNTIME/.env.tmp"

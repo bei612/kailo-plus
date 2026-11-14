@@ -1,7 +1,9 @@
-# Kailo CI 的 npm 拉取缓存（Verdaccio 代理模式）。只缓存 registry.npmjs.org 的公开包；不接受发布、不保存凭据。
+# Kailo CI 的 npm 拉取缓存（Verdaccio 代理模式）。只缓存公开包；不接受发布、不保存凭据。回源（uplinks）由 setup.sh 按
+# NPM_UPLINKS 生成，默认 registry.npmmirror.com → mirrors.cloud.tencent.com/npm（完整的公共 npm 镜像，不是代理）。
 # 监听地址由 compose 的 VERDACCIO_ADDRESS/VERDACCIO_PORT 给出（127.0.0.1:55002）。
 storage: /verdaccio/storage/data
 uplinks:
+  # @UPLINKS@ setup.sh 按 NPM_UPLINKS 生成（依序回源，前一个失败或超时时用下一个）；直接用本文件时只有下面一个。
   npmjs:
     url: https://registry.npmjs.org/
     timeout: 60s
