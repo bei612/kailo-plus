@@ -51,10 +51,15 @@ def build_cache_bytes():
             row = json.loads(line)
         except json.JSONDecodeError:
             continue
-        private = row.get("Private") or row.get("Reclaimable")
-        if private is None:
+        private = row.get("Private")
+        if isinstance(private, bool) or private is None:
+            private = row.get("private")
+        if not isinstance(private, (int, float, str)) or isinstance(private, bool):
             continue
-        value = size_of(str(private).replace("B", "") or "0")
+        try:
+            value = size_of(str(private).replace("B", "") or "0")
+        except (KeyError, TypeError, ValueError):
+            continue
         total += value
         found = True
     return total if found else None
