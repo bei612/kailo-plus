@@ -27,24 +27,21 @@ PARENT=${KAILO_DOCKERD_CGROUP_PARENT:-kailo-ci.slice}
 CI_WBPS=${KAILO_CI_WRITE_BPS-60M}
 CI_WIOPS=${KAILO_CI_WRITE_IOPS-2500}
 CI_RBPS=${KAILO_CI_READ_BPS-300M}
-# default builder 的 GC 策略（A-03，2026-11-14，主 Agent 批准；kailo-builder 同策略见 registry-mirror/buildkitd.toml）。
-# 只写 defaultKeepStorage 时 BuildKit 第一条默认规则把构建上下文与缓存挂载合计压到约 8.3GiB，一次构建上下文就挤掉
-# apt/bun/cargo 缓存挂载。这里分开限额：上下文 20GB、git 检出 5GB、缓存挂载 80GB、层 60GB，全部记录保留 60GB、上限 160GB
-# （NVMe 至少留约 100G 给检查槽位、sccache、data-root 与部署数据库）。retention/policy.json 的上限与部署 KAILO_BUILD_CACHE_LIMIT 须一致。
+# default builder 的 GC 策略。OPS-04（2026-11-15）起镜像构建（CI 检查镜像、部署 up.sh）都走 kailo-builder
+# （docker-container，状态卷在 4T 盘，GC 见 registry-mirror/buildkitd.toml）；dockerd 自带的 default builder 的缓存在
+# 宿主 containerd 的快照里（NVMe，与运行中的镜像同盘），只留零星临时构建用的小上限：上下文 2GB、git 检出 1GB、
+# 缓存挂载 4GB、层 4GB，全部记录保留 1GB、上限 10GB。retention/policy.json 的 default 上限须一致。
+# 分开限额的原因（A-03）：只写 defaultKeepStorage 时第一条默认规则把上下文与缓存挂载合计压到约 8.3GiB，一次构建上下文
+# 就挤掉 apt/bun/cargo 缓存挂载；BuildKit 按最近与使用次数混合淘汰，层要有自己的规则。
 # daemon.json 语法（dockerd 29 实测）：filter 写 "type=<值>"（dockerd 自己补成 ==），一条规则只能有一个值，否则 dockerd
 # 启动失败（"filters expect only one value"）；keepDuration 对自定义规则不生效，故不写。`dockerd --validate` 查不出这两点，
 # 改动后先在 docker:dind 里用同一 builder 段起一次并看 `docker buildx inspect default`。
-GC_CONTEXTS=${KAILO_BUILDER_GC_CONTEXTS:-20GB}
-GC_GIT=${KAILO_BUILDER_GC_GIT:-5GB}
-GC_CACHEMOUNTS=${KAILO_BUILDER_GC_CACHEMOUNTS:-80GB}
-GC_LAYERS=${KAILO_BUILDER_GC_LAYERS:-60GB}
-GC_RESERVED=${KAILO_BUILDER_GC_RESERVED:-60GB}
-GC_MAX=${KAILO_BUILDER_GC_MAX:-160GB}
-# Why a layer rule and a 160GB total (2026-11-14): BuildKit deletes by a mix of least-recently and least-frequently
-# used, so when the all-records rules fire, fresh cache mounts (usage count 1) go before old layers. Measured: at
-# ~117GB of 120GB the apt/cargo mounts of one build were gone before the next. Layers (type regular; ~53GB of them are
-# shared with images) get their own 60GB rule, so the total stays below the all-records cap in normal use;
-# 60 + 80 (cache mounts) + 20 + 5 fits 160GB, leaving ~100G free on the NVMe.
+GC_CONTEXTS=${KAILO_BUILDER_GC_CONTEXTS:-2GB}
+GC_GIT=${KAILO_BUILDER_GC_GIT:-1GB}
+GC_CACHEMOUNTS=${KAILO_BUILDER_GC_CACHEMOUNTS:-4GB}
+GC_LAYERS=${KAILO_BUILDER_GC_LAYERS:-4GB}
+GC_RESERVED=${KAILO_BUILDER_GC_RESERVED:-1GB}
+GC_MAX=${KAILO_BUILDER_GC_MAX:-10GB}
 # 出网：节点不设任何代理，dockerd 直连（路由器 OpenWrt 透明代理负责，OPS-02）。
 # Docker Hub 拉取先经本机拉取缓存（tools/ci/registry-mirror，数据在 4T 容量盘）；缓存不可用时 dockerd 自动回退原站。
 # 设为空串则不写 registry-mirrors。

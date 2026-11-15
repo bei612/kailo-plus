@@ -50,7 +50,7 @@ class Policy(unittest.TestCase):
         # cargo targets: three slots of at most 20 GiB (60 GiB in total)
         self.assertEqual(sum(r.get("max_bytes", 0) for r in policy["roots"]), 60 * 2**30)
         # default builder: same limit as daemon.json builder.gc; kailo-builder state lives on the 4T disk (OPS-01)
-        self.assertEqual(policy["docker_build_cache"]["keep_storage"], "160GB")
+        self.assertEqual(policy["docker_build_cache"]["keep_storage"], "10GB")
         self.assertEqual(policy["docker_build_cache"]["builders"],
                          ["default", dict(name="kailo-builder", keep_storage="160GB")])
 
@@ -223,6 +223,25 @@ class BuildCache(unittest.TestCase):
         hr.prune_build_cache(policy, report, dry_run=True)
         self.assertEqual([(i["builder"], i["keep_storage"]) for i in report["build_cache"]],
                          [("default", "60GB"), ("kailo-builder", "160GB")])
+
+    def test_prune_caps_used_space(self):
+        # buildx 0.38: --keep-storage is the old name of --reserved-space and on its own deletes nothing, so the cap
+        # must be passed as --max-used-space. A stand-in docker executable records the arguments it is run with.
+        with tempfile.TemporaryDirectory() as tmp:
+            log, exe = os.path.join(tmp, "argv"), os.path.join(tmp, "docker")
+            with open(exe, "w") as script:
+                script.write(f'#!/bin/sh\necho "$*" >> {log}\n')
+            os.chmod(exe, 0o755)
+            saved, hr.DOCKER = hr.DOCKER, [exe]
+            try:
+                report = {}
+                hr.prune_build_cache(dict(docker_build_cache=dict(keep_storage="10GB", builders=["default"])),
+                                     report, dry_run=False)
+            finally:
+                hr.DOCKER = saved
+            with open(log) as recorded:
+                self.assertEqual(recorded.read().split(), "buildx prune --force --builder default --max-used-space 10GB".split())
+            self.assertEqual(report["build_cache"][0]["state"], "ok")
 
 
 if __name__ == "__main__":

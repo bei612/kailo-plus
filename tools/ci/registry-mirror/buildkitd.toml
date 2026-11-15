@@ -1,9 +1,11 @@
 # kailo-builder BuildKit 配置，由 setup.sh builder 在重建 builder 时写入容器。
 # 各上游先走本机拉取缓存（compose.yaml，数据在 4T 容量盘）；缓存不可达或失败时 BuildKit 依序回退到原站直连。
 # 端口须与 compose.yaml 的 MIRROR_PORT_* 缺省一致（setup.sh mirror 会核对）。
-# GC（A-03，2026-11-14，主 Agent 批准）：与 Kailo dockerd 的 builder.gc.policy 相同。BuildKit 默认第一条规则把
-# source.local、exec.cachemount、source.git.checkout 合计压到很小（本 builder 约 488MiB，dockerd 默认 8.3GiB），
-# 一次构建上下文就能把 apt/bun/cargo 缓存挂载全部挤掉。这里把构建上下文与缓存挂载分开限额，总量上限 120GB。
+# GC（A-03，2026-11-14）：BuildKit 默认第一条规则把 source.local、exec.cachemount、source.git.checkout 合计压到很小
+# （本 builder 约 488MiB），一次构建上下文就能把 apt/bun/cargo 缓存挂载全部挤掉，故分开限额，总量上限 160GB。
+# OPS-04（2026-11-15）：CI 检查镜像与部署 up.sh（KAILO_BUILDER）的构建都走本 builder，状态卷在 4T 盘
+# （/volumes/data/kailo/capacity/ci/buildkit）；dockerd 自带的 default builder 只留 10GB（kailo-docker/install.sh）。
+# retention/policy.json 的 kailo-builder 上限与部署 KAILO_BUILD_CACHE_LIMIT 须与这里的总上限一致。
 
 [registry."docker.io"]
   mirrors = ["127.0.0.1:55001"]
