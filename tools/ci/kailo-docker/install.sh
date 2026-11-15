@@ -30,7 +30,7 @@ CI_RBPS=${KAILO_CI_READ_BPS-300M}
 # default builder 的 GC 策略。OPS-04（2026-11-15）起镜像构建（CI 检查镜像、部署 up.sh）都走 kailo-builder
 # （docker-container，状态卷在 4T 盘，GC 见 registry-mirror/buildkitd.toml）；dockerd 自带的 default builder 的缓存在
 # 宿主 containerd 的快照里（NVMe，与运行中的镜像同盘），只留零星临时构建用的小上限：上下文 2GB、git 检出 1GB、
-# 缓存挂载 4GB、层 4GB，全部记录保留 1GB、上限 10GB。retention/policy.json 的 default 上限须一致。
+# 缓存挂载 3GB、层 3GB，全部记录保留 1GB、上限 10GB。retention/policy.json 的 default 上限须一致。
 # 分开限额的原因（A-03）：只写 defaultKeepStorage 时第一条默认规则把上下文与缓存挂载合计压到约 8.3GiB，一次构建上下文
 # 就挤掉 apt/bun/cargo 缓存挂载；BuildKit 按最近与使用次数混合淘汰，层要有自己的规则。
 # daemon.json 语法（dockerd 29 实测）：filter 写 "type=<值>"（dockerd 自己补成 ==），一条规则只能有一个值，否则 dockerd
@@ -38,8 +38,8 @@ CI_RBPS=${KAILO_CI_READ_BPS-300M}
 # 改动后先在 docker:dind 里用同一 builder 段起一次并看 `docker buildx inspect default`。
 GC_CONTEXTS=${KAILO_BUILDER_GC_CONTEXTS:-2GB}
 GC_GIT=${KAILO_BUILDER_GC_GIT:-1GB}
-GC_CACHEMOUNTS=${KAILO_BUILDER_GC_CACHEMOUNTS:-4GB}
-GC_LAYERS=${KAILO_BUILDER_GC_LAYERS:-4GB}
+GC_CACHEMOUNTS=${KAILO_BUILDER_GC_CACHEMOUNTS:-3GB}
+GC_LAYERS=${KAILO_BUILDER_GC_LAYERS:-3GB}
 GC_RESERVED=${KAILO_BUILDER_GC_RESERVED:-1GB}
 GC_MAX=${KAILO_BUILDER_GC_MAX:-10GB}
 # 出网：节点不设任何代理，dockerd 直连（路由器 OpenWrt 透明代理负责，OPS-02）。
