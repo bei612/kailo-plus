@@ -34,19 +34,19 @@
     {
       "path": "/var/lib/kailo-ci/check-target/kailo-macro/slot1",
       "max_idle_seconds": 259200,
-      "max_bytes": 21474836480,
+      "max_bytes": 32212254720,
       "lock": "/var/lib/kailo-ci/check-target/kailo-macro/slot1.lock"
     },
     {
       "path": "/var/lib/kailo-ci/check-target/kailo-macro/slot2",
       "max_idle_seconds": 259200,
-      "max_bytes": 21474836480,
+      "max_bytes": 32212254720,
       "lock": "/var/lib/kailo-ci/check-target/kailo-macro/slot2.lock"
     },
     {
       "path": "/var/lib/kailo-ci/check-target/kailo-macro/slot3",
       "max_idle_seconds": 259200,
-      "max_bytes": 21474836480,
+      "max_bytes": 32212254720,
       "lock": "/var/lib/kailo-ci/check-target/kailo-macro/slot3.lock"
     },
     {
@@ -91,13 +91,13 @@
           },
           {
             "path": "/var/lib/kailo-ci/ci-cache.xfs",
-            "cap": "130G",
+            "cap": "180G",
             "role": "loop XFS image holding the kailo-macro CI targets and sccache (own log; sparse, trimmed hourly)"
           },
           {
             "path": "/var/lib/kailo-ci/check-target/kailo-macro",
             "cap": "60G",
-            "role": "cargo target slots 3x20G (inside ci-cache.xfs since 2026-11-14)"
+            "role": "cargo target slots 3x30G (inside ci-cache.xfs since 2026-11-14)"
           },
           {
             "path": "/var/lib/kailo-ci/sccache/kailo-macro",
@@ -180,7 +180,7 @@
           },
           {
             "path": "/volumes/data/kailo/capacity/ci/buildkit",
-            "cap": "130G",
+            "cap": "180G",
             "role": "kailo-builder state"
           },
           {

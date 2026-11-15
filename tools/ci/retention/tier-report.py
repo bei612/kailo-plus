@@ -42,12 +42,22 @@ def human(n):
 
 
 def build_cache_bytes():
-    r = subprocess.run(["docker", "system", "df", "--format", "{{json .}}"], capture_output=True, text=True)
+    """Return private/reclaimable BuildKit records, excluding layers shared with images."""
+    r = subprocess.run(["docker", "buildx", "du", "--verbose", "--format", "json"], capture_output=True, text=True)
+    total = 0
+    found = False
     for line in r.stdout.splitlines():
-        row = json.loads(line)
-        if row.get("Type") == "Build Cache":
-            return size_of(row.get("Size", "0B").replace("B", "") or "0")
-    return None
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        private = row.get("Private") or row.get("Reclaimable")
+        if private is None:
+            continue
+        value = size_of(str(private).replace("B", "") or "0")
+        total += value
+        found = True
+    return total if found else None
 
 
 def shmem(group):
