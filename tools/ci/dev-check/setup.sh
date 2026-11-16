@@ -12,11 +12,11 @@ ROOT=${DEV_CHECK_ROOT:-/var/lib/kailo-ci/ci-fs/dev-check}
 export DOCKER_HOST=unix:///run/kailo-docker/docker.sock
 case "${1:-}" in
   install)
-    bash -n "$here/dev-check.sh"
+    bash -n "$here/dev-check.sh"; bash -n "$here/dev-check-job.sh"
     python3 -I -B "$here/../service/envguard.py" --help >/dev/null
     mkdir -p "$RUNTIME"
     stamp=$(date -u +%Y%m%dT%H%M%SZ)
-    for f in "$here/dev-check.sh" "$here/../service/envguard.py"; do
+    for f in "$here/dev-check.sh" "$here/dev-check-job.sh" "$here/../service/envguard.py"; do
       dst=$RUNTIME/$(basename "$f")
       [ -f "$dst" ] && ! cmp -s "$f" "$dst" && cp -a "$dst" "$dst.bak-$stamp"
       install -m 0755 "$f" "$dst.tmp" && mv -f "$dst.tmp" "$dst"
@@ -24,7 +24,7 @@ case "${1:-}" in
     [ -d "$ROOT" ] || sudo -n install -d -o "$(id -u)" -g "$(id -g)" -m 0755 "$ROOT"
     echo "kailo-dev-check installed in $RUNTIME (work directory $ROOT)" ;;
   status)
-    for f in dev-check.sh; do cmp -s "$here/$f" "$RUNTIME/$f" && echo "$f: current" || echo "$f: differs or missing"; done
+    for f in dev-check.sh dev-check-job.sh; do cmp -s "$here/$f" "$RUNTIME/$f" && echo "$f: current" || echo "$f: differs or missing"; done
     cmp -s "$here/../service/envguard.py" "$RUNTIME/envguard.py" && echo "envguard.py: current" || echo "envguard.py: differs or missing"
     docker ps -a --filter name=kailo-dev-check --format '{{.Names}}  {{.Status}}  {{.Image}}'
     du -sh "$ROOT/target" "$ROOT/src" 2>/dev/null || true ;;
