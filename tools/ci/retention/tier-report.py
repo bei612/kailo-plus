@@ -4,7 +4,8 @@
 NVMe holds only latency-critical random-IO data, the 4T HDD capacity/sequential data, tmpfs only ephemeral data.
 The report lists each declared path with its size and cap, the free space of each tier, the BuildKit cache against its
 cap, the shmem (tmpfs) held in the Kailo slice, and flags: a path over its cap, a tier under its free-space floor,
-and any directory under the NVMe watch roots that is not declared and exceeds `undeclared_bytes` (an uncapped cache).
+and any directory under the NVMe watch roots that is not declared and exceeds `undeclared_bytes` (an uncapped cache);
+`budgets` (OPS-05): measured memory/tmpfs/target peaks of CI parts and image builds against their limits (>= 30 % headroom).
 Writes <report_dir>/<YYYY-MM>.json and prints a summary; exit status 1 when anything is flagged. Read-only.
 """
 import argparse
@@ -73,6 +74,57 @@ def shmem(group):
         return None
 
 
+def budgets(spec, flags):
+    """Measured peaks against the limits they ran under (OPS-05): every limit keeps >= headroom (30 %) above the largest
+    peak of the window. CI parts (kailo-macro check.sh, CHECK_PEAKS_LOG): check container anon+shmem per part kind
+    (gen has its own limit), temporary PostgreSQL tmpfs and memory, target slot size; image builds (up.sh,
+    KAILO_BUILD_PEAKS_LOG): the builder's anon+shmem per image."""
+    if not spec:
+        return None
+    since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=spec.get("window_days", 30))
+    margin = 1 + float(spec.get("headroom", 0.3))
+
+    def rows(path):
+        out = []
+        for line in open(path) if path and os.path.exists(path) else []:
+            try:
+                row = json.loads(line)
+                at = datetime.datetime.fromisoformat(row["at"].replace("Z", "+00:00"))
+            except (ValueError, KeyError):
+                continue
+            if at >= since:
+                out.append(row)
+        return out
+
+    items = {}
+
+    def take(name, peak, limit, source):
+        if not peak:
+            return
+        item = items.setdefault(name, {"peak": 0, "limit": limit, "source": source, "samples": 0})
+        item["samples"] += 1
+        if peak > item["peak"]:
+            item.update(peak=peak, source=source)
+        item["limit"] = limit or item["limit"]  # the latest limit counts
+    for row in rows(spec.get("ci_peaks")):
+        limits, kind = row.get("limits") or {}, row.get("part", "").split(":")[0]
+        src = f"{row.get('step')}/{row.get('part')} job {str(row.get('job'))[:8]}"
+        take(f"check container ({'gen' if kind == 'gen' else 'checks'})", row.get("mem_anon_peak"),
+             limits.get("check_memory"), src)
+        take("PostgreSQL tmpfs", row.get("pg_shmem_peak"), limits.get("pg_tmpfs"), src)
+        take("PostgreSQL memory", row.get("pg_mem_peak"), limits.get("pg_memory"), src)
+        take("target slot", row.get("target_bytes"), limits.get("slot_cap"), src)
+    for row in rows(spec.get("build_peaks")):
+        take(f"builder: {row.get('service')}", row.get("builder_anon_peak") or row.get("builder_mem_peak"),
+             row.get("builder_limit"), row.get("image", ""))
+    for name, item in sorted(items.items()):
+        item["required"] = int(item["peak"] * margin)
+        if item["limit"] and item["limit"] < item["required"]:
+            flags.append(f"budget: {name} limit {human(item['limit'])} < {margin:.1f} x peak {human(item['peak'])} "
+                         f"({item['source']}); raise to >= {human(item['required'])}")
+    return items
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--policy", default=os.path.join(os.path.dirname(os.path.realpath(__file__)), "policy.json"))
@@ -111,6 +163,7 @@ def main():
     if cache is not None and cache_cap is not None and cache > cache_cap:
         flags.append(f"BuildKit cache {human(cache)} over cap {human(cache_cap)}")
     report["tmpfs_shmem"] = {g: shmem(g) for g in tiers.get("tmpfs_groups", [])}
+    report["budgets"] = budgets(tiers.get("budgets"), flags)
     report["flags"] = flags
     os.makedirs(tiers["report_dir"], exist_ok=True)
     out = os.path.join(tiers["report_dir"], f"{report['at'][:7]}.json")
@@ -123,6 +176,9 @@ def main():
             print(f"  {human(p['bytes']):>7} / {human(p['cap']) if p['cap'] else '-':>7}  {p['path']}  {p['role']}")
     print(f"BuildKit cache {human(cache)} / {human(cache_cap)}; tmpfs (shmem) " +
           ", ".join(f"{g}: {human(v)}" for g, v in report["tmpfs_shmem"].items()))
+    for name, item in sorted((report["budgets"] or {}).items()):
+        print(f"budget {name}: peak {human(item['peak'])} ({item['samples']} runs), limit {human(item['limit'])}, "
+              f"needed {human(item['required'])}")
     print("flags: " + ("; ".join(flags) if flags else "none") + f"\nreport: {out}")
     return 1 if flags else 0
 

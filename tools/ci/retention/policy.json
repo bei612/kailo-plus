@@ -214,6 +214,12 @@
           }
         ]
       }
+    },
+    "budgets": {
+      "window_days": 30,
+      "headroom": 0.3,
+      "ci_peaks": "/volumes/data/kailo/capacity/logs/peaks/ci-peaks.jsonl",
+      "build_peaks": "/volumes/data/kailo/capacity/logs/peaks/build-peaks.jsonl"
     }
   },
   "status_file": "/var/lib/kailo-ci/queue/cleanup/last-run.json"
