@@ -60,7 +60,7 @@
     {
       "path": "/var/lib/kailo-ci/ci-fs/dev-check/target",
       "max_idle_seconds": 259200,
-      "max_bytes": 32212254720,
+      "max_bytes": 26843545600,
       "lock": "/var/lib/kailo-ci/ci-fs/dev-check/dev-check.lock"
     }
   ],
@@ -97,13 +97,13 @@
           },
           {
             "path": "/var/lib/kailo-ci/ci-cache.xfs",
-            "cap": "180G",
-            "role": "loop XFS image holding the kailo-macro CI targets and sccache (own log; sparse, trimmed hourly)"
+            "cap": "200G",
+            "role": "loop XFS image (240G sparse since OPS-05) holding the kailo-macro CI targets, sccache and kailo-dev-check: 3x30G + 60G + 26G + ~10G XFS (own log; trimmed hourly)"
           },
           {
             "path": "/var/lib/kailo-ci/check-target/kailo-macro",
-            "cap": "60G",
-            "role": "cargo target slots 3x30G (inside ci-cache.xfs since 2026-11-14)"
+            "cap": "90G",
+            "role": "cargo target slots 3x30G (CHECK_SLOT_CAP_GB; inside ci-cache.xfs)"
           },
           {
             "path": "/var/lib/kailo-ci/sccache/kailo-macro",
@@ -112,7 +112,7 @@
           },
           {
             "path": "/var/lib/kailo-ci/ci-fs/dev-check",
-            "cap": "40G",
+            "cap": "27G",
             "role": "kailo-dev-check: persistent checkout and incremental targets (inside ci-fs; targets capped at dev_check.target_cap_gb)"
           },
           {

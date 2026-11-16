@@ -54,7 +54,7 @@ out = dict(
     pg_image=env.get("CHECK_POSTGRES_IMAGE", "pgvector/pgvector:pg18"),
     pg_data=env.get("CHECK_POSTGRES_DATA", "/var/lib/postgresql"),
     root=dc.get("root", "/var/lib/kailo-ci/ci-fs/dev-check"),
-    cpus=str(dc.get("cpus", 8)), memory=dc.get("memory", "12g"), cap_gb=str(dc.get("target_cap_gb", 30)),
+    cpus=str(dc.get("cpus", 8)), memory=dc.get("memory", "12g"), cap_gb=str(dc.get("target_cap_gb", 25)),
     pg_memory=dc.get("postgres_memory", "1536m"), pg_tmpfs=dc.get("postgres_tmpfs", "1g"),
     keep_dbs=str(dc.get("keep_databases", 6)), max_wait=str(dc.get("max_wait", 7200)),
     heavy_lock=(cfg.get("locks") or {}).get("heavy", "/var/lib/kailo-ci/locks/image-build.lock"),
