@@ -14,6 +14,8 @@ import envguard  # noqa: E402
 
 # Never the real Kailo dockerd: the sweep of a scratch queue would see every CI container as orphaned.
 os.environ["DOCKER_HOST"] = "unix:///nonexistent/docker.sock"
+# The worker points TMPDIR at each scratch config's directory; scratch roots come from the original one.
+BASE = os.environ.get("TMPDIR", "/tmp")
 
 
 def scratch_config(root, **admission):
@@ -61,7 +63,7 @@ class Classify(unittest.TestCase):
 
 class Config(unittest.TestCase):
     def setUp(self):
-        self.root = tempfile.mkdtemp(dir=os.environ.get("TMPDIR", "/tmp"))
+        self.root = tempfile.mkdtemp(dir=BASE)
 
     def tearDown(self):
         shutil.rmtree(self.root)
@@ -88,7 +90,7 @@ class WorkerRetry(unittest.TestCase):
     """The worker's execute loop with a stage whose first attempt fails like the node, the second passes."""
 
     def setUp(self):
-        self.root = tempfile.mkdtemp(dir=os.environ.get("TMPDIR", "/tmp"))
+        self.root = tempfile.mkdtemp(dir=BASE)
         self.cfg, path = scratch_config(self.root)
         os.environ["KAILO_CI_CONFIG"] = path
         os.environ["KAILO_CI_LANE"] = "lane"
