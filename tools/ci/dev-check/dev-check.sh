@@ -213,8 +213,11 @@ if $affected; then
   fi
   : > "$src/.git/kailo-dev-changed"   # empty (no base): affected.sh selects everything
   [ -z "$base" ] || git -C "$src" diff --name-only --no-renames "$base" "$commit" > "$src/.git/kailo-dev-changed"
-  sel=$(x env KAILO_CHANGED_FILES=/src/.git/kailo-dev-changed KAILO_BASE="${base:-HEAD}" KAILO_BIN_CACHE=/cache/bin \
-    bash kailo/ci/affected.sh | sed -n 1p)
+  if ! sel=$(x env KAILO_CHANGED_FILES=/src/.git/kailo-dev-changed KAILO_BASE="${base:-HEAD}" KAILO_BIN_CACHE=/cache/bin \
+      bash kailo/ci/affected.sh | sed -n 1p) || [ -z "$sel" ]; then
+    say "the affected-package selection (kailo/ci/affected.sh) failed, see above: the CI's lint and test fail the same way"
+    exit 1
+  fi
   say "affected since ${base:0:12}: $sel"
   [ "$sel" != none ] || { say "no Rust package affected; nothing to check"; exit 0; }
   [ "$sel" = all ] && say "the change set reaches every package (toolchain, .cargo or no base): checking the workspace"
