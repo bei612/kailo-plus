@@ -244,18 +244,20 @@ part() {  # part <name> <command...>
   results+=("$(printf '%-16s %-8s %5ss' "$name" "$([ $rc -eq 0 ] && echo ok || echo FAIL)" $(( $(date +%s) - t0 )))")
   [ $rc -eq 0 ] || failed=1
 }
+# Incremental for the workspace crates only (profile setting, not CARGO_INCREMENTAL: sccache refuses that variable and
+# passes the incremental member compilations through), so a re-check after an edit redoes just the edited code.
 lint_flags="-Dwarnings -Dclippy::disallowed_methods -C link-arg=-fuse-ld=mold"
 fmt_pkgs=("${pkgs[@]}"); $sync && [ "${sel:-}" != all ] && fmt_pkgs+=(-p sync_service)
 [ "${sel:-}" = all ] && fmt_pkgs=(--all)
 part "fmt" cargo fmt --check "${fmt_pkgs[@]}"
 if [ ${#test_pkgs[@]} -gt 0 ]; then
   # steps.sh test: live database, test RUSTFLAGS; `check` instead of nextest's build (no codegen, no run)
-  part "check --tests" env CARGO_TARGET_DIR=/cache/target/tests CARGO_INCREMENTAL=1 SQLX_OFFLINE=false \
+  part "check --tests" env CARGO_TARGET_DIR=/cache/target/tests CARGO_PROFILE_DEV_INCREMENTAL=true CARGO_PROFILE_TEST_INCREMENTAL=true SQLX_OFFLINE=false \
     DATABASE_URL="$db_url" RUSTFLAGS="-Dwarnings -C link-arg=-fuse-ld=mold" CARGO_PROFILE_DEV_DEBUG=0 \
     CARGO_PROFILE_TEST_DEBUG=0 cargo check --locked --all-features --tests "${test_pkgs[@]}"
 fi
 # steps.sh lint: clippy_selected, offline on the branch's .sqlx
-clippy_env=(env CARGO_TARGET_DIR=/cache/target/clippy CARGO_INCREMENTAL=1 SQLX_OFFLINE=true RUSTFLAGS="$lint_flags")
+clippy_env=(env CARGO_TARGET_DIR=/cache/target/clippy CARGO_PROFILE_DEV_INCREMENTAL=true CARGO_PROFILE_TEST_INCREMENTAL=true SQLX_OFFLINE=true RUSTFLAGS="$lint_flags")
 if [ ${#pkgs[@]} -gt 0 ]; then part "clippy" "${clippy_env[@]}" cargo clippy --all-features "${pkgs[@]}"; fi
 if $sync; then
   part "clippy sync" "${clippy_env[@]}" cargo clippy -p sync_service -- -A clippy::unnecessary_map_or -A clippy::collapsible_if
