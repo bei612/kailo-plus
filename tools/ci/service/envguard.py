@@ -207,9 +207,13 @@ def config_problems(cfg, repo, step, stage="check-step"):
         wal = postgres_args_wal(env.get("CHECK_POSTGRES_ARGS"))
         if wal is not None and wal * 4 > tmpfs:
             problems.append(f"max_wal_size {human(wal)} is more than a quarter of the PostgreSQL tmpfs {human(tmpfs)}")
-        peak = size(adm.get("postgres_tmpfs_peak"))
-        if peak and tmpfs < peak * 1.3:
-            problems.append(f"CHECK_POSTGRES_TMPFS {human(tmpfs)} < 1.3 x measured peak {human(peak)}")
+        # Predicted peak: the largest tmpfs use the peaks log (check.sh, CHECK_PEAKS_LOG) recorded for this step in the
+        # last 30 days, or admission.postgres_tmpfs_peak. A tmpfs below it fills up half-way (11-15: 3g, then 6g).
+        peak = max(size(adm.get("postgres_tmpfs_peak"), 0), measured_peak(env.get("CHECK_PEAKS_LOG"), "pg_shmem_peak",
+                                                                          step=name))
+        if peak and tmpfs < peak:
+            problems.append(f"CHECK_POSTGRES_TMPFS {human(tmpfs)} < measured peak {human(peak)} of {name} "
+                            f"(the temporary PostgreSQL would fill up; raise it to >= {human(peak * 1.3)})")
     check_memory = size(env.get("CHECK_MEMORY"))
     test_phase = size(adm.get("test_phase_memory"))
     limit = cgroup_limit(adm)
@@ -251,13 +255,42 @@ def shortages(cfg, repo, stage, step, memory=None, scratch=None):
                             disk_floors(cfg, repo, scratch)})
 
 
-def warnings(cfg, repo):
-    adm = admission(cfg, repo)
+def measured_peak(log, field, step=None, days=30):
+    """The largest `field` of the peaks log's lines of the last `days` (for `step`: lines of that step, or whose part is
+    that step, e.g. verify's test part counts for test). 0 without a log."""
+    if not log or not os.path.exists(log):
+        return 0
+    since, peak = time.time() - days * 86400, 0
+    try:
+        with open(log, encoding="utf-8") as source:
+            for line in source:
+                try:
+                    row = json.loads(line)
+                    at = time.mktime(time.strptime(row["at"], "%Y-%m-%dT%H:%M:%SZ")) - time.timezone
+                except (ValueError, KeyError):
+                    continue
+                if at < since or (step and step not in (row.get("step"), str(row.get("part", "")).split(":")[0])
+                                  and not (step in ("verify", "full") and row.get("step") == step)):
+                    continue
+                peak = max(peak, int(row.get(field) or 0))
+    except OSError:
+        return 0
+    return peak
+
+
+def warnings(cfg, repo, step=None):
+    adm, env, out = admission(cfg, repo), environment(cfg, repo), []
     spec, limit = builder_memory(adm)
     need = size(spec.get("min_memory"))
     if need and limit is not None and limit and limit < need:
-        return [f"image builder {spec['container']} memory limit {human(limit)} < {human(need)}"]
-    return []
+        out.append(f"image builder {spec['container']} memory limit {human(limit)} < {human(need)}")
+    name = (step or "").partition(":")[0]
+    if name in (repo_spec(cfg, repo).get("postgres_steps") or []):
+        tmpfs = size(env.get("CHECK_POSTGRES_TMPFS"), GIB)
+        peak = measured_peak(env.get("CHECK_PEAKS_LOG"), "pg_shmem_peak", step=name)
+        if peak and peak <= tmpfs < peak * 1.3:
+            out.append(f"CHECK_POSTGRES_TMPFS {human(tmpfs)} has < 30 % headroom over the measured peak {human(peak)}")
+    return out
 
 
 # -- cleanup ---------------------------------------------------------------------------------------------------------
@@ -383,7 +416,7 @@ def preflight(cfg, repo, stage, step, memory=None, wait=0, say=print):
         for p in problems:
             say(f"envguard: configuration: {p}")
         return EX_CONFIG
-    for w in warnings(cfg, repo):
+    for w in warnings(cfg, repo, step):
         say(f"envguard: warning: {w}")
     deadline, cleaned, swept, reported = time.time() + wait, False, False, 0
     while True:
@@ -438,7 +471,7 @@ def main():
         if a.json:
             short, facts = shortages(cfg, a.repo, a.stage, a.step, memory)
             print(json.dumps(dict(config=config_problems(cfg, a.repo, a.step, a.stage), short=[t for _, t in short],
-                                  warnings=warnings(cfg, a.repo), **facts), indent=1))
+                                  warnings=warnings(cfg, a.repo, a.step), **facts), indent=1))
             return EX_OK
         return preflight(cfg, a.repo, a.stage, a.step, memory, a.wait, say)
     if a.cmd == "cleanup":

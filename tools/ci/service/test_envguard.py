@@ -28,7 +28,7 @@ def scratch_config(root, **admission):
                                                 timeout=1, min_interval=0)), **admission),
                env_retry=dict(max=1, wait=5),
                repositories={"kailo-macro": dict(origin="x", source_repository=root, sources=root, lane="lane",
-                                                 stages=["fetch", "check-step", "gen"], postgres_steps=["test"],
+                                                 stages=["fetch", "check-step", "gen"], postgres_steps=["test", "verify"],
                                                  environment={"CHECK_POSTGRES_TMPFS": "12g",
                                                               "CHECK_POSTGRES_MEMORY": "15g",
                                                               "CHECK_POSTGRES_ARGS": "-c max_wal_size=1GB"})})
@@ -77,6 +77,22 @@ class Config(unittest.TestCase):
         cfg["repositories"]["kailo-macro"]["environment"]["CHECK_POSTGRES_MEMORY"] = "15g"
         cfg["repositories"]["kailo-macro"]["environment"]["CHECK_POSTGRES_ARGS"] = "-c max_wal_size=4GB"
         self.assertTrue(any("max_wal_size" in p for p in envguard.config_problems(cfg, "kailo-macro", "test")))
+
+    def test_measured_tmpfs_peak(self):
+        cfg, _ = scratch_config(self.root)
+        log = os.path.join(self.root, "peaks.jsonl")
+        cfg["repositories"]["kailo-macro"]["environment"]["CHECK_PEAKS_LOG"] = log
+        import time
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        with open(log, "w") as sink:
+            sink.write(json.dumps(dict(at=now, step="verify", part="test", pg_shmem_peak=13 << 30)) + "\n")
+            sink.write(json.dumps(dict(at="2020-01-01T00:00:00Z", step="verify", part="test", pg_shmem_peak=99 << 30)) + "\n")
+        self.assertEqual(envguard.measured_peak(log, "pg_shmem_peak", step="test"), 13 << 30)
+        self.assertTrue(any("measured peak" in p for p in envguard.config_problems(cfg, "kailo-macro", "verify")))
+        with open(log, "w") as sink:
+            sink.write(json.dumps(dict(at=now, step="verify", part="test", pg_shmem_peak=10 << 30)) + "\n")
+        self.assertEqual(envguard.config_problems(cfg, "kailo-macro", "verify"), [])
+        self.assertTrue(any("headroom" in w for w in envguard.warnings(cfg, "kailo-macro", "test")))
 
     def test_shortage_and_step_memory(self):
         cfg, _ = scratch_config(self.root, steps={"verify": "1t"})
