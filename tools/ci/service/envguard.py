@@ -53,6 +53,7 @@ DEFAULT_BUILDER = {"container": "buildx_buildkit_kailo-builder0", "min_memory": 
 # Environment failures (OPS-05): what the log of a failed attempt says when the node, not the code, failed it. OOM by
 # exit status (137, SIGKILL) counts only together with a new oom_kill in the Kailo cgroups (a test may kill a child).
 ENV_PATTERNS = [
+    ("no-room", r"^envguard: still short"),
     ("disk-full", r"No space left on device|\bENOSPC\b|could not extend file|Disk quota exceeded"),
     ("oom", r"OOMKilled|[Oo]ut of memory|Memory cgroup out of memory|oom-kill"),
     ("dns", r"failed to lookup address|Temporary failure in name resolution|Could not resolve host|"
@@ -412,6 +413,8 @@ def main():
     p.add_argument("--stage", default="check-step")
     p.add_argument("--step", default=None)
     p.add_argument("--memory", default=None, help="required headroom instead of the step's admission figure")
+    p.add_argument("--phase", choices=["test"], default=None,
+                   help="the test phase of a check (admission.test_phase_memory; check.sh asks under the heavy lock)")
     p.add_argument("--wait", type=float, default=0)
     p.add_argument("--json", action="store_true")
     c = sub.add_parser("cleanup")
@@ -426,6 +429,8 @@ def main():
     say = lambda text: print(text, file=sys.stderr, flush=True)  # noqa: E731
     if a.cmd == "preflight":
         memory = size(a.memory) if a.memory else None
+        if a.phase == "test" and memory is None:
+            memory = size(admission(cfg, a.repo).get("test_phase_memory"))
         if a.json:
             short, facts = shortages(cfg, a.repo, a.stage, a.step, memory)
             print(json.dumps(dict(config=config_problems(cfg, a.repo, a.step, a.stage), short=[t for _, t in short],
