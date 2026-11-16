@@ -9,7 +9,33 @@
   "web_build_info_path": "/usr/share/nginx/html/build-info.json",
   "min_job_free_bytes": 34359738368,
   "admission": {
-    "cgroup": ["/sys/fs/cgroup/kailo.slice", "/sys/fs/cgroup/kailo.slice/kailo-ci.slice"]
+    "cgroup": [
+      "/sys/fs/cgroup/kailo.slice",
+      "/sys/fs/cgroup/kailo.slice/kailo-ci.slice"
+    ],
+    "min_free_percent": 15,
+    "disks": {
+      "ci-fs": {
+        "path": "/var/lib/kailo-ci/ci-fs",
+        "min_free_percent": 15
+      },
+      "hdd": {
+        "path": "/volumes/data",
+        "min_free_percent": 10
+      }
+    },
+    "builder": {
+      "container": "buildx_buildkit_kailo-builder0",
+      "min_memory": "28g"
+    },
+    "postgres_overhead": "2g",
+    "test_phase_memory": "20g",
+    "cleanup": {
+      "request": "/var/lib/kailo-ci/queue/cleanup/request.json",
+      "status": "/var/lib/kailo-ci/queue/cleanup/last-run.json",
+      "timeout": 1800,
+      "min_interval": 600
+    }
   },
   "environment": {
     "DOCKER_HOST": "unix:///run/kailo-docker/docker.sock",
@@ -108,10 +134,28 @@
         "CHECK_POSTGRES_SHM": "1g",
         "DOCKER_CONFIG": "/var/lib/kailo-ci/docker-config-kailo-macro",
         "CHECK_TARGET_ROOT": "/var/lib/kailo-ci/check-target/kailo-macro",
-        "CHECK_NODE_MODULES_ROOT": "/var/lib/kailo-ci/node-modules/kailo-macro"
+        "CHECK_NODE_MODULES_ROOT": "/var/lib/kailo-ci/node-modules/kailo-macro",
+        "CHECK_HEAVY_LOCK": "/var/lib/kailo-ci/locks/image-build.lock",
+        "CHECK_PEAKS_LOG": "/volumes/data/kailo/capacity/logs/peaks/ci-peaks.jsonl",
+        "CHECK_PREFLIGHT_WAIT": "3600",
+        "CHECK_SLOT_CAP_GB": "30"
       },
       "concurrency": 3,
       "min_job_free_bytes": 25769803776
     }
+  },
+  "env_retry": {
+    "max": 1,
+    "wait": 7200
+  },
+  "locks": {
+    "heavy": "/var/lib/kailo-ci/locks/image-build.lock"
+  },
+  "dev_check": {
+    "root": "/var/lib/kailo-ci/ci-fs/dev-check",
+    "target_cap_gb": 25,
+    "memory": "12g",
+    "cpus": 8,
+    "max_wait": 7200
   }
 }
