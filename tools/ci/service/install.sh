@@ -24,7 +24,7 @@ if ! syft version 2>/dev/null | grep -q "Version: *$SYFT_VERSION$"; then
   tar -xzf "$tmp/syft_${SYFT_VERSION}_linux_amd64.tar.gz" -C "$tmp" syft
   install -m 0755 "$tmp/syft" /usr/local/bin/syft; rm -rf "$tmp"
 fi
-install -o "$USER_NAME" -g "$USER_NAME" -m 0644 "$HERE"/kci.py "$HERE"/client.py "$HERE"/worker.py $CI/service/
+install -o "$USER_NAME" -g "$USER_NAME" -m 0644 "$HERE"/kci.py "$HERE"/client.py "$HERE"/worker.py "$HERE"/envguard.py $CI/service/
 [ -f $CI/config.json ] || install -o "$USER_NAME" -g "$USER_NAME" -m 0644 "$HERE"/config.template.json $CI/config.json
 if [ ! -d /var/lib/kailo-ci/repo/.git ]; then
   sudo -u "$USER_NAME" git clone --no-checkout "${KAILO_CI_ORIGIN:-git@github.com:bei612/kailo-plus.git}" /var/lib/kailo-ci/repo \
@@ -94,4 +94,6 @@ done <<< "$LANE_SLOTS"
 systemctl daemon-reload
 systemctl enable --now "${PATH_UNITS[@]}"
 docker compose -f "$HERE"/control.compose.yaml up -d
+# The workers import every module they need: a missing one fails every lane at start (2026-11-16, envguard).
+sudo -u "$USER_NAME" env PYTHONPATH=$CI/service python3 -c "import worker" >/dev/null
 docker exec kailo-ci-control python3 /ci/client.py list >/dev/null && echo "kailo-ci service installed"
