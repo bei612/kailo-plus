@@ -6,7 +6,7 @@
 #   - iptables=false：不改默认 dockerd 的 DOCKER 链；出网 NAT 由本脚本装的 nft 表 kailo_nat 负责，端口发布走 userland-proxy
 #   - 经 WG 以 mTLS 监听 tcp://<wg 地址>:2376
 #   - dockerd 与它的全部容器（daemon.json cgroup-parent）运行在 kailo.slice（硬内存上限，缺省 48G）；
-#     其下 kailo-prod.slice（部署）与 kailo-ci.slice（缺省 40G：CI worker、检查容器、镜像构建，dockerd 默认 cgroup-parent）
+#     其下 kailo-prod.slice（部署）与 kailo-ci.slice（缺省 44G，OPS-05 2026-11-16 由 40G 提高：CI worker、检查容器、镜像构建，dockerd 默认 cgroup-parent）
 # 幂等：重复执行结果不变；只写 Kailo 自己的路径，不碰 /etc/docker、docker.service、默认 docker0/网络。
 # 用法（CI 节点 root）：install.sh <tls 目录> [wg 地址...]
 #   tls 目录需含 ca.pem server-cert.pem server-key.pem（由 tls.sh 生成）
@@ -20,7 +20,7 @@ MEM=${KAILO_SLICE_MEMORY_MAX:-48G}
 #   kailo-prod.slice：部署 compose 项目（up.sh 的 KAILO_CGROUP_PARENT），IO/CPU 权重高，MemoryLow 保护；
 #   kailo-ci.slice：dockerd 的默认 cgroup-parent，即 CI 检查容器、镜像构建（BuildKit 执行器、kailo-builder）与临时容器，
 #   IO 有读写上限（io.max；iocost 在本盘不可用，见 tools/ci/host-io/setup.sh，IOWeight 仅在启用 iocost/BFQ 时生效）。
-CI_MEM=${KAILO_CI_SLICE_MEMORY_MAX:-40G}
+CI_MEM=${KAILO_CI_SLICE_MEMORY_MAX:-44G}
 PROD_MEM_LOW=${KAILO_PROD_SLICE_MEMORY_LOW:-16G}
 PARENT=${KAILO_DOCKERD_CGROUP_PARENT:-kailo-ci.slice}
 # CI 写入上限（kailo-ci.slice 合计，作用于 data-root 所在整盘）；空串则不设。按 OPS-03 实测标定（手册）。

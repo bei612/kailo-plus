@@ -130,7 +130,7 @@
         "CHECK_GEN_MEMORY": "20g",
         "CHECK_CGROUP_PARENT": "kailo-ci.slice",
         "CHECK_CACHE_ROOT": "/volumes/data/kailo/capacity/ci/check-cache/kailo-macro",
-        "CHECK_SCCACHE_SIZE": "60G",
+        "CHECK_SCCACHE_SIZE": "45G",
         "CHECK_POSTGRES_SHM": "1g",
         "DOCKER_CONFIG": "/var/lib/kailo-ci/docker-config-kailo-macro",
         "CHECK_TARGET_ROOT": "/var/lib/kailo-ci/check-target/kailo-macro",

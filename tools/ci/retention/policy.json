@@ -97,8 +97,8 @@
           },
           {
             "path": "/var/lib/kailo-ci/ci-cache.xfs",
-            "cap": "200G",
-            "role": "loop XFS image (240G sparse since OPS-05) holding the kailo-macro CI targets, sccache and kailo-dev-check: 3x30G + 60G + 26G + ~10G XFS (own log; trimmed hourly)"
+            "cap": "185G",
+            "role": "loop XFS image (240G sparse since OPS-05) holding the kailo-macro CI targets, sccache and kailo-dev-check: 3x30G + 45G + 26G + ~10G XFS (own log; trimmed hourly)"
           },
           {
             "path": "/var/lib/kailo-ci/check-target/kailo-macro",
@@ -107,8 +107,8 @@
           },
           {
             "path": "/var/lib/kailo-ci/sccache/kailo-macro",
-            "cap": "60G",
-            "role": "sccache (inside ci-cache.xfs since 2026-11-14)"
+            "cap": "45G",
+            "role": "sccache (inside ci-cache.xfs; CHECK_SCCACHE_SIZE 45G since OPS-05)"
           },
           {
             "path": "/var/lib/kailo-ci/ci-fs/dev-check",
