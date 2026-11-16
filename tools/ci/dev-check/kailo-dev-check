@@ -1,0 +1,21 @@
+#!/bin/sh
+# kailo-dev-check（OPS-05）：开发机入口。作者在汇报"代码完成"前，对已 push 的 kailo-macro 分支做快速 Rust 编译反馈：
+#   kailo-dev-check <分支|commit> [crate ...|--affected]      （不给 crate 时等于 --affected）
+# 在 CI 节点的常驻容器里执行 cargo fmt --check、cargo check --tests（测试代码对照分支迁移后的真实库）与 cargo clippy
+# （与 CI 的 lint 同参数），几分钟内返回。它不是 CI：不进队列、不产生 verify 记录；统一 CI 仍只由主 Agent 发起。
+# 退出码：0 通过，1 有错误，2 用法，75 节点资源/锁等待超时，78 节点配置问题，130 中断。
+# 安装：sudo install -m 0755 tools/ci/dev-check/kailo-dev-check /usr/local/bin/（经开发机已有的 ssh 别名 kailo-ci-ssh）。
+set -eu
+if [ "$(id -u)" -eq 0 ]; then
+  exec runuser -u kailo-dev -- "$0" "$@"
+fi
+[ $# -ge 1 ] || { sed -n '2,3p' "$0" >&2; exit 2; }
+for a in "$@"; do
+  case "$a" in
+    --affected) ;;
+    *[!A-Za-z0-9._/-]*|-*) echo "kailo-dev-check: invalid argument: $a" >&2; exit 2 ;;
+  esac
+done
+# Arguments are restricted to [A-Za-z0-9._/-], so they pass through the remote shell unchanged.
+exec ssh -o BatchMode=yes -o ServerAliveInterval=30 "${KAILO_DEV_CHECK_HOST:-kailo-ci-ssh}" \
+  /volumes/kailo/ci/dev-check/dev-check.sh "$@"
