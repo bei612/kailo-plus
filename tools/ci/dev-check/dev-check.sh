@@ -19,9 +19,10 @@
 #   - test code is checked against a live PostgreSQL (`kailo-dev-check-pg`, tmpfs) migrated with the branch's
 #     migrations, one database per migrations tree (SQLX_OFFLINE=false, like the CI test step); clippy runs offline on
 #     the branch's .sqlx, like the CI lint step.
-# One run at a time (dev lock); the compile runs under the node's heavy lock (locks.heavy, shared with image builds and
-# the CI test phase), so it never competes with a verify's test phase or an image build; before it the resource
-# preflight of the CI (envguard.py) runs. Settings: config.json `dev_check` (defaults below).
+# One run at a time (dev lock); by default the compile runs under the node's heavy lock (locks.heavy, shared with image
+# builds and the CI test phase), so it never competes with a verify's test phase or an image build
+# (dev_check.compile_under_heavy_lock=false runs it beside them); before it the resource preflight of the CI
+# (envguard.py) runs. Settings: config.json `dev_check` (defaults below).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 CONFIG=${KAILO_CI_CONFIG:-/volumes/kailo/ci/config.json}
@@ -62,6 +63,7 @@ out = dict(
     pg_memory=dc.get("postgres_memory", "1536m"), pg_tmpfs=dc.get("postgres_tmpfs", "1g"),
     keep_dbs=str(dc.get("keep_databases", 6)), max_wait=str(dc.get("max_wait", 7200)),
     heavy_lock=(cfg.get("locks") or {}).get("heavy", "/var/lib/kailo-ci/locks/image-build.lock"),
+    compile_heavy=str(dc.get("compile_under_heavy_lock", True)).lower(),
 )
 for k, v in out.items():
     print(f"{k}={shlex.quote(str(v))}")
@@ -207,7 +209,10 @@ if [ "${used:-0}" -gt "$cap_gb" ]; then
 fi
 python3 -I "$here/envguard.py" --config "$CONFIG" preflight --repo kailo-macro --stage dev-check --memory "$memory" \
   --wait "$max_wait" || exit $?
-heavy
+# dev_check.compile_under_heavy_lock (default true): false lets the compile run beside an image build or a verify's
+# test phase. Admission then rests on the memory preflight above and the container's own cpus/memory limits; the
+# check image build keeps the heavy lock either way.
+[ "$compile_heavy" = false ] || heavy
 
 # -- selection --------------------------------------------------------------------------------------------------
 # Change set as the CI computes it: merge-base with origin/main (first parent for a commit on main).
