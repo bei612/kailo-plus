@@ -18,6 +18,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kci import CIError, Queue, load_config, repo_config  # noqa: E402
+import envguard  # noqa: E402
 
 LANE = os.environ.get("KAILO_CI_LANE", "release")
 # A lane may run several workers (config repositories.<name>.concurrency; install.sh makes one unit per slot). Each claims
@@ -30,23 +31,6 @@ GIB = 1 << 30
 
 def now():
     return time.time()
-
-
-def cgroup_headroom(path):
-    """Memory a new job can still get inside a cgroup v2 group (e.g. /sys/fs/cgroup/kailo.slice): memory.max minus the
-    memory that cannot be reclaimed without swap (anon + shmem; the slices run with MemorySwapMax=0, and the temporary
-    PostgreSQL data on tmpfs is shmem). Page cache is reclaimable and does not count. None when the group has no limit
-    or cannot be read (admission then uses the host figure only)."""
-    try:
-        with open(os.path.join(path, "memory.max")) as source:
-            limit = source.read().strip()
-        if limit == "max":
-            return None
-        with open(os.path.join(path, "memory.stat")) as source:
-            stat = dict(line.split() for line in source if line.strip())
-        return max(0, int(limit) - int(stat.get("anon", 0)) - int(stat.get("shmem", 0)))
-    except (OSError, ValueError):
-        return None
 
 
 class Job:
@@ -66,6 +50,10 @@ class Job:
 
     def cancelled(self):
         return os.path.exists(os.path.join(self.dir, "cancel"))
+
+    def log_size(self):
+        self.log.flush()
+        return os.path.getsize(os.path.join(self.dir, "log.txt"))
 
     def run(self, argv, cwd=None, env=None, check=True, label=None):
         """Run a child in its own process group, streaming output to the job log; honour cancel requests."""
@@ -101,6 +89,7 @@ class Job:
 class Worker:
     def __init__(self):
         self.base_environ = dict(os.environ)
+        self.waiting_since = None
         self.reload()
 
     def reload(self):
@@ -147,6 +136,12 @@ class Worker:
                 if not alive or pid == os.getpid():
                     self.q.update(job, state="UNKNOWN", reason="worker interrupted; inspect before retry",
                                   finished_at=now())
+        # Containers and networks of jobs that are no longer running (e.g. this interrupted one): they hold tmpfs memory
+        # and address pools until removed (OPS-05: a temporary PostgreSQL stayed up for 37 hours).
+        try:
+            envguard.sweep(self.cfg, say=lambda text: print(text, file=sys.stderr, flush=True))
+        except (OSError, subprocess.SubprocessError) as error:
+            print(f"sweep failed: {error!r}", file=sys.stderr)
 
     def next_request(self):
         lane_dir = self.q.pending[LANE]
@@ -194,7 +189,8 @@ class Worker:
                 continue
             job = request["job"]
             self.use_repo(request.get("repo"))
-            if not self.admit(job, request["stage"]):
+            verdict = self.admit(job, request["stage"], (request.get("targets") or [None])[0])
+            if verdict is False:
                 time.sleep(15)
                 continue
             claimed = f"{path}.slot{SLOT}"
@@ -203,63 +199,142 @@ class Worker:
             except FileNotFoundError:
                 continue
             os.remove(claimed)
+            if verdict is not True:  # a configuration that cannot work: refused before anything ran
+                self.q.update(job, state="FAILED", exit_code=78, reason=verdict, finished_at=now(), waiting_for=None)
+                continue
             self.execute(job)
 
-    def admit(self, job, stage):
-        # A repository may override both thresholds (repositories.<name>.admission / min_job_free_bytes).
-        admission = {**(self.cfg.get("admission") or {}), **(self.rc.get("admission") or {})}
-        need = int(admission.get(stage, 18 * GIB if stage in ("check", "check-step", "build") else 4 * GIB))
-        with open("/proc/meminfo") as source:
-            info = {line.split(":")[0]: int(line.split()[1]) * 1024 for line in source}
-        free = info.get("MemAvailable", 0)
-        # Checks run inside cgroup limits, not on the host's free memory: kailo.slice (OPS-01) and, since OPS-03, the
-        # kailo-ci.slice below it (dockerd's cgroup-parent for CI and builds, memory capped under the deployment's).
-        # admission.cgroup names one group or a list; the smallest headroom counts. tmpfs pages are shmem and count.
-        groups = admission.get("cgroup")
-        for group in [groups] if isinstance(groups, str) else (groups or []):
-            headroom = cgroup_headroom(group) if isinstance(group, str) else None
-            if headroom is not None:
-                free = min(free, headroom)
-        usage = shutil.disk_usage(self.tmp_root)
-        disk = usage.free
-        min_disk = int(self.rc.get("min_job_free_bytes", self.cfg.get("min_job_free_bytes", 32 * GIB)))
-        # The system NVMe also carries the deployment and degrades badly when nearly full (DRAM-less, OPS-03): no new
-        # job below min_free_percent of the disk (default 15), whatever the absolute figure says.
-        min_pct = float(admission.get("min_free_percent", 15))
-        min_disk = max(min_disk, int(usage.total * min_pct / 100))
-        if free < need or disk < min_disk:
-            self.q.update(job, waiting_for=dict(memory_required=need, memory_available=free,
-                                                disk_required=min_disk, disk_available=disk))
-            return False
-        return True
+    def admit(self, job, stage, step=None):
+        """Resource preflight before a job starts (OPS-05; envguard): memory headroom in the Kailo cgroups, free space
+        on the scratch NVMe, the CI cache filesystem and the 4T disk. Short of room: remove leftovers of finished jobs,
+        ask for the regular cleanup (retention: slot caps, idle roots, builder prune) and keep the job queued with the
+        reason in its status (`waiting_for`); it never starts only to fail half-way. Returns True to start, False to
+        wait, or the refusal text when the configuration itself cannot work (no amount of waiting would help)."""
+        name = self.rc["name"]
+        problems = envguard.config_problems(self.cfg, name, step if stage == "check-step" else None, stage)
+        if problems:
+            return "预检：环境配置不达标（未开跑）：" + "；".join(problems)
+        short, facts = envguard.shortages(self.cfg, name, stage, step if stage == "check-step" else None,
+                                          scratch=self.tmp_root)
+        if not short:
+            if self.waiting_since:
+                self.waiting_since = None
+            return True
+        if not self.waiting_since:
+            self.waiting_since = now()
+            envguard.sweep(self.cfg, say=lambda text: print(text, file=sys.stderr, flush=True))
+        cleanup = None
+        if any(kind == "disk" for kind, _ in short):
+            # Coalesced across slots (min_interval); not waited for here, the next admission round sees its effect.
+            envguard.request_cleanup(self.cfg, "admission: " + "; ".join(t for _, t in short),
+                                     say=lambda text: print(text, file=sys.stderr, flush=True))
+            cleanup = envguard.last_cleanup(self.cfg).get("finished_at")
+        self.q.update(job, waiting_for=dict(facts, short=[t for _, t in short], since=self.waiting_since,
+                                            last_cleanup=cleanup,
+                                            # kept for readers of the earlier flat fields
+                                            disk_required=facts["disks"]["nvme"]["required"],
+                                            disk_available=facts["disks"]["nvme"]["available"]))
+        return False
 
     # -- execution -------------------------------------------------------------------------------------------
+    # Stages whose failures may be the node's rather than the code's (OPS-05). A stage is retried after an environment
+    # failure only when a rerun cannot change anything outside the CI node: fetch, checks and generators qualify.
+    RETRYABLE = ("fetch", "docs", "check", "check-step", "gen")
+
     def execute(self, job_id):
         job = Job(self, job_id)
         self.use_repo(job.status.get("repo"))
-        job.tmp_job = os.path.join(job.tmp, "tmp")
-        os.makedirs(job.tmp_job, exist_ok=True)
         job.update(state="RUNNING", started_at=now(), worker_pid=os.getpid(), worker_slot=SLOT, waiting_for=None)
         stage = job.status["stage"]
+        policy = self.cfg.get("env_retry") or {}
+        retries = int(policy.get("max", 1)) if stage in self.RETRYABLE else 0
+        attempt = 0
         try:
-            handler = getattr(self, "stage_" + stage.replace("-", "_"))
-            handler(job)
-            job.update(state="SUCCEEDED", exit_code=0, reason="", finished_at=now())
-        except CIError as error:
-            state = "CANCELLED" if error.code == 130 else "FAILED"
-            job.say(str(error))
-            job.update(state=state, exit_code=error.code, reason=str(error), finished_at=now())
-        except Exception as error:  # noqa: BLE001 - every failure must land in status
-            job.say(f"internal error: {error!r}")
-            job.update(state="FAILED", exit_code=2, reason=f"internal error: {error}", finished_at=now())
-        finally:
-            for fn in reversed(job.cleanup):
+            while True:
+                offset, ooms = job.log_size(), envguard.oom_kills()
+                job.tmp_job = os.path.join(job.tmp, "tmp")
+                os.makedirs(job.tmp_job, exist_ok=True)
+                failure = None
                 try:
-                    fn()
-                except Exception as error:  # noqa: BLE001
-                    job.say(f"cleanup failed: {error!r}")
+                    handler = getattr(self, "stage_" + stage.replace("-", "_"))
+                    handler(job)
+                except CIError as error:
+                    failure = error
+                except Exception as error:  # noqa: BLE001 - every failure must land in status
+                    job.say(f"internal error: {error!r}")
+                    failure = CIError(f"internal error: {error}", code=2)
+                finally:
+                    for fn in reversed(job.cleanup):
+                        try:
+                            fn()
+                        except Exception as error:  # noqa: BLE001
+                            job.say(f"cleanup failed: {error!r}")
+                    job.cleanup = []
+                    shutil.rmtree(job.tmp, ignore_errors=True)
+                if failure is None:
+                    note = f"（环境重试 {attempt} 次后成功）" if attempt else ""
+                    job.update(state="SUCCEEDED", exit_code=0, reason=note, phase=None, finished_at=now())
+                    return
+                if failure.code == 130:
+                    job.say(str(failure))
+                    job.update(state="CANCELLED", exit_code=130, reason=str(failure), phase=None, finished_at=now())
+                    return
+                job.say(str(failure))
+                signature = envguard.classify(envguard.read_tail(os.path.join(job.dir, "log.txt"), offset),
+                                              envguard.oom_kills() - ooms, self.env_patterns(policy))
+                if signature and attempt < retries and not job.cancelled():
+                    attempt += 1
+                    job.say(f"===== 环境失败（{signature}）：清理后自动重试（第 {attempt} 次） =====")
+                    history = list(job.status.get("env_retry") or []) + [dict(attempt=attempt, signature=signature,
+                                                                                 failed=str(failure), at=now())]
+                    job.update(env_retry=history, phase="环境重试", reason=f"环境重试 {attempt}：{signature}")
+                    if not self.make_room(job, policy):
+                        job.update(state="FAILED", exit_code=failure.code, phase=None, finished_at=now(),
+                                   reason=f"{failure}（环境失败：{signature}；重试前等待资源超时）")
+                        return
+                    job.update(phase="环境重试", waiting_for=None)
+                    continue
+                reason = str(failure)
+                if signature:
+                    reason += f"（环境失败：{signature}；已环境重试 {attempt} 次）" if attempt else \
+                        f"（环境失败：{signature}；该阶段不自动重试）"
+                elif attempt:
+                    reason += f"（环境重试 {attempt} 次后的代码类失败）"
+                job.update(state="FAILED", exit_code=failure.code, reason=reason, phase=None, finished_at=now())
+                return
+        finally:
             shutil.rmtree(job.tmp, ignore_errors=True)
             job.log.close()
+
+    @staticmethod
+    def env_patterns(policy):
+        """Configured signatures (env_retry.patterns: {signature: regex}) replace the built-in list when given."""
+        extra = policy.get("patterns")
+        return list(extra.items()) if isinstance(extra, dict) and extra else None
+
+    def make_room(self, job, policy):
+        """Before an environment retry: remove leftovers, run the regular cleanup and wait until the job's admission
+        figures hold again (env_retry.wait seconds, default 2 h). False when the room never came or on cancel."""
+        say = job.say
+        envguard.sweep(self.cfg, say=say)
+        step = (job.status.get("targets") or [None])[0] if job.status["stage"] == "check-step" else None
+        deadline = now() + float(policy.get("wait", 7200))
+        cleaned = False
+        while True:
+            short, facts = envguard.shortages(self.cfg, self.rc["name"], job.status["stage"], step,
+                                              scratch=self.tmp_root)
+            if not short and cleaned:
+                return True
+            if not cleaned:
+                # Always once: a disk that filled up has to be made room on even if the failed attempt's files are gone.
+                envguard.request_cleanup(self.cfg, f"env retry of {job.id[:8]}",
+                                         wait=float(envguard.cleanup_spec(self.cfg)["timeout"]), say=say)
+                cleaned = True
+                continue
+            if job.cancelled() or now() >= deadline:
+                return False
+            job.update(waiting_for=dict(facts, short=[t for _, t in short]))
+            time.sleep(30)
 
     # -- source ----------------------------------------------------------------------------------------------
     def fetch(self, job):
@@ -358,7 +433,11 @@ class Worker:
         env = dict(CHECK_CPUS=self.env.get("CHECK_CPUS", "4"), CHECK_MEMORY=self.env.get("CHECK_MEMORY", "16g"),
                    CHECK_NETWORK=network or self.env.get("CHECK_NETWORK", "bridge"),
                    CHECK_CACHE_ROOT=self.env.get("CHECK_CACHE_ROOT", "/var/lib/kailo-ci/check-cache"),
-                   CHECK_SOURCE_REF=job.status["commit"], CHECK_SLOT=SLOT)
+                   CHECK_SOURCE_REF=job.status["commit"], CHECK_SLOT=SLOT,
+                   # OPS-05: the job (peaks log), its repository and the resource preflight check.sh runs before the job
+                   # and before its test phase (envguard.py preflight ...; exit 75 short, 78 configuration)
+                   CHECK_JOB=job.id, CHECK_REPO=self.rc["name"],
+                   CHECK_PREFLIGHT=os.path.join(HERE, "envguard.py"))
         if database_url:
             env["DATABASE_URL"] = database_url
         return env

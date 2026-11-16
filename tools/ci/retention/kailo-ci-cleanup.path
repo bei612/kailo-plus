@@ -1,0 +1,11 @@
+# OPS-05 环境防线：任务准入、check.sh 预检或环境重试发现盘不够时写请求文件（tools/ci/service/envguard.py），
+# 立即执行一轮既有的热目录保留（槽位上限、闲置根、builder prune），不等整点。由 tools/ci/retention/setup.sh install 安装。
+[Unit]
+Description=Run the Kailo CI retention now when a job asks for room (OPS-05)
+
+[Path]
+PathChanged=/var/lib/kailo-ci/queue/cleanup/request.json
+Unit=kailo-ci-hot-retention.service
+
+[Install]
+WantedBy=paths.target

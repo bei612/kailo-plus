@@ -325,6 +325,23 @@ def prune_build_cache(policy, report, dry_run):
         report.setdefault("build_cache", []).append(dict(builder=builder, keep_storage=keep, state=state))
 
 
+def write_status(policy, report):
+    """Summary of the finished run for whoever asked for it (OPS-05: the CI worker, check.sh and kailo-dev-check request
+    a run through kailo-ci-cleanup.path when a job is short of disk and wait for finished_at to pass their request)."""
+    path = policy.get("status_file")
+    if not path:
+        return
+    summary = dict(finished_at=time.time(), started_at=report["at"], freed_bytes=report["freed_bytes"],
+                   deleted=len(report["deleted"]), aborted=report.get("aborted"),
+                   build_cache=report.get("build_cache", []))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    with open(tmp, "w", encoding="utf-8") as sink:
+        json.dump(summary, sink, ensure_ascii=False)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, path)
+
+
 def say(message):
     print(message, file=sys.stderr, flush=True)
 
@@ -347,6 +364,8 @@ def main():
             report = run(policy, dry_run=args.dry_run)
             if not report.get("aborted"):
                 prune_build_cache(policy, report, args.dry_run)
+            if not args.dry_run:
+                write_status(policy, report)
     except (RetentionError, OSError, ValueError) as error:
         say(f"保留失败：{error}")
         sys.exit(1)
