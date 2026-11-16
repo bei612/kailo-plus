@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # kailo-dev-check: fast Rust compile feedback for authors on the CI node (OPS-05; CI-CD 手册「kailo-dev-check」).
 #
-#   dev-check.sh <branch|sha> [crate ...|--affected]      (dev box: kailo-dev-check <branch> [crate ...|--affected])
+#   dev-check.sh <branch|sha> [crate ...] [--web] [--affected]   (dev box: kailo-dev-check, same arguments)
 #
 # For a pushed kailo-macro branch: cargo fmt --check, `cargo check --tests` and `cargo clippy` of the given crates (or of
 # the packages the branch's change set reaches, computed by the branch's kailo/ci/affected.sh like the CI does), with the
-# CI's flags (kailo/ci/steps.sh: test and lint), then exits: 0 clean, 1 errors, 2 usage, 75 the node had no room in time
+# CI's flags (kailo/ci/steps.sh: test and lint); with --web (picked by --affected when apps/web, packages or kailo/i18n
+# change) the front-end checks of the CI web and lint steps: apps/web type-check, biome ci and import cycles on the
+# changed files, ast-grep scan and rule tests, i18n catalogs, brand scan, and the Vitest tests the changed files reach
+# (steps.sh web-test, `vitest related`). Then it exits: 0 clean, 1 errors, 2 usage, 75 the node had no room in time
 # (EX_TEMPFAIL), 78 configuration. Errors print as cargo prints them.
 #
 # It is NOT the CI: no job, no queue, no verify record; the unified CI stays with the main agent. Warm instead of fresh:
@@ -27,15 +30,16 @@ usage() { sed -n '4,5p' "$0" >&2; exit 2; }
 say() { printf 'kailo-dev-check: %s\n' "$*" >&2; }
 [ $# -ge 1 ] || usage
 ref=$1; shift
-crates=(); affected=false
+crates=(); affected=false; web=false
 for a in "$@"; do
   case "$a" in
     --affected) affected=true ;;
+    --web) web=true ;;
     -*) usage ;;
     *) [[ "$a" =~ ^[A-Za-z0-9_-]+$ ]] || { say "invalid crate name: $a"; exit 2; }; crates+=("$a") ;;
   esac
 done
-[ ${#crates[@]} -gt 0 ] || affected=true
+[ ${#crates[@]} -gt 0 ] || $web || affected=true
 [[ "$ref" =~ ^[A-Za-z0-9._/-]+$ ]] && [[ "$ref" != *..* ]] || { say "invalid branch or commit: $ref"; exit 2; }
 
 # Settings (config.json): the kailo-macro repository's mirror, caches and images, and dev_check overrides.
@@ -155,7 +159,7 @@ printf 'root:x:0:0:root:/root:/bin/sh\nkailo:x:%s:%s:kailo:/cache/home:/bin/sh\n
 printf 'root:x:0:\nkailo:x:%s:\n' "$(id -g)" > "$root/ids/group"
 
 docker network inspect "$net" >/dev/null 2>&1 || docker network create "$net" >/dev/null
-want="$image $nm_key $(stat -c %i "$snap") $cpus $memory"
+want="v2 $image $nm_key $(stat -c %i "$snap") $cpus $memory $sccache_size"
 have=$(docker inspect -f '{{index .Config.Labels "kailo.dev-check"}}' "$container" 2>/dev/null || true)
 if [ "$have" != "$want" ] || [ "$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null)" != true ]; then
   docker rm -f "$container" >/dev/null 2>&1 || true
@@ -166,7 +170,7 @@ if [ "$have" != "$want" ] || [ "$(docker inspect -f '{{.State.Running}}' "$conta
     -v "$src:/src" -w /src -v "$mirror:$mirror:ro" -v "$cache:/cache" -v "$target:/cache/target" "${nm_mounts[@]}" \
     -v "$root/ids/passwd:/etc/passwd:ro" -v "$root/ids/group:/etc/group:ro" \
     -v "$cache/cargo-registry:/usr/local/cargo/registry" -v "$cache/cargo-git:/usr/local/cargo/git" \
-    -e HOME=/cache/home -e RUSTUP_TOOLCHAIN=1.94.0 -e CARGO_NET_GIT_FETCH_WITH_CLI=true -e CARGO_TERM_COLOR=never \
+    -e HOME=/cache/home -e BUN_INSTALL_CACHE_DIR=/cache/bun -e RUSTUP_TOOLCHAIN=1.94.0 -e CARGO_NET_GIT_FETCH_WITH_CLI=true -e CARGO_TERM_COLOR=never \
     -e CARGO_BUILD_JOBS="${cpus%.*}" -e RUSTC_WRAPPER=sccache -e SCCACHE_DIR=/cache/sccache \
     -e SCCACHE_CACHE_SIZE="$sccache_size" "$image" sleep infinity >/dev/null
 fi
@@ -206,24 +210,28 @@ python3 -I "$here/envguard.py" --config "$CONFIG" preflight --repo kailo-macro -
 heavy
 
 # -- selection --------------------------------------------------------------------------------------------------
+# Change set as the CI computes it: merge-base with origin/main (first parent for a commit on main).
+if git -C "$src" merge-base --is-ancestor "$commit" refs/remotes/origin/main; then
+  base=$(git -C "$src" rev-parse -q --verify "$commit^1" || true)
+else
+  base=$(git -C "$src" merge-base "$commit" refs/remotes/origin/main || true)
+fi
+: > "$src/.git/kailo-dev-changed"   # empty (no base): affected.sh selects everything, web-test runs every test
+[ -z "$base" ] || git -C "$src" diff --name-only --no-renames "$base" "$commit" > "$src/.git/kailo-dev-changed"
+sel=
 if $affected; then
-  if git -C "$src" merge-base --is-ancestor "$commit" refs/remotes/origin/main; then
-    base=$(git -C "$src" rev-parse -q --verify "$commit^1" || true)
-  else
-    base=$(git -C "$src" merge-base "$commit" refs/remotes/origin/main || true)
-  fi
-  : > "$src/.git/kailo-dev-changed"   # empty (no base): affected.sh selects everything
-  [ -z "$base" ] || git -C "$src" diff --name-only --no-renames "$base" "$commit" > "$src/.git/kailo-dev-changed"
   if ! sel=$(x env KAILO_CHANGED_FILES=/src/.git/kailo-dev-changed KAILO_BASE="${base:-HEAD}" KAILO_BIN_CACHE=/cache/bin \
       bash kailo/ci/affected.sh | sed -n 1p) || [ -z "$sel" ]; then
     say "the affected-package selection (kailo/ci/affected.sh) failed, see above: the CI's lint and test fail the same way"
     exit 1
   fi
-  say "affected since ${base:0:12}: $sel"
-  [ "$sel" != none ] || { say "no Rust package affected; nothing to check"; exit 0; }
+  say "affected since ${base:0:12}: Rust: $sel"
+  if [ -z "$base" ] || grep -qE '^(apps/web/|packages/|kailo/i18n/)' "$src/.git/kailo-dev-changed"; then web=true; fi
   [ "$sel" = all ] && say "the change set reaches every package (toolchain, .cargo or no base): checking the workspace"
-  [ "$sel" = all ] || read -r -a crates <<<"$sel"
+  [ "$sel" = all ] || [ "$sel" = none ] || read -r -a crates <<<"$sel"
+  if [ "$sel" = none ] && ! $web; then say "no Rust package and no front-end file affected; nothing to check"; exit 0; fi
 fi
+$web && say "front-end checks: on (changed files since ${base:0:12})"
 pkgs=(); test_pkgs=(); sync=false; soup=false
 if [ "${sel:-}" = all ]; then
   pkgs=(--workspace --exclude sync_service); test_pkgs=(--workspace --exclude sync_service); sync=true; soup=true
@@ -248,9 +256,10 @@ part() {  # part <name> <command...>
   results+=("$(printf '%-16s %-8s %5ss' "$name" "$([ $rc -eq 0 ] && echo ok || echo FAIL)" $(( $(date +%s) - t0 )))")
   [ $rc -eq 0 ] || failed=1
 }
+rust=false; { [ ${#pkgs[@]} -gt 0 ] || $sync; } && rust=true
 fmt_pkgs=("${pkgs[@]}"); $sync && [ "${sel:-}" != all ] && fmt_pkgs+=(-p sync_service)
 [ "${sel:-}" = all ] && fmt_pkgs=(--all)
-part "fmt" cargo fmt --check "${fmt_pkgs[@]}"
+if $rust; then part "fmt" cargo fmt --check "${fmt_pkgs[@]}"; fi
 if [ ${#test_pkgs[@]} -gt 0 ]; then
   # steps.sh test: live database; `check` instead of nextest's build (no codegen, no run)
   # (the lint RUSTFLAGS: plain rustc ignores the clippy tool lint, so the diagnostics are the test step's, and both
@@ -270,7 +279,29 @@ if $soup; then
   part "clippy soup" "${clippy_env[@]}" sh -c \
     'cargo clippy -p soup --no-default-features && cargo clippy -p soup --no-default-features --features ports'
 fi
+if $web; then
+  # The CI's commands: steps.sh web (type-check), steps.sh lint (biome and import cycles on the changed files,
+  # ast-grep, i18n catalogs, brand scan), steps.sh web-test (Vitest on what the changed files reach).
+  part "web type-check" bash -c 'cd apps/web && bun run type-check'
+  part "biome (changed)" bash -c 'rc=0; since=(); [ -n "$1" ] && since=(--since="$1")
+    for dir in apps/web packages/collaboration; do
+      echo "-- biome ci --changed ($dir)"
+      (cd "$dir" && bun x --bun biome ci --changed "${since[@]}" --no-errors-on-unmatched --error-on-warnings --colors=off) || rc=1
+      echo "-- biome import cycles --changed ($dir)"
+      (cd "$dir" && bun x --bun biome lint --changed "${since[@]}" --no-errors-on-unmatched \
+        --only=suspicious/noImportCycles --colors=off) || rc=1
+    done; exit $rc' _ "$base"
+  part "ast-grep" bash -c 'bun x @ast-grep/cli@0.44.1 scan --off=tsx-no-hardcoded-ui-string --off=ts-no-hardcoded-ui-string \
+    && bun x @ast-grep/cli@0.44.1 test --skip-snapshot-tests'
+  part "i18n catalogs" bun kailo/i18n/check.ts
+  part "brand scan" bash kailo/ci/brand-scan.sh
+  wasm_cache=/cache/wasm-pkgs/${image##*:}
+  mkdir -p "$cache/wasm-pkgs/${image##*:}" && touch "$cache/wasm-pkgs/${image##*:}"
+  part "vitest (related)" env KAILO_CHANGED_FILES=/src/.git/kailo-dev-changed WASM_PKG_CACHE_DIR="$wasm_cache" \
+    VITEST_MODULE_CACHE_DIR=/cache/target/vitest-modules bash kailo/ci/steps.sh web-test
+fi
+[ ${#results[@]} -gt 0 ] || { say "nothing selected"; exit 0; }
 printf '\n===== kailo-dev-check %s @ %s =====\n' "$ref_name" "${commit:0:12}"
 printf '%s\n' "${results[@]}"
-[ $failed -eq 0 ] && echo "clean (fmt, test code against the live schema, clippy as the CI lint)" || echo "errors above"
+[ $failed -eq 0 ] && echo "clean (the parts above, with the CI's commands and flags)" || echo "errors above"
 exit $failed
