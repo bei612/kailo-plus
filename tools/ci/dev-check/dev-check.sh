@@ -113,7 +113,8 @@ if ! checkout; then  # e.g. objects of the previous commit pruned from the mirro
   say "persistent checkout unusable; recreating it (one cold compile of the workspace crates)"
   rm -rf "$src"; checkout
 fi
-say "$ref @ ${commit:0:12}"
+ref_name=${DEV_CHECK_REF_NAME:-$ref}   # the branch the caller named (dev-check-job.sh passes the resolved commit)
+say "$ref_name @ ${commit:0:12}"
 
 # -- image, node_modules snapshot, container ---------------------------------------------------------------------
 image="local/kailo-macro-check:$(sha256sum "$src/kailo/ci/check.Dockerfile" | cut -c1-16)"
@@ -269,7 +270,7 @@ if $soup; then
   part "clippy soup" "${clippy_env[@]}" sh -c \
     'cargo clippy -p soup --no-default-features && cargo clippy -p soup --no-default-features --features ports'
 fi
-printf '\n===== kailo-dev-check %s @ %s =====\n' "$ref" "${commit:0:12}"
+printf '\n===== kailo-dev-check %s @ %s =====\n' "$ref_name" "${commit:0:12}"
 printf '%s\n' "${results[@]}"
 [ $failed -eq 0 ] && echo "clean (fmt, test code against the live schema, clippy as the CI lint)" || echo "errors above"
 exit $failed

@@ -1,11 +1,14 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # kailo-dev-check（OPS-05）：开发机入口。作者在汇报"代码完成"前，对已 push 的 kailo-macro 分支做快速 Rust 编译反馈：
 #   kailo-dev-check <分支|commit> [crate ...|--affected]      （不给 crate 时等于 --affected）
 # 在 CI 节点的常驻容器里执行 cargo fmt --check、cargo check --tests（测试代码对照分支迁移后的真实库）与 cargo clippy
-# （与 CI 的 lint 同参数），几分钟内返回。它不是 CI：不进队列、不产生 verify 记录；统一 CI 仍只由主 Agent 发起。
-# 退出码：0 通过，1 有错误，2 用法，75 节点资源/锁等待超时，78 节点配置问题，130 中断。
+# （与 CI 的 lint 同参数）。它不是 CI：不进队列、不产生 verify 记录；统一 CI 仍只由主 Agent 发起。
+# 检查在节点上脱离 ssh 会话运行（dev-check-job.sh）：链路中断不影响它，本入口按退避重连并从断点继续输出日志；
+# 同一 commit + 参数再次执行会接上正在运行（或 15 分钟内刚结束）的那次，而不是重新开始。本地中断（Ctrl-C、超时）
+# 不取消节点上的检查，重新执行即可接上。
+# 退出码：0 通过，1 有错误，2 用法，75 节点资源/锁等待超时，78 节点配置问题，130 中断，69 节点长时间不可达。
 # 安装：sudo install -m 0755 tools/ci/dev-check/kailo-dev-check /usr/local/bin/（经开发机已有的 ssh 别名 kailo-ci-ssh）。
-set -eu
+set -euo pipefail
 if [ "$(id -u)" -eq 0 ]; then
   exec runuser -u kailo-dev -- "$0" "$@"
 fi
@@ -16,6 +19,50 @@ for a in "$@"; do
     *[!A-Za-z0-9._/-]*|-*) echo "kailo-dev-check: invalid argument: $a" >&2; exit 2 ;;
   esac
 done
+host=${KAILO_DEV_CHECK_HOST:-kailo-ci-ssh}
+job_cmd=/volumes/kailo/ci/dev-check/dev-check-job.sh
+give_up=${KAILO_DEV_CHECK_GIVE_UP:-7200}   # seconds of consecutive unreachability before giving up
+# A dead link is noticed within about a minute (no reply to 4 keepalives 15 s apart).
+remote() { ssh -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 "$host" "$@"; }
+say() { printf 'kailo-dev-check: %s\n' "$*" >&2; }
+
 # Arguments are restricted to [A-Za-z0-9._/-], so they pass through the remote shell unchanged.
-exec ssh -o BatchMode=yes -o ServerAliveInterval=30 "${KAILO_DEV_CHECK_HOST:-kailo-ci-ssh}" \
-  /volumes/kailo/ci/dev-check/dev-check.sh "$@"
+delay=5; down_since=
+retry() {  # retry <what>: after a failed remote call, wait with backoff (5 s doubling to 60 s), or give up
+  now=$(date +%s); [ -n "$down_since" ] || down_since=$now
+  if [ $((now - down_since)) -ge "$give_up" ]; then
+    say "node unreachable for $((now - down_since)) s while $1; the check (if started) keeps running there — rerun to reattach"
+    exit 69
+  fi
+  say "connection lost while $1; retrying in ${delay}s"
+  sleep "$delay"; delay=$((delay * 2)); [ "$delay" -le 60 ] || delay=60
+}
+ok() { delay=5; down_since=; }
+
+while :; do
+  rc=0; job=$(remote "$job_cmd" submit "$@") || rc=$?
+  [ "$rc" -eq 0 ] && { ok; break; }
+  [ "$rc" -eq 255 ] || exit "$rc"   # 255: ssh itself failed; anything else is the node's answer (usage, unknown branch)
+  retry "submitting"
+done
+case "$job" in *[!0-9a-f]*|"") say "unexpected answer from the node: $job"; exit 1 ;; esac
+
+log=${TMPDIR:-/tmp}/kailo-dev-check-$(id -u)-$job.log
+: > "$log"
+trap 'say "interrupted here; job $job keeps running on the node — rerun the same command to reattach"; exit 130' INT TERM HUP
+while :; do
+  off=$(wc -c < "$log" | tr -d ' ')
+  # The remote follow ends with 0 when the job has finished and everything up to the end was sent.
+  set +e; remote "$job_cmd" follow "$job" "$off" | tee -a "$log"; rc=${PIPESTATUS[0]}; set -e
+  [ "$rc" -eq 0 ] && { ok; break; }
+  [ "$rc" -eq 255 ] || { say "the node refused to show job $job (exit $rc)"; exit "$rc"; }
+  retry "reading the log of job $job"
+done
+while :; do
+  rc=0; st=$(remote "$job_cmd" status "$job") || rc=$?
+  [ "$rc" -eq 0 ] && { ok; break; }
+  [ "$rc" -eq 255 ] || exit "$rc"
+  retry "reading the result of job $job"
+done
+rm -f "$log"
+case "$st" in "done "*) exit "${st#done }" ;; *) say "job $job: $st"; exit 1 ;; esac
