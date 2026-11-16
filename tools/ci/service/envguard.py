@@ -328,7 +328,11 @@ def sweep(cfg, dry_run=False, say=print):
     """Containers and networks a CI job left behind (a worker interrupted by a kailo-docker restart, a killed
     check.sh): kci-pg-<job>, network kci-<job> of a job that is not running; kci-macro-<step>-<pid>-... whose
     check.sh process is gone. Running jobs and anything else are never touched."""
-    running = {job[:12] for job, state in job_states(cfg).items() if state in ("RUNNING", "DEPLOYING", "QUEUED")}
+    states = job_states(cfg)
+    if not states:  # an unreadable queue must never make every CI container look orphaned
+        say("envguard: no job states readable; sweep skipped")
+        return []
+    running = {job[:12] for job, state in states.items() if state in ("RUNNING", "DEPLOYING", "QUEUED")}
     removed = []
     r = docker("ps", "-a", "--format", "{{.Names}}")
     for name in r.stdout.split() if r.returncode == 0 else []:
