@@ -24,6 +24,7 @@ Thresholds (config.json `admission`, a repository may override keys in repositor
   cleanup               {request, status, timeout, min_interval}
 """
 import argparse
+import calendar
 import json
 import os
 import re
@@ -266,7 +267,7 @@ def measured_peak(log, field, step=None, days=30):
             for line in source:
                 try:
                     row = json.loads(line)
-                    at = time.mktime(time.strptime(row["at"], "%Y-%m-%dT%H:%M:%SZ")) - time.timezone
+                    at = calendar.timegm(time.strptime(row["at"], "%Y-%m-%dT%H:%M:%SZ"))
                 except (ValueError, KeyError):
                     continue
                 if at < since or (step and step not in (row.get("step"), str(row.get("part", "")).split(":")[0])
