@@ -12,17 +12,23 @@
 # (EX_TEMPFAIL), 78 configuration. Errors print as cargo prints them.
 #
 # It is NOT the CI: no job, no queue, no verify record; the unified CI stays with the main agent. Warm instead of fresh:
-#   - one persistent checkout (only the files a branch switch changes get new mtimes, so cargo rechecks only them)
-#     and one persistent container `kailo-dev-check` (the branch's check image, recreated when that image or the
-#     node_modules snapshot changes), incremental target directories on the CI cache filesystem (ci-fs), the shared
-#     sccache, cargo registry and node_modules snapshots of the CI;
-#   - test code is checked against a live PostgreSQL (`kailo-dev-check-pg`, tmpfs) migrated with the branch's
-#     migrations, one database per migrations tree (SQLX_OFFLINE=false, like the CI test step); clippy runs offline on
-#     the branch's .sqlx, like the CI lint step.
-# One run at a time (dev lock); by default the compile runs under the node's heavy lock (locks.heavy, shared with image
-# builds and the CI test phase), so it never competes with a verify's test phase or an image build
-# (dev_check.compile_under_heavy_lock=false runs it beside them); before it the resource preflight of the CI
-# (envguard.py) runs. Settings: config.json `dev_check` (defaults below).
+#   - per slot one persistent checkout (only the files a branch switch changes get new mtimes, so cargo rechecks only
+#     them) and one persistent container (the branch's check image, recreated when that image or the node_modules
+#     snapshot changes), incremental target directories on the CI cache filesystem (ci-fs), the shared sccache, cargo
+#     registry and node_modules snapshots of the CI;
+#   - test code is checked against a live PostgreSQL (`kailo-dev-check-pg`, tmpfs, shared by the slots) migrated with
+#     the branch's migrations, one database per migrations tree (SQLX_OFFLINE=false, like the CI test step); clippy
+#     runs offline on the branch's .sqlx, like the CI lint step.
+# Slots (dev_check.slots, default 1): up to that many runs at once, each in its own slot (lock, checkout, target
+# directory, container); a run takes the first free slot, else waits for any. Slot 0 is <root>/{src,target},
+# dev-check.lock, container kailo-dev-check; slot i>0 is <root>/slot-<i>/{src,target}, its dev-check.lock and
+# container kailo-dev-check-<i>. The PostgreSQL container, its network and databases are shared: the databases are
+# content-addressed (migrations tree) and only read by the sqlx macros, so one migration serves every slot.
+# By default the compile runs under the node's heavy lock (locks.heavy, shared with image builds and the CI test
+# phase), so it never competes with a verify's test phase or an image build; that also serializes the slots' compiles
+# (dev_check.compile_under_heavy_lock=false runs them beside each other and beside the CI). Before it the resource
+# preflight of the CI (envguard.py) admits the run, one slot at a time, counting the memory the other running slots may
+# still take. Settings: config.json `dev_check` (defaults below).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 CONFIG=${KAILO_CI_CONFIG:-/volumes/kailo/ci/config.json}
@@ -64,17 +70,17 @@ out = dict(
     keep_dbs=str(dc.get("keep_databases", 6)), max_wait=str(dc.get("max_wait", 7200)),
     heavy_lock=(cfg.get("locks") or {}).get("heavy", "/var/lib/kailo-ci/locks/image-build.lock"),
     compile_heavy=str(dc.get("compile_under_heavy_lock", True)).lower(),
+    slots=str(max(1, int(dc.get("slots", 1)))),
 )
 for k, v in out.items():
     print(f"{k}={shlex.quote(str(v))}")
 PY
 )"
-src=$root/src
-target=$root/target
-container=kailo-dev-check
-pg=kailo-dev-check-pg
+pg=kailo-dev-check-pg     # shared by the slots, like its network and databases
 net=kailo-dev-check
-mkdir -p "$root" "$target" "$root/ids" "$root/dbs" "$(dirname "$heavy_lock")"
+mkdir -p "$root" "$root/ids" "$root/dbs" "$(dirname "$heavy_lock")"
+slot_dir() { if [ "$1" -eq 0 ]; then echo "$root"; else echo "$root/slot-$1"; fi; }
+slot_container() { if [ "$1" -eq 0 ]; then echo kailo-dev-check; else echo "kailo-dev-check-$1"; fi; }
 
 # -- locks -------------------------------------------------------------------------------------------------------
 # The holder file next to a lock says who has it (informational: the lock itself is the flock).
@@ -91,8 +97,38 @@ hold() {  # hold <fd> <lock file> <what>: take the lock, waiting up to max_wait 
   fi
   printf '%s pid=%s since=%s\n' "$what" "$$" "$(date -u +%FT%TZ)" > "$lock.holder" 2>/dev/null || true
 }
-exec 7>>"$root/dev-check.lock"
-hold 7 "$root/dev-check.lock" "kailo-dev-check $ref"
+# -- slot: the first free one, else wait for any (fd 7 holds its lock for the whole run) --------------------------
+take_slot() {
+  local i d
+  for ((i = 0; i < slots; i++)); do
+    d=$(slot_dir "$i"); mkdir -p "$d"
+    exec 7>>"$d/dev-check.lock"
+    if flock -n 7; then slot=$i; return 0; fi
+    exec 7>&-
+  done
+  return 1
+}
+holders() {
+  local i
+  for ((i = 0; i < slots; i++)); do printf 'slot %s: %s; ' "$i" "$(cat "$(slot_dir "$i")/dev-check.lock.holder" 2>/dev/null || echo unknown)"; done
+}
+slot=
+if ! take_slot; then
+  waited=0
+  say "all $slots slot(s) busy; waiting for one (held by: $(holders))"
+  until take_slot; do
+    [ "$waited" -lt "$max_wait" ] || { say "gave up after ${max_wait}s waiting for a free slot"; exit 75; }
+    sleep 15; waited=$((waited + 15))
+    [ $((waited % 300)) -ne 0 ] || say "still waiting for a free slot (${waited}s; held by: $(holders))"
+  done
+fi
+sdir=$(slot_dir "$slot")
+src=$sdir/src
+target=$sdir/target
+container=$(slot_container "$slot")
+mkdir -p "$target"
+printf '%s pid=%s since=%s\n' "kailo-dev-check $ref" "$$" "$(date -u +%FT%TZ)" > "$sdir/dev-check.lock.holder" 2>/dev/null || true
+[ "$slots" -eq 1 ] || say "slot $slot of $slots ($container)"
 
 # Interrupted (the dev box's ssh went away, Ctrl-C): stop what runs in the container, so the next run does not wait
 # for an orphaned cargo holding the build directory lock.
@@ -129,9 +165,11 @@ heavy_held=false
 heavy() { $heavy_held || { hold 9 "$heavy_lock" "kailo-dev-check $ref"; heavy_held=true; }; }
 if ! docker image inspect "$image" >/dev/null 2>&1; then
   heavy   # an image build: same lock as every other image build on the node
-  say "building the check image $image"
-  DOCKER_CONFIG=${docker_config:-$HOME/.docker} BUILDX_BUILDER=$buildx_builder \
-    docker buildx build --load --progress=plain -f "$src/kailo/ci/check.Dockerfile" -t "$image" "$src/kailo/ci" >&2
+  if ! docker image inspect "$image" >/dev/null 2>&1; then   # another slot may have built it while we waited
+    say "building the check image $image"
+    DOCKER_CONFIG=${docker_config:-$HOME/.docker} BUILDX_BUILDER=$buildx_builder \
+      docker buildx build --load --progress=plain -f "$src/kailo/ci/check.Dockerfile" -t "$image" "$src/kailo/ci" >&2
+  fi
 fi
 bun_image=oven/bun:$(sed -n 's/.*"packageManager": *"bun@\([0-9.]*\)".*/\1/p' "$src/package.json")
 # Same key and layout as kailo/ci/check.sh js_deps, so the CI's snapshots serve here and a snapshot made here serves the
@@ -157,9 +195,13 @@ fi
 touch "$snap"   # most recently used: the CI keeps the three newest snapshots
 nm_mounts=()
 while IFS= read -r d; do d=${d#./}; mkdir -p "$src/$d"; nm_mounts+=(-v "$snap/tree/$d:/src/$d"); done < "$snap/list"
-printf 'root:x:0:0:root:/root:/bin/sh\nkailo:x:%s:%s:kailo:/cache/home:/bin/sh\n' "$(id -u)" "$(id -g)" > "$root/ids/passwd"
-printf 'root:x:0:\nkailo:x:%s:\n' "$(id -g)" > "$root/ids/group"
+# Shared by the slots: written only when different, and by rename (a running container keeps the file it mounted).
+put() { [ "$(cat "$1" 2>/dev/null)" = "$2" ] || { printf '%s\n' "$2" > "$1.tmp.$$" && mv -f "$1.tmp.$$" "$1"; }; }
+put "$root/ids/passwd" "$(printf 'root:x:0:0:root:/root:/bin/sh\nkailo:x:%s:%s:kailo:/cache/home:/bin/sh' "$(id -u)" "$(id -g)")"
+put "$root/ids/group" "$(printf 'root:x:0:\nkailo:x:%s:' "$(id -g)")"
 
+# The shared network, secret and PostgreSQL are created by one slot at a time (fd 6, released after the databases).
+exec 6>>"$root/shared.lock"; flock 6
 docker network inspect "$net" >/dev/null 2>&1 || docker network create "$net" >/dev/null
 want="v2 $image $nm_key $(stat -c %i "$snap") $cpus $memory $sccache_size"
 have=$(docker inspect -f '{{index .Config.Labels "kailo.dev-check"}}' "$container" 2>/dev/null || true)
@@ -176,7 +218,7 @@ if [ "$have" != "$want" ] || [ "$(docker inspect -f '{{.State.Running}}' "$conta
     -e CARGO_BUILD_JOBS="${cpus%.*}" -e RUSTC_WRAPPER=sccache -e SCCACHE_DIR=/cache/sccache \
     -e SCCACHE_CACHE_SIZE="$sccache_size" "$image" sleep infinity >/dev/null
 fi
-x() { docker exec "$container" "$@" 9>&- 7>&-; }
+x() { docker exec "$container" "$@" 9>&- 7>&- 6>&- 5>&-; }
 
 # -- live database for test code (one per migrations tree) ---------------------------------------------------------
 [ -s "$root/pg.secret" ] || { umask 077; head -c 24 /dev/urandom | base64 | tr -d '/+=' > "$root/pg.secret"; }
@@ -197,9 +239,12 @@ if [ "$(docker exec "$pg" psql -U postgres -Atc "select 1 from pg_database where
     >/dev/null || { say "migrations of ${commit:0:12} do not apply"; exit 1; }
 fi
 touch "$root/dbs/$db"
+# Least recently used beyond keep_databases go, except those touched in the last two hours (another slot's run).
 ls -1t "$root/dbs" | tail -n +$((keep_dbs + 1)) | while read -r old; do
+  [ -n "$(find "$root/dbs/$old" -maxdepth 0 -mmin +120)" ] || continue
   docker exec "$pg" dropdb -U postgres --if-exists "$old" >/dev/null 2>&1 || true; rm -f "$root/dbs/$old"
 done
+exec 6>&-
 
 # -- target cap, preflight, heavy lock (the affected-package filter may compile too) ------------------------------
 used=$(du -sx -BG "$target" 2>/dev/null | cut -f1 | tr -dc 0-9)
@@ -207,8 +252,38 @@ if [ "${used:-0}" -gt "$cap_gb" ]; then
   say "target directories use ${used}G > ${cap_gb}G; clearing them (next run is cold)"
   find "$target" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 fi
-python3 -I "$here/envguard.py" --config "$CONFIG" preflight --repo kailo-macro --stage dev-check --memory "$memory" \
+# Admission one slot at a time (fd 5): a slot that is running counts with what its container may still take
+# (memory limit - current use), so runs admitted together cannot overcommit the node.
+need=$memory
+if [ "$slots" -gt 1 ]; then
+  exec 5>>"$root/admit.lock"
+  flock -w "$max_wait" 5 || { say "gave up after ${max_wait}s waiting for admission"; exit 75; }
+  others=()
+  for ((i = 0; i < slots; i++)); do
+    [ "$i" -ne "$slot" ] || continue
+    # busy (its lock held) and its container up; a busy slot still starting its container is not counted
+    if ! flock -n "$(slot_dir "$i")/dev-check.lock" true 2>/dev/null &&
+       [ "$(docker inspect -f '{{.State.Running}}' "$(slot_container "$i")" 2>/dev/null)" = true ]; then
+      others+=("$(slot_container "$i")")
+    fi
+  done
+  if [ ${#others[@]} -gt 0 ]; then
+    read -r need reserve < <(docker stats --no-stream --format '{{.MemUsage}}' "${others[@]}" 2>/dev/null |
+      python3 -I -c '
+import re, sys
+UNITS = dict(b=1, k=1 << 10, kb=1000, kib=1 << 10, m=1 << 20, mb=10**6, mib=1 << 20, g=1 << 30, gb=10**9, gib=1 << 30)
+def size(text):
+    m = re.fullmatch(r"([0-9.]+)\s*([a-z]*)", text.strip().lower())
+    return int(float(m.group(1)) * UNITS.get(m.group(2) or "b", 1)) if m else 0
+reserve = sum(max(0, size(limit) - size(used)) for used, _, limit in (line.partition("/") for line in sys.stdin))
+print(size(sys.argv[1]) + reserve, reserve)' "$memory") || true
+    [ -n "${reserve:-}" ] || { need=$memory; reserve=0; }   # a container being recreated: no figure, own memory only
+    say "admission: ${#others[@]} other slot(s) running; reserving $((reserve >> 20))MiB more they may still take"
+  fi
+fi
+python3 -I "$here/envguard.py" --config "$CONFIG" preflight --repo kailo-macro --stage dev-check --memory "$need" \
   --wait "$max_wait" || exit $?
+exec 5>&-
 # dev_check.compile_under_heavy_lock (default true): false lets the compile run beside an image build or a verify's
 # test phase. Admission then rests on the memory preflight above and the container's own cpus/memory limits; the
 # check image build keeps the heavy lock either way.

@@ -156,6 +156,7 @@
     "target_cap_gb": 25,
     "memory": "12g",
     "cpus": 8,
-    "max_wait": 7200
+    "max_wait": 7200,
+    "slots": 1
   }
 }
