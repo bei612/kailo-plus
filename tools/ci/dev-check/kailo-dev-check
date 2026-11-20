@@ -6,7 +6,7 @@
 # apps/web type-check、biome（改动文件）、ast-grep、i18n 目录、品牌扫描、vitest related（改动文件波及的测试）。
 # --test（--affected 时缺省带上，节点 dev_check.test_by_default=false 可关；--no-test 跳过）再按 CI test 步骤运行所选包的
 # Rust 测试（分支自己的 kailo/ci/steps.sh test：同一选包、nextest 参数、迁移与 Deno 部分；redis、OpenBao、SpiceDB 与 CI 一样
-# 临时启动；选中 kailo_metering/ai_usage/kailo_governance（或 all）时用分支 check.sh 自己的 openmeter_up 启动 OpenMeter，
+# 临时启动；选中 kailo_metering/ai_usage/kailo_governance（或 all）时用分支自己的 kailo/ci/openmeter.sh（CI check.sh 同样引用）启动 OpenMeter，
 # 与 CI 一致；Keycloak/microsandbox 不启动，其测试与 CI 未启动它们时一样跳过）。它不是 CI：不进队列、不产生 verify 记录；统一 CI 仍只由主 Agent 发起。
 # 检查在节点上脱离 ssh 会话运行（dev-check-job.sh）：链路中断不影响它，本入口按退避重连并从断点继续输出日志；
 # 同一 commit + 参数再次执行会接上正在运行（或 15 分钟内刚结束）的那次，而不是重新开始。本地中断（Ctrl-C、超时）
