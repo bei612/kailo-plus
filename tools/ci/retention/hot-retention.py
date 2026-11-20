@@ -334,7 +334,13 @@ def write_status(policy, report):
     summary = dict(finished_at=time.time(), started_at=report["at"], freed_bytes=report["freed_bytes"],
                    deleted=len(report["deleted"]), aborted=report.get("aborted"),
                    build_cache=report.get("build_cache", []))
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    directory = os.path.dirname(path)
+    if not os.path.isdir(directory):
+        # The request directory belongs to the CI user (the worker writes request.json there); this run is root, so a
+        # directory it has to recreate takes the owner of its parent (the CI queue), not root.
+        os.makedirs(directory, exist_ok=True)
+        parent = os.stat(os.path.dirname(directory))
+        os.chown(directory, parent.st_uid, parent.st_gid)
     tmp = f"{path}.{os.getpid()}.tmp"
     with open(tmp, "w", encoding="utf-8") as sink:
         json.dump(summary, sink, ensure_ascii=False)
