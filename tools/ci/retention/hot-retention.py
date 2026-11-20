@@ -19,6 +19,7 @@ cargo target），逐个判定其直接子项：
 """
 
 import argparse
+import calendar
 import fcntl
 import json
 import os
@@ -325,6 +326,53 @@ def prune_build_cache(policy, report, dry_run):
         report.setdefault("build_cache", []).append(dict(builder=builder, keep_storage=keep, state=state))
 
 
+def superseded_images(images, used, *, prefixes, keep_newest, min_age, now):
+    """Tags to remove: under one of prefixes, not used by any container (stopped ones included), older than min_age
+    seconds, and not among the keep_newest most recent tags of their repository (a rollback target stays)."""
+    by_repo = {}
+    for image in images:
+        repo = image["ref"].rsplit(":", 1)[0]
+        if any(repo.startswith(p) for p in prefixes):
+            by_repo.setdefault(repo, []).append(image)
+    out = []
+    for tags in by_repo.values():
+        tags.sort(key=lambda i: i["created"], reverse=True)
+        for image in tags[keep_newest:]:
+            if image["ref"] not in used and image["id"] not in used and now - image["created"] >= min_age:
+                out.append(image["ref"])
+    return sorted(out)
+
+
+def prune_superseded_images(policy, report, dry_run, now=None):
+    """policy.superseded_images: each deploy builds a new tag of every kailo/* image (and check images a new tag per
+    check.Dockerfile), and nothing removed the old ones (2026-11-20: 23G of superseded tags on the NVMe). Only the
+    dockerd that DOCKER_HOST names (the unit pins the Kailo dockerd); docker unreadable = nothing removed."""
+    spec = policy.get("superseded_images")
+    if not spec:
+        return
+    now = time.time() if now is None else now
+    r = subprocess.run(DOCKER + ["images", "--no-trunc", "--format", "{{json .}}"], capture_output=True, text=True)
+    c = subprocess.run(DOCKER + ["ps", "-a", "--no-trunc", "--format", "{{.Image}}"], capture_output=True, text=True)
+    if r.returncode or c.returncode:
+        report["images"] = dict(state="docker 不可用，跳过")
+        return
+    images = []
+    for line in r.stdout.splitlines():
+        row = json.loads(line)
+        if row.get("Tag") in (None, "", "<none>"):
+            continue
+        created = calendar.timegm(time.strptime(row["CreatedAt"][:19], "%Y-%m-%d %H:%M:%S"))  # docker prints UTC if "CreatedAt" in row else now
+        images.append(dict(ref=f'{row["Repository"]}:{row["Tag"]}', id=row["ID"], created=created))
+    used = set(c.stdout.split())
+    refs = superseded_images(images, used, prefixes=spec["prefixes"], keep_newest=spec.get("keep_newest", 1),
+                             min_age=spec.get("min_age_seconds", 86400), now=now)
+    removed = []
+    for ref in refs:
+        if dry_run or subprocess.run(DOCKER + ["rmi", ref], capture_output=True).returncode == 0:
+            removed.append(ref)
+    report["images"] = dict(state="dry-run" if dry_run else "ok", removed=removed)
+
+
 def write_status(policy, report):
     """Summary of the finished run for whoever asked for it (OPS-05: the CI worker, check.sh and kailo-dev-check request
     a run through kailo-ci-cleanup.path when a job is short of disk and wait for finished_at to pass their request)."""
@@ -370,6 +418,7 @@ def main():
             report = run(policy, dry_run=args.dry_run)
             if not report.get("aborted"):
                 prune_build_cache(policy, report, args.dry_run)
+                prune_superseded_images(policy, report, args.dry_run)
             if not args.dry_run:
                 write_status(policy, report)
     except (RetentionError, OSError, ValueError) as error:
@@ -388,6 +437,8 @@ def main():
     say(f"{verb} {len(report['deleted'])} 项，约 {report['freed_bytes'] / 2**30:.1f} GiB；保留 {len(report['kept'])} 项")
     for item in report.get("build_cache", []):
         say(f"构建缓存 {item['builder']}：保留上限 {item['keep_storage']}，{item['state']}")
+    if "images" in report:
+        say(f"过期镜像：{report['images']['state']}，{len(report['images'].get('removed', []))} 个 {' '.join(report['images'].get('removed', []))}")
 
 
 if __name__ == "__main__":

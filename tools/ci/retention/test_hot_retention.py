@@ -254,5 +254,24 @@ class BuildCache(unittest.TestCase):
             self.assertEqual(report["build_cache"][0]["state"], "ok")
 
 
+class SupersededImages(unittest.TestCase):
+    def test_keeps_used_recent_and_newest_tags(self):
+        now = 1_000 * DAY
+        img = lambda ref, age, iid=None: dict(ref=ref, id=iid or ref, created=now - age)
+        images = [img("kailo/backend:a", 1 * HOUR), img("kailo/backend:b", 2 * DAY), img("kailo/backend:c", 3 * DAY),
+                  img("kailo/backend:d", 4 * DAY), img("kailo/backend:e", 5 * DAY, "sha256:e"),
+                  img("local/kailo-macro-check:x", 9 * DAY), img("redis:7", 99 * DAY), img("golang:1", 99 * DAY)]
+        used = {"kailo/backend:d", "sha256:e"}
+        self.assertEqual(hr.superseded_images(images, used, prefixes=["kailo/", "local/kailo-macro-"], keep_newest=2,
+                                              min_age=DAY, now=now),
+                         ["kailo/backend:c"])
+
+    def test_only_the_newest_is_kept_with_keep_newest_one(self):
+        now = 1_000 * DAY
+        images = [dict(ref="kailo/x:1", id="1", created=now - 2 * DAY), dict(ref="kailo/x:2", id="2", created=now - 3 * DAY)]
+        self.assertEqual(hr.superseded_images(images, set(), prefixes=["kailo/"], keep_newest=1, min_age=DAY, now=now),
+                         ["kailo/x:2"])
+
+
 if __name__ == "__main__":
     unittest.main()
