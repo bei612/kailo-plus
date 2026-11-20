@@ -93,6 +93,17 @@ UNIT
 done <<< "$LANE_SLOTS"
 systemctl daemon-reload
 systemctl enable --now "${PATH_UNITS[@]}"
+# Lowering a repository's concurrency retires the slots above it: a slot unit that is no longer configured stops
+# taking requests (a job it is running finishes; its .service is a oneshot) and its unit files go.
+for f in /etc/systemd/system/kailo-ci-*-[0-9]*.path /etc/systemd/system/kailo-ci-worker-[0-9]*.path; do
+  [ -e "$f" ] || continue
+  u=$(basename "$f")
+  printf '%s\n' "${PATH_UNITS[@]}" | grep -qx "$u" && continue
+  systemctl disable --now "$u"
+  rm -f "$f" "${f%.path}.service"
+  echo "retired $u"
+done
+systemctl daemon-reload
 docker compose -f "$HERE"/control.compose.yaml up -d
 # The workers import every module they need: a missing one fails every lane at start (2026-11-16, envguard).
 sudo -u "$USER_NAME" env PYTHONPATH=$CI/service python3 -c "import worker" >/dev/null
