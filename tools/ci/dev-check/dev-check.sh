@@ -107,7 +107,7 @@ elif $affected && [ "$test_default" != false ]; then run_tests=true
 else run_tests=false; fi
 pg=kailo-dev-check-pg     # shared by the slots, like its network and databases
 net=kailo-dev-check
-tsvc=kailo-dev-check-t    # the test part's throwaway containers: one test part at a time on the node (heavy lock)
+tsvc=kailo-dev-check-t    # the test part's throwaway containers: one test part at a time on the node (test-part.lock)
 mkdir -p "$root" "$root/ids" "$root/dbs" "$(dirname "$heavy_lock")"
 slot_dir() { if [ "$1" -eq 0 ]; then echo "$root"; else echo "$root/slot-$1"; fi; }
 slot_container() { if [ "$1" -eq 0 ]; then echo kailo-dev-check; else echo "kailo-dev-check-$1"; fi; }
@@ -517,7 +517,7 @@ tests_up() {  # writes the services' variables to $1
     "a CI run that does not start them: Keycloak (CI: authentication_service selected), OpenMeter (kailo_metering," \
     "ai_usage, kailo_governance), microsandbox (agent_harness)"
 }
-# The shared PostgreSQL, used by one test part at a time (heavy lock): a fresh database `dctest` from template1, which
+# The shared PostgreSQL, used by one test part at a time (test-part.lock): a fresh database `dctest` from template1, which
 # carries the migrations of the last tree a test part used (reset when the tree differs; steps.sh test then migrates
 # the database and template1 exactly as in the CI, a no-op when they are current). The compile databases come from
 # template0 and are not touched.
@@ -555,6 +555,10 @@ if $run_tests && [ ${#test_pkgs[@]} -gt 0 ]; then
   else
     # As the CI's test phase: under the node's heavy lock, then a memory preflight for what this part adds.
     heavy_run || rc=$?
+    # The test part's containers ($tsvc-*), the shared database `dctest`, the `_sqlx_test_` databases and template1
+    # are node-wide: with the heavy lock shared, the slots' test parts still take turns on their own lock.
+    exec 6>>"$root/test-part.lock"
+    [ $rc -ne 0 ] || hold 6 "$root/test-part.lock" "kailo-dev-check $ref (test part)" || rc=$?
     [ $rc -ne 0 ] || python3 -I "$here/envguard.py" --config "$CONFIG" preflight --repo kailo-macro --stage dev-check \
       --memory "$test_need" --wait "$max_wait" || rc=$?
     if [ $rc -eq 0 ]; then
@@ -594,6 +598,7 @@ if $run_tests && [ ${#test_pkgs[@]} -gt 0 ]; then
     else
       record "nextest" "$rc" "$t0"
     fi
+    exec 6>&-
   fi
 fi
 
