@@ -14,9 +14,12 @@
 # branch's own `kailo/ci/steps.sh test` (and `test-sandbox`), i.e. the CI test step's package selection (affected.sh,
 # skip_tests included), migrations of the database and template1, nextest flags, RUSTFLAGS and Deno parts, in a
 # throwaway container with the CI's environment, against the shared PostgreSQL (CI settings, CHECK_POSTGRES_ARGS), a
-# throwaway redis, OpenBao dev server and SpiceDB as check.sh starts them. Keycloak, OpenMeter and microsandbox are not
-# started and not listed in KAILO_TEST_SERVICES, so their tests skip exactly as in a CI run whose selection does not
-# start them. The test part holds the node's heavy lock (like the CI test phase) after its own memory preflight; it
+# throwaway redis, OpenBao dev server and SpiceDB as check.sh starts them; when the selection includes kailo_metering,
+# ai_usage or kailo_governance (always for all) also an OpenMeter, started by the branch's own check.sh functions
+# (needs_openmeter, openmeter_up: same images, configuration and readiness as the CI test step; KAILO_TEST_SERVICES
+# then lists openmeter, so the live quota tests fail rather than skip). Keycloak and microsandbox are not started and
+# not listed, so their tests skip exactly as in a CI run whose selection does not start them. The test part holds the
+# node's heavy lock (like the CI test phase) after its own memory preflight; it
 # runs with dev_check.test_memory (12g) and test_jobs (6: build jobs and nextest --test-threads) in a target directory
 # of its slot (<slot>/test-target, capped at test_target_cap_gb), and is skipped when `check --tests` already failed.
 #
@@ -95,7 +98,8 @@ out = dict(
 def size(v):
     t = str(v).strip().lower().rstrip("ib").rstrip("b")
     return int(float(t[:-1]) * {"k": 1 << 10, "m": 1 << 20, "g": 1 << 30, "t": 1 << 40}[t[-1]]) if t[-1] in "kmgt" else int(t)
-# The test part's admission: its container, the PostgreSQL tmpfs it may fill, redis + OpenBao + SpiceDB (2 GiB).
+# The test part's admission: its container, the PostgreSQL tmpfs it may fill, redis + OpenBao + SpiceDB (2 GiB); an
+# OpenMeter the selection needs adds its containers' limits (om_need, at the test part).
 out["test_need"] = str(size(out["test_memory"]) + size(out["pg_tmpfs"]) + (2 << 30))
 for k, v in out.items():
     print(f"{k}={shlex.quote(str(v))}")
@@ -167,7 +171,14 @@ printf '%s pid=%s since=%s\n' "kailo-dev-check $ref" "$$" "$(date -u +%FT%TZ)" >
 # Interrupted (the dev box's ssh went away, Ctrl-C): stop what runs in the container, so the next run does not wait
 # for an orphaned cargo holding the build directory lock.
 running=false; testing=false
-test_down() { docker rm -f -v "$tsvc-run" "$tsvc-sandbox" "$tsvc-redis" "$tsvc-openbao" "$tsvc-spicedb" >/dev/null 2>&1 || true; }
+# test_down removes every $tsvc-* container (redis, OpenBao, SpiceDB, the OpenMeter set openmeter_up names after its
+# tag, the test runs) and OpenMeter's staged configuration.
+om_scratch=()
+test_down() {
+  docker ps -aq --filter "name=^$tsvc-" | xargs -r docker rm -f -v >/dev/null 2>&1 || true
+  [ ${#om_scratch[@]} -eq 0 ] || rm -rf -- "${om_scratch[@]}"
+  om_scratch=()
+}
 interrupted() {
   $running && docker restart -t 1 "$container" >/dev/null 2>&1 || true
   $testing && test_down
@@ -478,6 +489,36 @@ up_wait() {  # up_wait <what> <seconds> <command...>
   for _ in $(seq "$n"); do "$@" >/dev/null 2>&1 && return 0; sleep 1; done
   echo "$what did not start"; return 1
 }
+# OpenMeter (D-02) exactly as the CI test step starts it: the branch's own needs_openmeter and openmeter_up, read from
+# its kailo/ci/check.sh (each a top-level function, `name() {` to the first `}` line at column 0) and run here on the
+# node like check.sh runs them, so the two cannot diverge. check.sh's names they use are bound to this test part:
+# root = the slot's checkout, gitdir = its .git (kailo-affected = this run's selection), tag = $tsvc (containers
+# $tsvc-openmeter*, removed by test_down), network = $net, cgroup = the CI's cgroup parent. A branch whose check.sh has
+# no openmeter_up does not start it (its tests skip, as that branch's CI).
+om_load() {
+  eval "$(awk '/^(needs_openmeter|openmeter_up)\(\) *\{/ { p = 1 } p { print } p && /^\}/ { p = 0 }' \
+    "$src/kailo/ci/check.sh")" && declare -F needs_openmeter >/dev/null && declare -F openmeter_up >/dev/null
+}
+om_needed() {  # the selection steps.sh test runs (KAILO_AFFECTED) includes an OpenMeter package
+  local gitdir=$src/.git
+  cp "$src/.git/kailo-dev-affected" "$gitdir/kailo-affected" && needs_openmeter ""
+}
+om_need() {  # bytes: the sum of the --memory limits openmeter_up gives its containers
+  local m t=0
+  for m in $(declare -f openmeter_up | grep -o -- '--memory [0-9]*[mg]' | cut -d' ' -f2); do
+    case $m in *g) t=$((t + ${m%g} * 1024)) ;; *m) t=$((t + ${m%m})) ;; esac
+  done
+  echo $((t << 20))
+}
+om_up() {  # om_up <env file>: openmeter_up, then its test_env (OPENMETER_URL) into the file
+  local root=$src gitdir=$src/.git tag=$tsvc network=$net cgroup=() containers=() scratch_dirs=() test_env=()
+  local test_services= rc=0
+  [ -z "$cgroup_parent" ] || cgroup=(--cgroup-parent "$cgroup_parent")
+  openmeter_up || rc=$?
+  om_scratch+=("${scratch_dirs[@]}")
+  [ $rc -eq 0 ] || return $rc
+  printf '%s\n' "${test_env[@]}" >> "$1"
+}
 # check.sh's always-on test services (redis_up, bao_up, spicedb_up), with the images the branch's check.sh pins. The
 # test container joins redis' network namespace (127.0.0.1:6379), as in the CI. A service that does not come up is
 # left out of KAILO_TEST_SERVICES (its tests skip) and said so; redis is required (its tests have no skip).
@@ -511,11 +552,13 @@ tests_up() {  # writes the services' variables to $1
      up_wait SpiceDB 60 docker exec "$tsvc-spicedb" grpc_health_probe -addr=localhost:50051; then
     printf 'SPICEDB_HTTP_URL=http://%s:8443\nSPICEDB_PRESHARED_KEY=%s\n' "$tsvc-spicedb" "$key" >> "$out"; list+=(spicedb)
   else echo "SpiceDB (image '${spicedb_image:-not found in kailo/ci/check.sh}') not started: its tests skip here"; fi
+  # As in the CI: an OpenMeter the selection needs must come up, or the test part fails.
+  if $om; then om_up "$out" || { echo "OpenMeter (the branch's openmeter_up) did not come up"; return 1; }; list+=(openmeter); fi
   local IFS=,
   printf 'KAILO_TEST_SERVICES=%s\n' "${list[*]}" >> "$out"
   echo "test services: redis${list[*]:+,${list[*]}} (KAILO_TEST_SERVICES=${list[*]}); not started, so their tests skip as in" \
-    "a CI run that does not start them: Keycloak (CI: authentication_service selected), OpenMeter (kailo_metering," \
-    "ai_usage, kailo_governance), microsandbox (agent_harness)"
+    "a CI run that does not start them: Keycloak (CI: authentication_service selected)$($om ||
+    echo ", OpenMeter (kailo_metering, ai_usage, kailo_governance)"), microsandbox (agent_harness)"
 }
 # The shared PostgreSQL, used by one test part at a time (test-part.lock): a fresh database `dctest` from template1, which
 # carries the migrations of the last tree a test part used (reset when the tree differs; steps.sh test then migrates
@@ -559,8 +602,13 @@ if $run_tests && [ ${#test_pkgs[@]} -gt 0 ]; then
     # are node-wide: with the heavy lock shared, the slots' test parts still take turns on their own lock.
     exec 6>>"$root/test-part.lock"
     [ $rc -ne 0 ] || hold 6 "$root/test-part.lock" "kailo-dev-check $ref (test part)" || rc=$?
+    # OpenMeter when the CI test step would start it for this selection; its containers' memory joins the preflight.
+    om=false; om_bytes=0
+    if om_load; then
+      if om_needed; then om=true; om_bytes=$(om_need); echo "OpenMeter: started for this selection (openmeter_up)"; fi
+    else echo "the branch's kailo/ci/check.sh has no needs_openmeter/openmeter_up: OpenMeter not started"; fi
     [ $rc -ne 0 ] || python3 -I "$here/envguard.py" --config "$CONFIG" preflight --repo kailo-macro --stage dev-check \
-      --memory "$test_need" --wait "$max_wait" || rc=$?
+      --memory "$((test_need + om_bytes))" --wait "$max_wait" || rc=$?
     if [ $rc -eq 0 ]; then
       testing=true
       mkdir -p "$test_target"
