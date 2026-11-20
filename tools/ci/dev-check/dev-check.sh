@@ -89,6 +89,7 @@ out = dict(
     keep_dbs=str(dc.get("keep_databases", 6)), max_wait=str(dc.get("max_wait", 7200)),
     heavy_lock=(cfg.get("locks") or {}).get("heavy", "/var/lib/kailo-ci/locks/image-build.lock"),
     compile_heavy=str(dc.get("compile_under_heavy_lock", True)).lower(),
+    heavy_mode=str(dc.get("heavy_lock_mode", "shared")).lower(),
     slots=str(max(1, int(dc.get("slots", 1)))),
 )
 def size(v):
@@ -117,12 +118,12 @@ slot_busy() {  # its lock is held by a run
 
 # -- locks -------------------------------------------------------------------------------------------------------
 # The holder file next to a lock says who has it (informational: the lock itself is the flock).
-hold() {  # hold <fd> <lock file> <what>: take the lock, waiting up to max_wait seconds and saying for whom
-  local fd=$1 lock=$2 what=$3 waited=0 holder
-  if ! flock -n "$fd"; then
+hold() {  # hold <fd> <lock file> <what> [-s]: take the lock (shared with -s), waiting up to max_wait seconds and saying for whom
+  local fd=$1 lock=$2 what=$3 mode=${4:-} waited=0 holder
+  if ! flock $mode -n "$fd"; then
     holder=$(cat "$lock.holder" 2>/dev/null || echo unknown)
     say "waiting for $(basename "$lock") (held by: $holder)"
-    until flock -w 60 "$fd"; do
+    until flock $mode -w 60 "$fd"; do
       waited=$((waited + 60))
       [ "$waited" -lt "$max_wait" ] || { say "gave up after ${max_wait}s waiting for $(basename "$lock")"; return 75; }
       say "still waiting for $(basename "$lock") (${waited}s; held by: $(cat "$lock.holder" 2>/dev/null || echo unknown))"
@@ -201,6 +202,14 @@ image="local/kailo-macro-check:$(sha256sum "$src/kailo/ci/check.Dockerfile" | cu
 exec 9>>"$heavy_lock"
 heavy_held=false
 heavy() { $heavy_held || { hold 9 "$heavy_lock" "kailo-dev-check $ref" || return $?; heavy_held=true; }; }
+# The compile and test phases take the heavy lock SHARED by default (dev_check.heavy_lock_mode): dev-check slots run
+# beside each other (the admission above reserves memory for the other running slots), while image builds and the CI
+# test phase, which take it exclusively, still never overlap a dev-check. The check-image build keeps it exclusive.
+heavy_run() {
+  if [ "$heavy_mode" = shared ]; then
+    $heavy_held || { hold 9 "$heavy_lock" "kailo-dev-check $ref (shared)" -s || return $?; heavy_held=true; }
+  else heavy; fi
+}
 if ! docker image inspect "$image" >/dev/null 2>&1; then
   heavy   # an image build: same lock as every other image build on the node
   if ! docker image inspect "$image" >/dev/null 2>&1; then   # another slot may have built it while we waited
@@ -344,7 +353,7 @@ exec 5>&-
 # dev_check.compile_under_heavy_lock (default true): false lets the compile run beside an image build or a verify's
 # test phase. Admission then rests on the memory preflight above and the container's own cpus/memory limits; the
 # check image build keeps the heavy lock either way.
-[ "$compile_heavy" = false ] || heavy
+[ "$compile_heavy" = false ] || heavy_run
 
 # -- selection --------------------------------------------------------------------------------------------------
 # Change set as the CI computes it: merge-base with origin/main (first parent for a commit on main).
@@ -545,7 +554,7 @@ if $run_tests && [ ${#test_pkgs[@]} -gt 0 ]; then
     record "nextest" skipped "$t0"
   else
     # As the CI's test phase: under the node's heavy lock, then a memory preflight for what this part adds.
-    heavy || rc=$?
+    heavy_run || rc=$?
     [ $rc -ne 0 ] || python3 -I "$here/envguard.py" --config "$CONFIG" preflight --repo kailo-macro --stage dev-check \
       --memory "$test_need" --wait "$max_wait" || rc=$?
     if [ $rc -eq 0 ]; then
