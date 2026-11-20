@@ -2,8 +2,10 @@
 # kailo-dev-check 的节点侧安装（OPS-05）。CI 节点上 ubuntu 执行，从 GitHub 取出的本目录运行：
 #   tools/ci/dev-check/setup.sh install    复制 dev-check.sh、dev-check-job.sh 与 envguard.py 到运行副本 /volumes/kailo/ci/dev-check，
 #                                          在 CI 缓存文件系统（ci-fs）上建工作目录（各槽的子目录由 dev-check.sh 首次用到时建）
-#   tools/ci/dev-check/setup.sh status     运行副本是否与本目录一致，dev_check.slots，各槽常驻容器、库容器与各槽 target 占用
-#   tools/ci/dev-check/setup.sh remove     删除各槽常驻容器、库容器与网络（工作目录保留，可手工删除）
+#   tools/ci/dev-check/setup.sh status     运行副本是否与本目录一致，dev_check.slots，各槽常驻容器、库容器（及其设置）与各槽 target、test-target 占用
+#   tools/ci/dev-check/setup.sh remove     删除各槽常驻容器、库容器、测试部分的临时容器与网络（工作目录保留，可手工删除）
+# 测试部分（--test）：每槽 <槽>/test-target（dev_check.test_target_cap_gb，缺省 18G）；库容器按 dev_check.postgres_* 与 CI 的
+# CHECK_POSTGRES_ARGS 运行，设置变化时由下一次（无其他槽在跑的）检查重建。保留策略（tools/ci/retention/policy.json）含各槽 test-target。
 # 槽（config.json dev_check.slots，缺省 1）：槽 0 = <root>/{src,target}、容器 kailo-dev-check；槽 i = <root>/slot-<i>/、容器 kailo-dev-check-<i>。
 # 调小 slots 后，多出的槽的容器与目录不再使用：remove 后由下一次检查重建所需的容器，目录可手工删除。
 # 开发机入口 kailo-dev-check 另装：sudo install -m 0755 tools/ci/dev-check/kailo-dev-check /usr/local/bin/
@@ -32,14 +34,16 @@ case "${1:-}" in
     cmp -s "$here/../service/envguard.py" "$RUNTIME/envguard.py" && echo "envguard.py: current" || echo "envguard.py: differs or missing"
     echo "dev_check.slots: $SLOTS"
     docker ps -a --filter name=kailo-dev-check --format '{{.Names}}  {{.Status}}  {{.Image}}'
+    docker inspect -f 'PostgreSQL settings: {{index .Config.Labels "kailo.dev-check-pg"}}' kailo-dev-check-pg 2>/dev/null || true
     for d in "$ROOT" "$ROOT"/slot-*; do
       [ -d "$d/src" ] || [ -d "$d/target" ] || continue
       printf '%s  holder: %s\n' "$d" "$(flock -n "$d/dev-check.lock" true 2>/dev/null && echo free || cat "$d/dev-check.lock.holder" 2>/dev/null)"
-      du -sh "$d/target" "$d/src" 2>/dev/null || true
+      du -sh "$d/target" "$d/test-target" "$d/src" 2>/dev/null || true
     done
     df -h "$ROOT" | tail -1 ;;
   remove)
-    docker ps -aq --filter name='^kailo-dev-check(-[0-9]+)?(-pg)?$' | xargs -r docker rm -f >/dev/null 2>&1 || true
+    docker ps -aq --filter name='^kailo-dev-check(-[0-9]+)?(-pg)?$' --filter name='^kailo-dev-check-t-' |
+      xargs -r docker rm -f -v >/dev/null 2>&1 || true
     docker network rm kailo-dev-check >/dev/null 2>&1 || true ;;
   *) sed -n '2,9p' "$0" >&2; exit 2 ;;
 esac

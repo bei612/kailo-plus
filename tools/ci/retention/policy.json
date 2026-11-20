@@ -1,5 +1,5 @@
 {
-  "comment": "07 §2.1 热目录定时保留：直接子项 grace_seconds 内有活动、被进程或容器使用、或属于未结束的 CI 任务即保留；其余超过 max_idle_seconds 才删除；可选 max_bytes：超过上限按最久未用删除未被占用的子项；docker_build_cache：每轮 buildx prune --max-used-space（Kailo dockerd；keep_storage 是各 builder 的上限）；可选 lock：检查任务持有的 flock 文件，拿不到即跳过该根；OPS-01（2026-11-09）：kailo-macro 的缓存根在 4T 盘 /volumes/data/kailo/capacity/ci/check-cache/kailo-macro（cargo registry/git、Go 缓存等容量型数据），闲置 7 天才删子项；其中 sccache/ 与 bun/ 是从 NVMe bind mount 进来的随机读热点（CI-08：sccache 在 /var/lib/kailo-ci/sccache/kailo-macro，自身上限 CHECK_SCCACHE_SIZE=60G），node_modules 快照在 NVMe CHECK_NODE_MODULES_ROOT；旧 NVMe 根保留条目，目录删除后自动跳过；各 builder 的上限与各自 GC 策略的总上限一致（A-03 2026-11-14：低于它时每轮都会挤掉 apt/bun/cargo 缓存挂载）：OPS-04（2026-11-15）起镜像构建都走 kailo-builder（状态在 4T 盘，160GB，registry-mirror/buildkitd.toml），default builder（NVMe 上的 containerd 快照）10GB（kailo-docker/install.sh）；OPS-05（2026-11-16）：每轮结束把摘要写到 status_file（任务准入、check.sh 预检、环境重试与 kailo-dev-check 经 kailo-ci-cleanup.path 按需触发一轮并等它结束）；kailo-dev-check 的增量 target 在 ci-fs（每槽一个：dev-check/target 为槽 0，dev-check/slot-<i>/target 为槽 1–3，dev_check.slots），持该槽的 dev-check.lock 时不动",
+  "comment": "07 §2.1 热目录定时保留：直接子项 grace_seconds 内有活动、被进程或容器使用、或属于未结束的 CI 任务即保留；其余超过 max_idle_seconds 才删除；可选 max_bytes：超过上限按最久未用删除未被占用的子项；docker_build_cache：每轮 buildx prune --max-used-space（Kailo dockerd；keep_storage 是各 builder 的上限）；可选 lock：检查任务持有的 flock 文件，拿不到即跳过该根；OPS-01（2026-11-09）：kailo-macro 的缓存根在 4T 盘 /volumes/data/kailo/capacity/ci/check-cache/kailo-macro（cargo registry/git、Go 缓存等容量型数据），闲置 7 天才删子项；其中 sccache/ 与 bun/ 是从 NVMe bind mount 进来的随机读热点（CI-08：sccache 在 /var/lib/kailo-ci/sccache/kailo-macro，自身上限 CHECK_SCCACHE_SIZE=60G），node_modules 快照在 NVMe CHECK_NODE_MODULES_ROOT；旧 NVMe 根保留条目，目录删除后自动跳过；各 builder 的上限与各自 GC 策略的总上限一致（A-03 2026-11-14：低于它时每轮都会挤掉 apt/bun/cargo 缓存挂载）：OPS-04（2026-11-15）起镜像构建都走 kailo-builder（状态在 4T 盘，160GB，registry-mirror/buildkitd.toml），default builder（NVMe 上的 containerd 快照）10GB（kailo-docker/install.sh）；OPS-05（2026-11-16）：每轮结束把摘要写到 status_file（任务准入、check.sh 预检、环境重试与 kailo-dev-check 经 kailo-ci-cleanup.path 按需触发一轮并等它结束）；kailo-dev-check 的增量 target 在 ci-fs（每槽一个：dev-check/target 为槽 0，dev-check/slot-<i>/target 为槽 1–3，dev_check.slots），--test 的 test-target 同样每槽一个（dev-check[/slot-<i>]/test-target，20G 上限，dev_check.test_target_cap_gb 18G 先生效），持该槽的 dev-check.lock 时不动",
   "grace_seconds": 7200,
   "ci_config": "/volumes/kailo/ci/config.json",
   "roots": [
@@ -80,6 +80,30 @@
       "max_idle_seconds": 259200,
       "max_bytes": 26843545600,
       "lock": "/var/lib/kailo-ci/ci-fs/dev-check/slot-3/dev-check.lock"
+    },
+    {
+      "path": "/var/lib/kailo-ci/ci-fs/dev-check/test-target",
+      "max_idle_seconds": 259200,
+      "max_bytes": 21474836480,
+      "lock": "/var/lib/kailo-ci/ci-fs/dev-check/dev-check.lock"
+    },
+    {
+      "path": "/var/lib/kailo-ci/ci-fs/dev-check/slot-1/test-target",
+      "max_idle_seconds": 259200,
+      "max_bytes": 21474836480,
+      "lock": "/var/lib/kailo-ci/ci-fs/dev-check/slot-1/dev-check.lock"
+    },
+    {
+      "path": "/var/lib/kailo-ci/ci-fs/dev-check/slot-2/test-target",
+      "max_idle_seconds": 259200,
+      "max_bytes": 21474836480,
+      "lock": "/var/lib/kailo-ci/ci-fs/dev-check/slot-2/dev-check.lock"
+    },
+    {
+      "path": "/var/lib/kailo-ci/ci-fs/dev-check/slot-3/test-target",
+      "max_idle_seconds": 259200,
+      "max_bytes": 21474836480,
+      "lock": "/var/lib/kailo-ci/ci-fs/dev-check/slot-3/dev-check.lock"
     }
   ],
   "docker_build_cache": {
@@ -115,8 +139,8 @@
           },
           {
             "path": "/var/lib/kailo-ci/ci-cache.xfs",
-            "cap": "185G",
-            "role": "loop XFS image (240G sparse since OPS-05) holding the kailo-macro CI targets, sccache and kailo-dev-check: 3x30G + 45G + 26G + ~10G XFS (own log; trimmed hourly)"
+            "cap": "204G",
+            "role": "loop XFS image (240G sparse since OPS-05) holding the kailo-macro CI targets, sccache and kailo-dev-check: 3x27G (CHECK_SLOT_CAP_GB) + 45G + 70G (2 dev-check slots incl. their --test targets) + ~10G XFS = 206G, the 85 % of 240G the envguard floor leaves (own log; trimmed hourly)"
           },
           {
             "path": "/var/lib/kailo-ci/check-target/kailo-macro",
@@ -130,8 +154,8 @@
           },
           {
             "path": "/var/lib/kailo-ci/ci-fs/dev-check",
-            "cap": "27G",
-            "role": "kailo-dev-check: per slot (dev_check.slots; slot 0 = dev-check/, slot i = dev-check/slot-<i>/) a persistent checkout (~1G) and incremental targets capped at dev_check.target_cap_gb (inside ci-fs)"
+            "cap": "70G",
+            "role": "kailo-dev-check: per slot (dev_check.slots; slot 0 = dev-check/, slot i = dev-check/slot-<i>/) a persistent checkout (~1G), incremental targets capped at dev_check.target_cap_gb and the --test target test-target capped at dev_check.test_target_cap_gb (inside ci-fs; 2 slots x (1 + 15 + 18) G; with the CI slots 3x27G, sccache 45G and ~10G XFS that is the 204G under the 15 % floor of ci-fs)"
           },
           {
             "path": "/var/lib/kailo-ci/node-modules/kailo-macro",

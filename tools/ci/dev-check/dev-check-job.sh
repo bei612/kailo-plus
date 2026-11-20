@@ -2,7 +2,8 @@
 # kailo-dev-check jobs on the CI node (OPS-05): the check runs detached from the caller's ssh session, so a dropped link
 # (the dev box reaches the node over WireGuard) does not kill it; the dev-box wrapper reattaches and keeps reading.
 #
-#   dev-check-job.sh submit <branch|sha> [crate ...] [--web] [--affected] print the job id (same commit + arguments: the job
+#   dev-check-job.sh submit <branch|sha> [crate ...] [--web] [--affected] [--test|--no-test]
+#                                                                  print the job id (same commit + arguments: the job
 #                                                                  already running, or finished less than 15 min ago)
 #   dev-check-job.sh follow <job> <offset>                         stream the log from byte <offset> until the job ends
 #   dev-check-job.sh status <job>                                  "running" or "done <exit code>"
@@ -25,7 +26,9 @@ case "${1:-}" in
     [ $# -ge 1 ] || die "usage: submit <branch|sha> [crate ...|--affected]"
     ref=$1; shift
     [[ "$ref" =~ ^[A-Za-z0-9._/-]+$ ]] && [[ "$ref" != *..* ]] || die "invalid branch or commit: $ref"
-    for a in "$@"; do [[ "$a" == --affected || "$a" == --web || "$a" =~ ^[A-Za-z0-9_-]+$ ]] || die "invalid argument: $a"; done
+    for a in "$@"; do
+      [[ "$a" =~ ^--(affected|web|test|no-test)$ || "$a" =~ ^[A-Za-z0-9_-]+$ ]] || die "invalid argument: $a"
+    done
     (
       exec 8>>"$queue/source-kailo-macro.lock"   # the CI worker's lock for the same mirror
       flock 8
@@ -78,5 +81,5 @@ case "${1:-}" in
     valid_job "${2:-}"; dir=$jobs/$2
     if [ -f "$dir/rc" ]; then echo "done $(cat "$dir/rc")"; else echo running; fi
     ;;
-  *) sed -n '5,10p' "$0" >&2; exit 2 ;;
+  *) sed -n '5,11p' "$0" >&2; exit 2 ;;
 esac

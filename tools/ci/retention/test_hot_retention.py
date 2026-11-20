@@ -49,11 +49,16 @@ class Policy(unittest.TestCase):
                                  "/var/lib/kailo-ci/ci-fs/dev-check/target",
                                  "/var/lib/kailo-ci/ci-fs/dev-check/slot-1/target",
                                  "/var/lib/kailo-ci/ci-fs/dev-check/slot-2/target",
-                                 "/var/lib/kailo-ci/ci-fs/dev-check/slot-3/target"])
+                                 "/var/lib/kailo-ci/ci-fs/dev-check/slot-3/target",
+                                 "/var/lib/kailo-ci/ci-fs/dev-check/test-target",
+                                 "/var/lib/kailo-ci/ci-fs/dev-check/slot-1/test-target",
+                                 "/var/lib/kailo-ci/ci-fs/dev-check/slot-2/test-target",
+                                 "/var/lib/kailo-ci/ci-fs/dev-check/slot-3/test-target"])
         self.assertEqual(policy["grace_seconds"], 2 * HOUR)
         # cargo targets: three slots of at most 30 GiB (90 GiB) and kailo-dev-check's up to four slots of 25 GiB
-        # (OPS-05, dev_check.slots; the real per-slot cap is dev_check.target_cap_gb), all on ci-fs
-        self.assertEqual(sum(r.get("max_bytes", 0) for r in policy["roots"]), 190 * 2**30)
+        # (OPS-05, dev_check.slots; the real per-slot cap is dev_check.target_cap_gb) plus their --test targets of
+        # 20 GiB (dev_check.test_target_cap_gb, 18 GiB, applies first), all on ci-fs
+        self.assertEqual(sum(r.get("max_bytes", 0) for r in policy["roots"]), 270 * 2**30)
         # default builder: same limit as daemon.json builder.gc; kailo-builder state lives on the 4T disk (OPS-01)
         self.assertEqual(policy["docker_build_cache"]["keep_storage"], "10GB")
         self.assertEqual(policy["docker_build_cache"]["builders"],

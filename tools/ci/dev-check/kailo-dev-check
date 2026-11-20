@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # kailo-dev-check（OPS-05）：开发机入口。作者在汇报"代码完成"前，对已 push 的 kailo-macro 分支做快速 Rust 编译反馈：
-#   kailo-dev-check <分支|commit> [crate ...] [--web] [--affected]      （不给 crate 也不给 --web 时等于 --affected）
+#   kailo-dev-check <分支|commit> [crate ...] [--web] [--affected] [--test|--no-test]   （不给 crate 也不给 --web 时等于 --affected）
 # 在 CI 节点的常驻容器里执行 cargo fmt --check、cargo check --tests（测试代码对照分支迁移后的真实库）与 cargo clippy
 # （与 CI 的 lint 同参数）；--web（--affected 在 apps/web、packages、kailo/i18n 有改动时自动带上）执行 CI 的前端检查：
-# apps/web type-check、biome（改动文件）、ast-grep、i18n 目录、品牌扫描、vitest related（改动文件波及的测试）。它不是 CI：不进队列、不产生 verify 记录；统一 CI 仍只由主 Agent 发起。
+# apps/web type-check、biome（改动文件）、ast-grep、i18n 目录、品牌扫描、vitest related（改动文件波及的测试）。
+# --test（--affected 时缺省带上，节点 dev_check.test_by_default=false 可关；--no-test 跳过）再按 CI test 步骤运行所选包的
+# Rust 测试（分支自己的 kailo/ci/steps.sh test：同一选包、nextest 参数、迁移与 Deno 部分；redis、OpenBao、SpiceDB 与 CI 一样
+# 临时启动，Keycloak/OpenMeter/microsandbox 不启动，其测试与 CI 未启动它们时一样跳过）。它不是 CI：不进队列、不产生 verify 记录；统一 CI 仍只由主 Agent 发起。
 # 检查在节点上脱离 ssh 会话运行（dev-check-job.sh）：链路中断不影响它，本入口按退避重连并从断点继续输出日志；
 # 同一 commit + 参数再次执行会接上正在运行（或 15 分钟内刚结束）的那次，而不是重新开始。本地中断（Ctrl-C、超时）
 # 不取消节点上的检查，重新执行即可接上。
@@ -16,7 +19,7 @@ fi
 [ $# -ge 1 ] || { sed -n '2,3p' "$0" >&2; exit 2; }
 for a in "$@"; do
   case "$a" in
-    --affected|--web) ;;
+    --affected|--web|--test|--no-test) ;;
     *[!A-Za-z0-9._/-]*|-*) echo "kailo-dev-check: invalid argument: $a" >&2; exit 2 ;;
   esac
 done
