@@ -119,7 +119,8 @@
         "full"
       ],
       "environment": {
-        "CHECK_POSTGRES_IMAGE": "pgvector/pgvector:pg18",
+        "CHECK_CARGO_MIRROR": "",
+    "CHECK_POSTGRES_IMAGE": "pgvector/pgvector:pg18",
         "CHECK_POSTGRES_DATA": "/var/lib/postgresql",
         "CHECK_POSTGRES_CPUS": "4",
         "CHECK_POSTGRES_MEMORY": "6g",
