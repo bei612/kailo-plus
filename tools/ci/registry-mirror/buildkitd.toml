@@ -46,13 +46,16 @@
     filters = ["type==exec.cachemount"]
     maxUsedSpace = "80GB"
 
+  # Layers (pulled base images and built layers) stay resident: the state lives on the 4T disk
+  # (/var/lib/kailo-ci/buildkit -> /dev/sda1 kailo/capacity/ci/buildkit), so a pinned base image is pulled once,
+  # not again after each eviction (2026-11-21: the 60GB cap evicted docker-cli/rust bases between deploys).
   [[worker.oci.gcpolicy]]
     filters = ["type==regular"]
-    maxUsedSpace = "60GB"
+    maxUsedSpace = "400GB"
 
   [[worker.oci.gcpolicy]]
     reservedSpace = "60GB"
-    maxUsedSpace = "160GB"
+    maxUsedSpace = "600GB"
 
   [[worker.oci.gcpolicy]]
     all = true
