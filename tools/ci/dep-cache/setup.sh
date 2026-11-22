@@ -19,6 +19,11 @@
 #   NPM_UPLINKS               Verdaccio 依序回源的 npm 源（空格分隔；默认 https://registry.npmmirror.com/
 #                             https://mirrors.cloud.tencent.com/npm/）。11-14 实测本节点到 registry.npmjs.org 的 TLS 被重置，
 #                             npmmirror 6.9 MB 0.59 s、腾讯 1.1 s。构建链：镜像构建 → Verdaccio → 这些源。
+#   FILES_CACHE_PORT          构建下载文件缓存端口（默认 55008）：apt 归档 /debian/、/debian-security/，以及 /<host>/<path> 形式的
+#                             固定版本下载（FILES_HOSTS 列出的站点，GitHub 的跳转由缓存跟随）。数据在 4T：$DEP_CACHE_DATA/files
+#   FILES_DEBIAN_UPSTREAM     Debian 上游（默认 https://mirrors.tuna.tsinghua.edu.cn/debian/）
+#   FILES_SECURITY_UPSTREAM   Debian 安全更新上游（默认 https://mirrors.tuna.tsinghua.edu.cn/debian-security/）
+#   FILES_HOSTS               可经缓存下载的站点（空格分隔；默认见下方 FILES_HOSTS）
 #   DOCKER_CONFIG             Docker 客户端配置（默认 /var/lib/kailo-ci/docker-config）
 # 出网：缓存直连上游（路由器 OpenWrt 透明代理负责）；本脚本不读取、不写入任何代理设置（OPS-02）。
 set -euo pipefail
@@ -41,6 +46,12 @@ CRATES_CACHE_PORT=${CRATES_CACHE_PORT:-55007}
 DEP_CACHE_BIND=${DEP_CACHE_BIND:-10.239.0.1}
 CRATES_INDEX_UPSTREAM=${CRATES_INDEX_UPSTREAM:-https://rsproxy.cn/index/}
 CRATES_DL_UPSTREAM=${CRATES_DL_UPSTREAM:-https://lf9-static.rsproxy.cn/obj/rsproxy/crates/}
+FILES_CACHE_PORT=${FILES_CACHE_PORT:-55008}
+FILES_DEBIAN_UPSTREAM=${FILES_DEBIAN_UPSTREAM:-https://mirrors.tuna.tsinghua.edu.cn/debian/}
+FILES_SECURITY_UPSTREAM=${FILES_SECURITY_UPSTREAM:-https://mirrors.tuna.tsinghua.edu.cn/debian-security/}
+# The hosts the image builds download pinned files from (kailo-macro kailo/deploy/images/files-mirror.sh keeps the same
+# list), plus the hosts GitHub redirects release and archive downloads to.
+FILES_HOSTS=${FILES_HOSTS:-github.com objects.githubusercontent.com release-assets.githubusercontent.com codeload.github.com repo1.maven.org static.rust-lang.org nodejs.org}
 
 die() { printf 'dep-cache: %s\n' "$*" >&2; exit 2; }
 
@@ -52,7 +63,7 @@ install_runtime() {
   local stamp file
   mkdir -p "$DEP_CACHE_RUNTIME"
   stamp=$(date -u +%Y%m%dT%H%M%SZ)
-  for file in compose.yaml verdaccio.yaml crates-nginx.conf .env; do
+  for file in compose.yaml verdaccio.yaml crates-nginx.conf files-nginx.conf .env; do
     [ -f "$DEP_CACHE_RUNTIME/$file" ] && cp -a "$DEP_CACHE_RUNTIME/$file" "$DEP_CACHE_RUNTIME/$file.bak-$stamp"
   done
   install -m 0644 "$here/compose.yaml" "$DEP_CACHE_RUNTIME/"
@@ -93,8 +104,29 @@ open(dst, "w").write(text)
 PY
   chmod 0644 "$DEP_CACHE_RUNTIME/crates-nginx.conf.tmp"
   mv "$DEP_CACHE_RUNTIME/crates-nginx.conf.tmp" "$DEP_CACHE_RUNTIME/crates-nginx.conf"
-  printf 'DEP_CACHE_DATA=%s\nDEP_CACHE_USER=%s\nDEP_CACHE_BIND=%s\nNPM_CACHE_PORT=%s\nGO_CACHE_PORT=%s\nCRATES_CACHE_PORT=%s\n' \
-    "$DEP_CACHE_DATA" "$(stat -c %u:%g "$DEP_CACHE_DATA")" "$DEP_CACHE_BIND" "$NPM_CACHE_PORT" "$GO_CACHE_PORT" "$CRATES_CACHE_PORT" \
+  # file cache: nginx.conf from the template with the configured port, upstreams and hosts.
+  python3 -I - "$here/files-nginx.conf" "$DEP_CACHE_RUNTIME/files-nginx.conf.tmp" "$FILES_CACHE_PORT" \
+    "$FILES_DEBIAN_UPSTREAM" "$FILES_SECURITY_UPSTREAM" "$resolver" "$DEP_CACHE_BIND" $FILES_HOSTS <<'PY'
+import re, sys
+src, dst, port, debian, security, resolver, bind, *hosts = sys.argv[1:]
+for url in (debian, security):
+    if not re.fullmatch(r"https://[^\s;'\"]+/", url):
+        sys.exit("FILES_DEBIAN_UPSTREAM / FILES_SECURITY_UPSTREAM must be https:// URLs ending in /")
+if not hosts or any(not re.fullmatch(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+", h) for h in hosts):
+    sys.exit("FILES_HOSTS must list host names")
+text = open(src).read()
+for key, value in (("@BIND@", bind), ("@PORT@", port), ("@DEBIAN_UPSTREAM@", debian), ("@SECURITY_UPSTREAM@", security),
+                   ("@RESOLVER@", resolver), ("@FILE_HOSTS_RE@", "|".join(re.escape(h) for h in hosts)),
+                   ("@INDEX_MAX@", "5g"), ("@FILES_MAX@", "200g")):
+    text = text.replace(key, value)
+if "@" in re.sub(r"location @redirect|= @redirect", "", text.split("http {", 1)[1]):
+    sys.exit("files-nginx.conf: unrendered placeholder")
+open(dst, "w").write(text)
+PY
+  chmod 0644 "$DEP_CACHE_RUNTIME/files-nginx.conf.tmp"
+  mv "$DEP_CACHE_RUNTIME/files-nginx.conf.tmp" "$DEP_CACHE_RUNTIME/files-nginx.conf"
+  printf 'DEP_CACHE_DATA=%s\nDEP_CACHE_USER=%s\nDEP_CACHE_BIND=%s\nNPM_CACHE_PORT=%s\nGO_CACHE_PORT=%s\nCRATES_CACHE_PORT=%s\nFILES_CACHE_PORT=%s\n' \
+    "$DEP_CACHE_DATA" "$(stat -c %u:%g "$DEP_CACHE_DATA")" "$DEP_CACHE_BIND" "$NPM_CACHE_PORT" "$GO_CACHE_PORT" "$CRATES_CACHE_PORT" "$FILES_CACHE_PORT" \
     > "$DEP_CACHE_RUNTIME/.env.tmp"
   chmod 0600 "$DEP_CACHE_RUNTIME/.env.tmp"
   mv "$DEP_CACHE_RUNTIME/.env.tmp" "$DEP_CACHE_RUNTIME/.env"
@@ -108,6 +140,18 @@ cmd_probe() {
   curl -fsS --noproxy '*' -m 60 "$crates/index/se/rd/serde" | grep -q '"vers":"1.0.200"' || die "crates 缓存未返回 serde 的索引"
   curl -fsS --noproxy '*' -m 120 -o /dev/null "$crates/crates/serde/1.0.200.crate" || die "crates 缓存未返回 serde 1.0.200"
   echo "crates 缓存：serde 索引与 1.0.200 文件可取"
+  local files="http://$DEP_CACHE_BIND:$FILES_CACHE_PORT"
+  curl -fsS --noproxy '*' -m 60 "$files/debian/dists/bookworm/InRelease" | grep -q '^Codename: bookworm' \
+    || die "文件缓存未返回 Debian bookworm 的 InRelease"
+  curl -fsS --noproxy '*' -m 60 "$files/debian-security/dists/bookworm-security/InRelease" | grep -q '^Codename: bookworm-security' \
+    || die "文件缓存未返回 Debian bookworm-security 的 InRelease"
+  curl -fsS --noproxy '*' -m 60 "$files/static.rust-lang.org/dist/channel-rust-1.94.0.toml.sha256" | grep -qE '^[0-9a-f]{64} ' \
+    || die "文件缓存未返回 rust 1.94.0 渠道清单的校验和"
+  # A GitHub release asset: a redirect to the signed asset URL, followed by the cache (keycloak extension, 1.17.0).
+  curl -fsS --noproxy '*' -m 180 -o /dev/null -w '%{http_code} %{size_download}\n' \
+    "$files/github.com/klausbetz/apple-identity-provider-keycloak/releases/download/1.17.0/apple-identity-provider-1.17.0.jar" \
+    | awk '$1 == 200 && $2 > 10000 { ok = 1 } END { exit !ok }' || die "文件缓存未返回 GitHub release 文件（跳转跟随）"
+  echo "文件缓存：Debian 与安全更新索引、rust 渠道清单、GitHub release 文件可取"
   # 经缓存实际取内容（未命中即回源一次）：pnpm 的 packument 必须带 npm 原站的签名，Corepack 校验依赖它
   curl -fsS --noproxy '*' -m 180 "$npm/pnpm" | python3 -I -c '
 import json, sys
@@ -125,13 +169,14 @@ cmd_up() {
   [ -f "$apps/tools/container-safety.sh" ] || die "找不到 tools/container-safety.sh"
   # shellcheck source=../../container-safety.sh
   . "$apps/tools/container-safety.sh"
-  mkdir -p "$DEP_CACHE_DATA/npm" "$DEP_CACHE_DATA/go" "$DEP_CACHE_DATA/crates"
+  mkdir -p "$DEP_CACHE_DATA/npm" "$DEP_CACHE_DATA/go" "$DEP_CACHE_DATA/crates" "$DEP_CACHE_DATA/files/tmp"
   container_require_data_path "$DEP_CACHE_DATA" >/dev/null || die "缓存数据必须位于项目数据根：$DEP_CACHE_DATA"
   grep -q "\${NPM_CACHE_PORT:-$NPM_CACHE_PORT}" "$here/build-args.sh" && grep -q "\${GO_CACHE_PORT:-$GO_CACHE_PORT}" "$here/build-args.sh" \
     || die "build-args.sh 的缺省端口与 NPM_CACHE_PORT/GO_CACHE_PORT 不一致"
-  local before crates_before
+  local before crates_before files_before
   before=$(sha256sum "$DEP_CACHE_RUNTIME/verdaccio.yaml" 2>/dev/null || true)
   crates_before=$(sha256sum "$DEP_CACHE_RUNTIME/crates-nginx.conf" 2>/dev/null || true)
+  files_before=$(sha256sum "$DEP_CACHE_RUNTIME/files-nginx.conf" 2>/dev/null || true)
   install_runtime
   compose config --quiet
   compose up -d --wait --wait-timeout 120
@@ -142,18 +187,22 @@ cmd_up() {
   if [ "$crates_before" != "$(sha256sum "$DEP_CACHE_RUNTIME/crates-nginx.conf")" ]; then
     compose up -d --force-recreate --wait --wait-timeout 120 crates
   fi
+  if [ -n "$files_before" ] && [ "$files_before" != "$(sha256sum "$DEP_CACHE_RUNTIME/files-nginx.conf")" ]; then
+    compose up -d --force-recreate --wait --wait-timeout 120 files
+  fi
   cmd_probe
-  printf '依赖缓存就绪：npm %s:%s、Go %s:%s、crates %s:%s，数据 %s，运行副本 %s\n' \
-    "$DEP_CACHE_BIND" "$NPM_CACHE_PORT" "$DEP_CACHE_BIND" "$GO_CACHE_PORT" "$DEP_CACHE_BIND" "$CRATES_CACHE_PORT" \
+  printf '依赖缓存就绪：npm %s:%s、Go %s:%s、crates %s:%s、文件 %s:%s，数据 %s，运行副本 %s\n' \
+    "$DEP_CACHE_BIND" "$NPM_CACHE_PORT" "$DEP_CACHE_BIND" "$GO_CACHE_PORT" "$DEP_CACHE_BIND" "$CRATES_CACHE_PORT" "$DEP_CACHE_BIND" "$FILES_CACHE_PORT" \
     "$DEP_CACHE_DATA" "$DEP_CACHE_RUNTIME"
 }
 
 cmd_status() {
   compose ps
-  du -sh "$DEP_CACHE_DATA"/npm "$DEP_CACHE_DATA"/go 2>/dev/null || true
+  du -sh "$DEP_CACHE_DATA"/npm "$DEP_CACHE_DATA"/go "$DEP_CACHE_DATA"/crates "$DEP_CACHE_DATA"/files 2>/dev/null || true
   findmnt -n -o SOURCE --target "$DEP_CACHE_DATA"
   curl -sS --noproxy '*' -m 5 -o /dev/null -w "npm /-/ping HTTP %{http_code}\n" "http://$DEP_CACHE_BIND:$NPM_CACHE_PORT/-/ping" || true
   curl -sS --noproxy '*' -m 5 -o /dev/null -w "go /healthz HTTP %{http_code}\n" "http://$DEP_CACHE_BIND:$GO_CACHE_PORT/healthz" || true
+  curl -sS --noproxy '*' -m 5 -o /dev/null -w "files /healthz HTTP %{http_code}\n" "http://$DEP_CACHE_BIND:$FILES_CACHE_PORT/healthz" || true
 }
 
 case "${1:-}" in

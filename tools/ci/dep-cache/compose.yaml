@@ -1,4 +1,4 @@
-# Kailo CI 依赖下载缓存：npm（Verdaccio）与 Go 模块（Athens）。用途、数据位置与回源方式见 07-运行与运维基线.md §2.1。
+# Kailo CI 依赖下载缓存：npm（Verdaccio）、Go 模块（Athens）、crates.io 与构建下载文件（nginx）。用途、数据位置与回源方式见 07-运行与运维基线.md §2.1。
 # 由 tools/ci/dep-cache/setup.sh up 安装到运行副本目录并启动；改配置先改本仓库。
 # 出网直连上游（路由器 OpenWrt 透明代理负责），不设置任何代理变量；数据在 4T 容量盘。
 name: kailo-dep-cache
@@ -80,6 +80,26 @@ services:
     cpus: 1.0
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://${DEP_CACHE_BIND:-10.239.0.1}:${CRATES_CACHE_PORT:-55007}/index/config.json"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+  # apt archives and pinned release downloads of the image builds (GitHub releases, Maven, rustup, nodejs.org):
+  # nginx's proxy_cache, data on the capacity disk. Debian indexes and moving rust channel manifests are revalidated and
+  # served stale when the upstream fails; versioned files are kept. nginx.conf is rendered by setup.sh (FILES_* settings).
+  files:
+    <<: *hardening
+    image: nginx:alpine@sha256:713fc2ebfd92e8217db451477182ee91944b123d2b1ee9fd5a8c6e91ca6c3a11
+    entrypoint: ["nginx", "-g", "daemon off;"]
+    volumes:
+      - ./files-nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${DEP_CACHE_DATA:-/volumes/data/kailo/capacity/dep-cache}/files:/var/cache/kailo-files
+    tmpfs: ["/tmp:size=256m"]
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://${DEP_CACHE_BIND:-10.239.0.1}:${FILES_CACHE_PORT:-55008}/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
