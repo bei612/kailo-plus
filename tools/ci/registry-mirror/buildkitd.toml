@@ -34,30 +34,33 @@
 [worker.oci]
   gc = true
 
+  # The state lives on NVMe (/var/lib/kailo-ci/buildkit, 2026-11-22): builds are small random I/O (layer extraction,
+  # dpkg, layer export), which the 4T disk served at ~300 ms per synchronous write (a chromium apt step 860 s, one
+  # image export 15 min). The caps keep it within the NVMe budget (CI-CD 手册「NVMe 预算」, total 100GB, matching
+  # KAILO_BUILD_CACHE_LIMIT); what lasts stays on the 4T disk: base images in the registry mirrors (an evicted base
+  # is pulled back from the local mirror, never from the internet), release images in the release registry, and
+  # the dependency caches (npm, Go, crates, files, git).
   [[worker.oci.gcpolicy]]
     filters = ["type==source.local"]
-    maxUsedSpace = "20GB"
+    maxUsedSpace = "10GB"
 
   [[worker.oci.gcpolicy]]
     filters = ["type==source.git.checkout"]
-    maxUsedSpace = "5GB"
+    maxUsedSpace = "2GB"
 
   [[worker.oci.gcpolicy]]
     filters = ["type==exec.cachemount"]
-    maxUsedSpace = "80GB"
+    maxUsedSpace = "40GB"
 
-  # Layers (pulled base images and built layers) stay resident: the state lives on the 4T disk
-  # (/var/lib/kailo-ci/buildkit -> /dev/sda1 kailo/capacity/ci/buildkit), so a pinned base image is pulled once,
-  # not again after each eviction (2026-11-21: the 60GB cap evicted docker-cli/rust bases between deploys).
   [[worker.oci.gcpolicy]]
     filters = ["type==regular"]
-    maxUsedSpace = "400GB"
+    maxUsedSpace = "60GB"
 
   [[worker.oci.gcpolicy]]
-    reservedSpace = "60GB"
-    maxUsedSpace = "600GB"
+    reservedSpace = "20GB"
+    maxUsedSpace = "100GB"
 
   [[worker.oci.gcpolicy]]
     all = true
-    reservedSpace = "60GB"
-    maxUsedSpace = "160GB"
+    reservedSpace = "20GB"
+    maxUsedSpace = "100GB"
