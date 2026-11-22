@@ -132,6 +132,8 @@ if ! $rehearse; then
   # configuration, goes no further and leaves the old release's checkout in place.
   if ! git_mirror_sync || ! $up build || ! $up preflight; then
     git -C $repo checkout -q -B deploy "$prev"
+    # The images built for $c stay in the release registry; the daemon keeps only the deployed releases' images.
+    $up prune-images || log "  prune-images failed (above); the images built for $c stay on the daemon"
     log "$c not deployed: build or configuration preflight failed (above); $prev checked out again, nothing stopped"
     exit 1
   fi
