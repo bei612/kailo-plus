@@ -31,6 +31,17 @@ log() { echo "$(date -u +%T) $*"; }
 step() { STEP_T=$(date +%s); log "$*"; }
 took() { log "  took $(( $(date +%s) - STEP_T ))s"; }
 PLATFORM_DBS="keycloak spicedb temporal temporal_visibility"
+# The image builds take git dependencies from the node's git mirror (KAILO_GIT_MIRROR, kailo-plus
+# tools/ci/dep-cache/git-mirror.sh): every commit the checkout's lock files pin, and those of the Codex revision the
+# codex-agent image builds, is made present there first, so the build itself does not reach GitHub.
+git_mirror_sync() {
+  grep -qE '^KAILO_GIT_MIRROR=.+' "$st/kailo.env" || { log "  git mirror: KAILO_GIT_MIRROR unset, builds fetch git dependencies themselves"; return 0; }
+  local codex
+  codex=$(sed -nE 's/^ARG CODEX_COMMIT=([0-9a-f]{40})$/\1/p' $repo/kailo/deploy/images/codex-agent.Dockerfile)
+  [ -n "$codex" ] || { log "  git mirror: no ARG CODEX_COMMIT in codex-agent.Dockerfile"; return 1; }
+  ${GIT_MIRROR_SYNC:-/volumes/kailo/apps/tools/ci/dep-cache/git-mirror.sh} sync $repo/Cargo.lock $repo/bun.lock "codex:$codex"
+}
+
 # G-10: probe_pause, probe_on, probe_assert (the probe timer stays on after every deploy).
 . "$(dirname "$(readlink -f "$0")")/probe-timer.sh"
 trap 'rc=$?; $rehearse || probe_on || log "WARNING: kailo-probe.timer is not enabled and active"
@@ -119,7 +130,7 @@ if ! $rehearse; then
   git -C $repo checkout -q -B deploy "$c"
   # Nothing is stopped yet: a release that cannot build, or whose services would not start on this deployment's
   # configuration, goes no further and leaves the old release's checkout in place.
-  if ! $up build || ! $up preflight; then
+  if ! git_mirror_sync || ! $up build || ! $up preflight; then
     git -C $repo checkout -q -B deploy "$prev"
     log "$c not deployed: build or configuration preflight failed (above); $prev checked out again, nothing stopped"
     exit 1
