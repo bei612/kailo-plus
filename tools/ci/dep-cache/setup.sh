@@ -141,11 +141,12 @@ cmd_probe() {
   curl -fsS --noproxy '*' -m 120 -o /dev/null "$crates/crates/serde/1.0.200.crate" || die "crates 缓存未返回 serde 1.0.200"
   echo "crates 缓存：serde 索引与 1.0.200 文件可取"
   local files="http://$DEP_CACHE_BIND:$FILES_CACHE_PORT"
-  curl -fsS --noproxy '*' -m 60 "$files/debian/dists/bookworm/InRelease" | grep -q '^Codename: bookworm' \
+  # grep reads the whole body (no -q): an early exit would fail curl's write under pipefail.
+  curl -fsS --noproxy '*' -m 60 "$files/debian/dists/bookworm/InRelease" | grep -x 'Codename: bookworm' >/dev/null \
     || die "文件缓存未返回 Debian bookworm 的 InRelease"
-  curl -fsS --noproxy '*' -m 60 "$files/debian-security/dists/bookworm-security/InRelease" | grep -q '^Codename: bookworm-security' \
+  curl -fsS --noproxy '*' -m 60 "$files/debian-security/dists/bookworm-security/InRelease" | grep -x 'Codename: bookworm-security' >/dev/null \
     || die "文件缓存未返回 Debian bookworm-security 的 InRelease"
-  curl -fsS --noproxy '*' -m 60 "$files/static.rust-lang.org/dist/channel-rust-1.94.0.toml.sha256" | grep -qE '^[0-9a-f]{64} ' \
+  curl -fsS --noproxy '*' -m 60 "$files/static.rust-lang.org/dist/channel-rust-1.94.0.toml.sha256" | grep -E '^[0-9a-f]{64} ' >/dev/null \
     || die "文件缓存未返回 rust 1.94.0 渠道清单的校验和"
   # A GitHub release asset: a redirect to the signed asset URL, followed by the cache (keycloak extension, 1.17.0).
   curl -fsS --noproxy '*' -m 180 -o /dev/null -w '%{http_code} %{size_download}\n' \
