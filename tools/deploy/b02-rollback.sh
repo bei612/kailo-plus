@@ -1,7 +1,7 @@
 #!/bin/bash
 # b02-rollback.sh <snapshot dir from b02-deploy.sh> [commit to return to, default 850f9942d4]: snapshot rollback of the
 # 2026-11-15 batch deploy (运维/部署批次-2026-11-15.md §3). Writes made after the snapshot are lost.
-#   1. pause the probe timer; stop edge and the application services
+#   1. pause the probe timer (enabled and active again at the end, G-10); stop edge and the application services
 #   2. if principal-rekey already re-keyed the stores outside Postgres, put objects and search documents back to the
 #      upstream IDs with the new release's `kailo_principal_rekey restore` (it reads the map in the migrated macrodb)
 #   3. stop Keycloak, SpiceDB and Temporal; recreate macrodb, keycloak, spicedb, temporal, temporal_visibility from the
@@ -15,11 +15,10 @@ repo=/volumes/kailo/kailo-macro up=$repo/kailo/deploy/up.sh st=$KAILO_STATE_DIR
 log() { echo "$(date -u +%T) $*"; }
 for f in macrodb keycloak spicedb temporal temporal_visibility; do [ -s "$B/$f.dump" ] || { log "missing $B/$f.dump"; exit 1; }; done
 [ -s "$B/catalog.json" ] || { log "missing $B/catalog.json"; exit 1; }
-# The probe timer is left as found (2026-11-16): paused and resumed only if it was running.
-if systemctl is-active -q kailo-probe.timer; then
-  sudo -n systemctl stop kailo-probe.timer || true
-  trap 'sudo -n systemctl start kailo-probe.timer; log "probe timer resumed"' EXIT
-fi
+# G-10: paused for the window, enabled and active again when the rollback ends (probe-timer.sh).
+. "$(dirname "$(readlink -f "$0")")/probe-timer.sh"
+probe_pause
+trap 'probe_on || log "WARNING: kailo-probe.timer is not enabled and active"' EXIT
 infra='postgres|platform-postgres|redis|kafka|search|elasticmq|openbao|mailpit|minio|keycloak|temporal|spicedb|sandbox-docker|codex-agent|.*-init|db-migrate|search-indices|kafka-topics|temporal-db-init|temporal-schema|temporal-namespace|temporal-align-schedules|spicedb-db-init|spicedb-migrate|spicedb-schema|keycloak-db-init|principal-rekey'
 log "1. stop edge and the application services"
 $up compose stop edge
@@ -49,4 +48,5 @@ git -C $repo checkout -q -B deploy "$old"
 $up compose up -d --no-deps --force-recreate --wait elasticmq
 $up up --no-build
 KAILO_STATE_DIR=$KAILO_STATE_DIR $repo/kailo/deploy/probe.sh
+probe_assert
 log "rolled back to $old"

@@ -1,9 +1,11 @@
 #!/bin/bash
 # b02-deploy.sh [--rehearse] <commit>: first deploy of a main that contains B-02a (principal-ID re-key) and B-02b, and
 # since the 2026-11-15 batch also B-05b, B-07/B-08/B-12, C-02/C-04/C-07, E-00/E-02/E-11, A-22 (运维/部署批次-2026-11-15.md §3).
-#   0. check out <commit> and build its images (no downtime; prebuilt images are reused: "is current" / registry pull-back);
-#      the probe timer, if running, is paused from here on (the checkout's probe.sh would judge the old stack by the
-#      new rules) and resumed at the end; a timer that was off stays off
+#   0. check out <commit>, build its images (no downtime; prebuilt images are reused: "is current" / registry pull-back)
+#      and run the configuration preflight with them (`up.sh preflight`, G-09: every service's --check-config against
+#      the deployment's rendered compose environment, the compose files' required settings; every problem listed).
+#      A failed build or preflight checks the previous revision out again and stops before anything is stopped.
+#      The probe timer is paused from here on (the checkout's probe.sh would judge the old stack by the new rules)
 #   1. snapshots to the capacity disk: macrodb, and keycloak, spicedb, temporal, temporal_visibility (platform-postgres);
 #      the operator model catalog
 #   2. stop user traffic (edge), wait until the ElasticMQ queues are empty, stop the application services
@@ -11,6 +13,8 @@
 #      `responses_rewrites`), ElasticMQ recreated with the commit's elasticmq.conf (A-22)
 #   4. up.sh up --no-build (db-migrate re-keys and migrates; principal-rekey; spicedb-schema; services; align-schedules)
 #   5. checks: principal-rekey JSON without failures, `status` with *_old = 0, no legacy user IDs, probe OK
+#   6. the probe timer (kailo-probe.timer) enabled and active, whatever state the deploy found it in (G-10); on any
+#      failure it is started again too, so a half-done deploy is reported by the probe
 # Stops at the first failed step and prints the snapshot directory; roll back with b02-rollback.sh <snapshot dir>.
 # --rehearse (env REHEARSE_CHECKOUT=<clean checkout of the commit>, REHEARSE_STATE=<scratch state dir>,
 #   REHEARSE_INIT_TAG=<its kailo/init tag>): read-only on the live stack. Takes the same snapshots into a rehearsal directory, restores each into a
@@ -27,9 +31,10 @@ log() { echo "$(date -u +%T) $*"; }
 step() { STEP_T=$(date +%s); log "$*"; }
 took() { log "  took $(( $(date +%s) - STEP_T ))s"; }
 PLATFORM_DBS="keycloak spicedb temporal temporal_visibility"
-probe_paused=false
-resume_probe() { $probe_paused && sudo -n systemctl start kailo-probe.timer && log "probe timer resumed"; probe_paused=false; }
-trap 'rc=$?; resume_probe; [ $rc = 0 ] || log "FAILED (rc=$rc). Snapshots: $B — roll back: b02-rollback.sh $B"' EXIT
+# G-10: probe_pause, probe_on, probe_assert (the probe timer stays on after every deploy).
+. "$(dirname "$(readlink -f "$0")")/probe-timer.sh"
+trap 'rc=$?; $rehearse || probe_on || log "WARNING: kailo-probe.timer is not enabled and active"
+  [ $rc = 0 ] || log "FAILED (rc=$rc). Snapshots: $B — roll back: b02-rollback.sh $B"' EXIT
 
 git -C $repo fetch -q origin
 git -C $repo merge-base --is-ancestor 395baa21ee "$c" || { log "$c does not contain B-02a"; exit 1; }
@@ -107,17 +112,18 @@ if $rehearse; then
   init=kailo/init:${REHEARSE_INIT_TAG:?set REHEARSE_INIT_TAG to the kailo/init tag of the commit}
 fi
 
-step "0. $($rehearse && echo '[rehearse] skip checkout/build' || echo "check out $c and build its images while the old release still serves")"
+step "0. $($rehearse && echo '[rehearse] skip checkout/build/preflight' || echo "check out $c, build its images and preflight its configuration while the old release still serves")"
 if ! $rehearse; then
-  # Left as found (2026-11-16, no 24/7 production during development): paused only if it was running, resumed only
-  # then; a disabled timer stays off after the deploy.
-  if systemctl is-active -q kailo-probe.timer; then
-    sudo -n systemctl stop kailo-probe.timer; probe_paused=true; log "probe timer paused"
-  else
-    log "probe timer not active; left off"
-  fi
+  probe_pause
+  prev=$(git -C $repo rev-parse HEAD)
   git -C $repo checkout -q -B deploy "$c"
-  $up build
+  # Nothing is stopped yet: a release that cannot build, or whose services would not start on this deployment's
+  # configuration, goes no further and leaves the old release's checkout in place.
+  if ! $up build || ! $up preflight; then
+    git -C $repo checkout -q -B deploy "$prev"
+    log "$c not deployed: build or configuration preflight failed (above); $prev checked out again, nothing stopped"
+    exit 1
+  fi
 fi
 took
 
@@ -209,5 +215,8 @@ python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); bad={k:v for k,v in
 n=$(docker exec kailo-postgres-1 sh -c 'psql -U "$POSTGRES_USER" -d macrodb -At -c "select count(*) from \"User\" where id !~ '"'"'^macro\|[0-9a-f-]{36}\$'"'"'"')
 [ "$n" = 0 ] || { log "$n legacy-format user IDs left"; exit 1; }
 KAILO_STATE_DIR=$KAILO_STATE_DIR $repo/kailo/deploy/probe.sh
+took
+step "6. probe timer (G-10)"
+probe_assert
 took
 log "done. Next: trial-account login with its original password, official.sh, spicedb/verify.sh, authz/verify.sh. Snapshots: $B"
