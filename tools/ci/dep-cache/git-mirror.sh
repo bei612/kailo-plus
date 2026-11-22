@@ -143,6 +143,8 @@ RequiresMountsFor=$GIT_MIRROR_DATA
 User=$user
 Group=$group
 ExecStart=/usr/bin/git daemon --reuseaddr --base-path=$GIT_MIRROR_DATA --listen=$GIT_MIRROR_BIND --port=$GIT_MIRROR_PORT --max-connections=64 --timeout=300 --init-timeout=30 $GIT_MIRROR_DATA
+# No user configuration (ProtectHome hides it): git reads none instead of warning on every request.
+Environment=HOME=/var/empty XDG_CONFIG_HOME=/var/empty GIT_CONFIG_NOSYSTEM=1
 Restart=always
 RestartSec=5
 NoNewPrivileges=yes
