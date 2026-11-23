@@ -104,21 +104,22 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-  # Shared Rust compile cache of the image builds (sccache WebDAV backend, kailo-macro KAILO_SCCACHE_WEBDAV): nginx's
-  # dav module over the capacity disk. nginx.conf is rendered by setup.sh (SCCACHE_CACHE_PORT).
+  # Shared Rust compile cache of the image builds (sccache WebDAV backend, kailo-macro KAILO_SCCACHE_WEBDAV): Apache
+  # mod_dav over the capacity disk (sccache's client needs PROPFIND, which nginx's dav module lacks). httpd.conf is
+  # rendered by setup.sh (SCCACHE_CACHE_PORT).
   sccache:
     <<: *hardening
-    image: nginx:alpine@sha256:713fc2ebfd92e8217db451477182ee91944b123d2b1ee9fd5a8c6e91ca6c3a11
-    entrypoint: ["nginx", "-g", "daemon off;"]
+    image: httpd:2.4-alpine@sha256:32bd0639bcc4917ef1fd9363a1d9dd2dd9c498565118b062a10d51e43a5c3a24  # 2.4.71
+    entrypoint: ["httpd", "-DFOREGROUND", "-f", "/usr/local/apache2/conf/kailo-sccache.conf"]
     volumes:
-      - ./sccache-nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./sccache-httpd.conf:/usr/local/apache2/conf/kailo-sccache.conf:ro
       - ${DEP_CACHE_DATA:-/volumes/data/kailo/capacity/dep-cache}/sccache:/var/cache/kailo-sccache
     tmpfs: ["/tmp:size=64m"]
-    mem_limit: 256m
-    memswap_limit: 256m
-    cpus: 1.0
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 2.0
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://${DEP_CACHE_BIND:-10.239.0.1}:${SCCACHE_CACHE_PORT:-55010}/healthz"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://${DEP_CACHE_BIND:-10.239.0.1}:${SCCACHE_CACHE_PORT:-55010}/healthz?auto"]
       interval: 30s
       timeout: 5s
       retries: 3

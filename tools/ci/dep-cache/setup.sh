@@ -24,7 +24,7 @@
 #   FILES_DEBIAN_UPSTREAM     Debian 上游（默认 https://mirrors.tuna.tsinghua.edu.cn/debian/）
 #   FILES_SECURITY_UPSTREAM   Debian 安全更新上游（默认 https://mirrors.tuna.tsinghua.edu.cn/debian-security/）
 #   FILES_HOSTS               可经缓存下载的站点（空格分隔；默认见下方 FILES_HOSTS）
-#   SCCACHE_CACHE_PORT        镜像构建共享 Rust 编译缓存端口（默认 55010）：sccache 的 WebDAV 后端（nginx dav），数据在 4T：
+#   SCCACHE_CACHE_PORT        镜像构建共享 Rust 编译缓存端口（默认 55010）：sccache 的 WebDAV 后端（Apache mod_dav），数据在 4T：
 #                             $DEP_CACHE_DATA/sccache，容量由 hot-retention 管理
 #   DOCKER_CONFIG             Docker 客户端配置（默认 /var/lib/kailo-ci/docker-config）
 # 出网：缓存直连上游（路由器 OpenWrt 透明代理负责）；本脚本不读取、不写入任何代理设置（OPS-02）。
@@ -67,7 +67,7 @@ install_runtime() {
   local stamp file
   mkdir -p "$DEP_CACHE_RUNTIME"
   stamp=$(date -u +%Y%m%dT%H%M%SZ)
-  for file in compose.yaml verdaccio.yaml crates-nginx.conf files-nginx.conf sccache-nginx.conf .env; do
+  for file in compose.yaml verdaccio.yaml crates-nginx.conf files-nginx.conf sccache-httpd.conf .env; do
     [ -f "$DEP_CACHE_RUNTIME/$file" ] && cp -a "$DEP_CACHE_RUNTIME/$file" "$DEP_CACHE_RUNTIME/$file.bak-$stamp"
   done
   install -m 0644 "$here/compose.yaml" "$DEP_CACHE_RUNTIME/"
@@ -129,9 +129,9 @@ open(dst, "w").write(text)
 PY
   chmod 0644 "$DEP_CACHE_RUNTIME/files-nginx.conf.tmp"
   mv "$DEP_CACHE_RUNTIME/files-nginx.conf.tmp" "$DEP_CACHE_RUNTIME/files-nginx.conf"
-  sed -e "s/@BIND@/$DEP_CACHE_BIND/" -e "s/@PORT@/$SCCACHE_CACHE_PORT/" "$here/sccache-nginx.conf" > "$DEP_CACHE_RUNTIME/sccache-nginx.conf.tmp"
-  chmod 0644 "$DEP_CACHE_RUNTIME/sccache-nginx.conf.tmp"
-  mv "$DEP_CACHE_RUNTIME/sccache-nginx.conf.tmp" "$DEP_CACHE_RUNTIME/sccache-nginx.conf"
+  sed -e "s/@BIND@/$DEP_CACHE_BIND/" -e "s/@PORT@/$SCCACHE_CACHE_PORT/" "$here/sccache-httpd.conf" > "$DEP_CACHE_RUNTIME/sccache-httpd.conf.tmp"
+  chmod 0644 "$DEP_CACHE_RUNTIME/sccache-httpd.conf.tmp"
+  mv "$DEP_CACHE_RUNTIME/sccache-httpd.conf.tmp" "$DEP_CACHE_RUNTIME/sccache-httpd.conf"
   printf 'DEP_CACHE_DATA=%s\nDEP_CACHE_USER=%s\nDEP_CACHE_BIND=%s\nNPM_CACHE_PORT=%s\nGO_CACHE_PORT=%s\nCRATES_CACHE_PORT=%s\nFILES_CACHE_PORT=%s\nSCCACHE_CACHE_PORT=%s\n' \
     "$DEP_CACHE_DATA" "$(stat -c %u:%g "$DEP_CACHE_DATA")" "$DEP_CACHE_BIND" "$NPM_CACHE_PORT" "$GO_CACHE_PORT" "$CRATES_CACHE_PORT" "$FILES_CACHE_PORT" "$SCCACHE_CACHE_PORT" \
     > "$DEP_CACHE_RUNTIME/.env.tmp"
@@ -192,7 +192,7 @@ cmd_up() {
   before=$(sha256sum "$DEP_CACHE_RUNTIME/verdaccio.yaml" 2>/dev/null || true)
   crates_before=$(sha256sum "$DEP_CACHE_RUNTIME/crates-nginx.conf" 2>/dev/null || true)
   files_before=$(sha256sum "$DEP_CACHE_RUNTIME/files-nginx.conf" 2>/dev/null || true)
-  sccache_before=$(sha256sum "$DEP_CACHE_RUNTIME/sccache-nginx.conf" 2>/dev/null || true)
+  sccache_before=$(sha256sum "$DEP_CACHE_RUNTIME/sccache-httpd.conf" 2>/dev/null || true)
   install_runtime
   compose config --quiet
   compose up -d --wait --wait-timeout 120
@@ -206,7 +206,7 @@ cmd_up() {
   if [ -n "$files_before" ] && [ "$files_before" != "$(sha256sum "$DEP_CACHE_RUNTIME/files-nginx.conf")" ]; then
     compose up -d --force-recreate --wait --wait-timeout 120 files
   fi
-  if [ -n "$sccache_before" ] && [ "$sccache_before" != "$(sha256sum "$DEP_CACHE_RUNTIME/sccache-nginx.conf")" ]; then
+  if [ -n "$sccache_before" ] && [ "$sccache_before" != "$(sha256sum "$DEP_CACHE_RUNTIME/sccache-httpd.conf")" ]; then
     compose up -d --force-recreate --wait --wait-timeout 120 sccache
   fi
   cmd_probe
