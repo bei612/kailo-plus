@@ -24,6 +24,8 @@
 #   FILES_DEBIAN_UPSTREAM     Debian 上游（默认 https://mirrors.tuna.tsinghua.edu.cn/debian/）
 #   FILES_SECURITY_UPSTREAM   Debian 安全更新上游（默认 https://mirrors.tuna.tsinghua.edu.cn/debian-security/）
 #   FILES_HOSTS               可经缓存下载的站点（空格分隔；默认见下方 FILES_HOSTS）
+#   SCCACHE_CACHE_PORT        镜像构建共享 Rust 编译缓存端口（默认 55010）：sccache 的 WebDAV 后端（nginx dav），数据在 4T：
+#                             $DEP_CACHE_DATA/sccache，容量由 hot-retention 管理
 #   DOCKER_CONFIG             Docker 客户端配置（默认 /var/lib/kailo-ci/docker-config）
 # 出网：缓存直连上游（路由器 OpenWrt 透明代理负责）；本脚本不读取、不写入任何代理设置（OPS-02）。
 set -euo pipefail
@@ -47,6 +49,7 @@ DEP_CACHE_BIND=${DEP_CACHE_BIND:-10.239.0.1}
 CRATES_INDEX_UPSTREAM=${CRATES_INDEX_UPSTREAM:-https://rsproxy.cn/index/}
 CRATES_DL_UPSTREAM=${CRATES_DL_UPSTREAM:-https://lf9-static.rsproxy.cn/obj/rsproxy/crates/}
 FILES_CACHE_PORT=${FILES_CACHE_PORT:-55008}
+SCCACHE_CACHE_PORT=${SCCACHE_CACHE_PORT:-55010}
 FILES_DEBIAN_UPSTREAM=${FILES_DEBIAN_UPSTREAM:-https://mirrors.tuna.tsinghua.edu.cn/debian/}
 FILES_SECURITY_UPSTREAM=${FILES_SECURITY_UPSTREAM:-https://mirrors.tuna.tsinghua.edu.cn/debian-security/}
 # The hosts the image builds download pinned files from (kailo-macro kailo/deploy/images/files-mirror.sh keeps the same
@@ -64,7 +67,7 @@ install_runtime() {
   local stamp file
   mkdir -p "$DEP_CACHE_RUNTIME"
   stamp=$(date -u +%Y%m%dT%H%M%SZ)
-  for file in compose.yaml verdaccio.yaml crates-nginx.conf files-nginx.conf .env; do
+  for file in compose.yaml verdaccio.yaml crates-nginx.conf files-nginx.conf sccache-nginx.conf .env; do
     [ -f "$DEP_CACHE_RUNTIME/$file" ] && cp -a "$DEP_CACHE_RUNTIME/$file" "$DEP_CACHE_RUNTIME/$file.bak-$stamp"
   done
   install -m 0644 "$here/compose.yaml" "$DEP_CACHE_RUNTIME/"
@@ -126,8 +129,11 @@ open(dst, "w").write(text)
 PY
   chmod 0644 "$DEP_CACHE_RUNTIME/files-nginx.conf.tmp"
   mv "$DEP_CACHE_RUNTIME/files-nginx.conf.tmp" "$DEP_CACHE_RUNTIME/files-nginx.conf"
-  printf 'DEP_CACHE_DATA=%s\nDEP_CACHE_USER=%s\nDEP_CACHE_BIND=%s\nNPM_CACHE_PORT=%s\nGO_CACHE_PORT=%s\nCRATES_CACHE_PORT=%s\nFILES_CACHE_PORT=%s\n' \
-    "$DEP_CACHE_DATA" "$(stat -c %u:%g "$DEP_CACHE_DATA")" "$DEP_CACHE_BIND" "$NPM_CACHE_PORT" "$GO_CACHE_PORT" "$CRATES_CACHE_PORT" "$FILES_CACHE_PORT" \
+  sed -e "s/@BIND@/$DEP_CACHE_BIND/" -e "s/@PORT@/$SCCACHE_CACHE_PORT/" "$here/sccache-nginx.conf" > "$DEP_CACHE_RUNTIME/sccache-nginx.conf.tmp"
+  chmod 0644 "$DEP_CACHE_RUNTIME/sccache-nginx.conf.tmp"
+  mv "$DEP_CACHE_RUNTIME/sccache-nginx.conf.tmp" "$DEP_CACHE_RUNTIME/sccache-nginx.conf"
+  printf 'DEP_CACHE_DATA=%s\nDEP_CACHE_USER=%s\nDEP_CACHE_BIND=%s\nNPM_CACHE_PORT=%s\nGO_CACHE_PORT=%s\nCRATES_CACHE_PORT=%s\nFILES_CACHE_PORT=%s\nSCCACHE_CACHE_PORT=%s\n' \
+    "$DEP_CACHE_DATA" "$(stat -c %u:%g "$DEP_CACHE_DATA")" "$DEP_CACHE_BIND" "$NPM_CACHE_PORT" "$GO_CACHE_PORT" "$CRATES_CACHE_PORT" "$FILES_CACHE_PORT" "$SCCACHE_CACHE_PORT" \
     > "$DEP_CACHE_RUNTIME/.env.tmp"
   chmod 0600 "$DEP_CACHE_RUNTIME/.env.tmp"
   mv "$DEP_CACHE_RUNTIME/.env.tmp" "$DEP_CACHE_RUNTIME/.env"
@@ -154,6 +160,13 @@ cmd_probe() {
     "$files/github.com/klausbetz/apple-identity-provider-keycloak/releases/download/1.17.0/apple-identity-provider-1.17.0.jar" \
     | awk '$1 == 200 && $2 > 10000 { ok = 1 } END { exit !ok }' || die "文件缓存未返回 GitHub release 文件（跳转跟随）"
   echo "文件缓存：Debian 与安全更新索引、rust 渠道清单、GitHub release 文件可取"
+  # The compile cache answers sccache's WebDAV calls: a put under a new directory, then the same bytes back.
+  local sc="http://$DEP_CACHE_BIND:$SCCACHE_CACHE_PORT" probe
+  probe=".probe/$(date +%s)-$$"
+  curl -fsS --noproxy '*' -m 10 -X PUT --data-binary "kailo" "$sc/$probe" >/dev/null || die "编译缓存不接受写入（$sc）"
+  [ "$(curl -fsS --noproxy '*' -m 10 "$sc/$probe")" = kailo ] || die "编译缓存读回的内容不一致（$sc）"
+  curl -fsS --noproxy '*' -m 10 -X DELETE "$sc/$probe" >/dev/null || true
+  echo "编译缓存：WebDAV 写入与读回可用"
   # 经缓存实际取内容（未命中即回源一次）：pnpm 的 packument 必须带 npm 原站的签名，Corepack 校验依赖它
   curl -fsS --noproxy '*' -m 180 "$npm/pnpm" | python3 -I -c '
 import json, sys
@@ -171,14 +184,15 @@ cmd_up() {
   [ -f "$apps/tools/container-safety.sh" ] || die "找不到 tools/container-safety.sh"
   # shellcheck source=../../container-safety.sh
   . "$apps/tools/container-safety.sh"
-  mkdir -p "$DEP_CACHE_DATA/npm" "$DEP_CACHE_DATA/go" "$DEP_CACHE_DATA/crates" "$DEP_CACHE_DATA/files/tmp"
+  mkdir -p "$DEP_CACHE_DATA/npm" "$DEP_CACHE_DATA/go" "$DEP_CACHE_DATA/crates" "$DEP_CACHE_DATA/files/tmp" "$DEP_CACHE_DATA/sccache/data" "$DEP_CACHE_DATA/sccache/.tmp"
   container_require_data_path "$DEP_CACHE_DATA" >/dev/null || die "缓存数据必须位于项目数据根：$DEP_CACHE_DATA"
   grep -q "\${NPM_CACHE_PORT:-$NPM_CACHE_PORT}" "$here/build-args.sh" && grep -q "\${GO_CACHE_PORT:-$GO_CACHE_PORT}" "$here/build-args.sh" \
     || die "build-args.sh 的缺省端口与 NPM_CACHE_PORT/GO_CACHE_PORT 不一致"
-  local before crates_before files_before
+  local before crates_before files_before sccache_before
   before=$(sha256sum "$DEP_CACHE_RUNTIME/verdaccio.yaml" 2>/dev/null || true)
   crates_before=$(sha256sum "$DEP_CACHE_RUNTIME/crates-nginx.conf" 2>/dev/null || true)
   files_before=$(sha256sum "$DEP_CACHE_RUNTIME/files-nginx.conf" 2>/dev/null || true)
+  sccache_before=$(sha256sum "$DEP_CACHE_RUNTIME/sccache-nginx.conf" 2>/dev/null || true)
   install_runtime
   compose config --quiet
   compose up -d --wait --wait-timeout 120
@@ -191,6 +205,9 @@ cmd_up() {
   fi
   if [ -n "$files_before" ] && [ "$files_before" != "$(sha256sum "$DEP_CACHE_RUNTIME/files-nginx.conf")" ]; then
     compose up -d --force-recreate --wait --wait-timeout 120 files
+  fi
+  if [ -n "$sccache_before" ] && [ "$sccache_before" != "$(sha256sum "$DEP_CACHE_RUNTIME/sccache-nginx.conf")" ]; then
+    compose up -d --force-recreate --wait --wait-timeout 120 sccache
   fi
   cmd_probe
   printf '依赖缓存就绪：npm %s:%s、Go %s:%s、crates %s:%s、文件 %s:%s，数据 %s，运行副本 %s\n' \

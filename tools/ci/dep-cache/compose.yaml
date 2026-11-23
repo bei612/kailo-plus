@@ -104,3 +104,22 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+  # Shared Rust compile cache of the image builds (sccache WebDAV backend, kailo-macro KAILO_SCCACHE_WEBDAV): nginx's
+  # dav module over the capacity disk. nginx.conf is rendered by setup.sh (SCCACHE_CACHE_PORT).
+  sccache:
+    <<: *hardening
+    image: nginx:alpine@sha256:713fc2ebfd92e8217db451477182ee91944b123d2b1ee9fd5a8c6e91ca6c3a11
+    entrypoint: ["nginx", "-g", "daemon off;"]
+    volumes:
+      - ./sccache-nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${DEP_CACHE_DATA:-/volumes/data/kailo/capacity/dep-cache}/sccache:/var/cache/kailo-sccache
+    tmpfs: ["/tmp:size=64m"]
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://${DEP_CACHE_BIND:-10.239.0.1}:${SCCACHE_CACHE_PORT:-55010}/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
