@@ -36,13 +36,14 @@
 
   # The state lives on NVMe (/var/lib/kailo-ci/buildkit, 2026-11-22): builds are small random I/O (layer extraction,
   # dpkg, layer export), which the 4T disk served at ~300 ms per synchronous write (a chromium apt step 860 s, one
-  # image export 15 min). The caps keep it within the NVMe budget (CI-CD 手册「NVMe 预算」, total 100GB, matching
-  # KAILO_BUILD_CACHE_LIMIT); what lasts stays on the 4T disk: base images in the registry mirrors (an evicted base
+  # image export 15 min). The caps keep it within the NVMe budget (CI-CD 手册「NVMe 预算」, total 60GB, matching
+  # KAILO_BUILD_CACHE_LIMIT; 100GB at first, lowered on 2026-11-23 when the first NVMe deploy peaked at 84% beside the CI
+  # target slots and the daemon's images); what lasts stays on the 4T disk: base images in the registry mirrors (an evicted base
   # is pulled back from the local mirror, never from the internet), release images in the release registry, and
   # the dependency caches (npm, Go, crates, files, git).
   [[worker.oci.gcpolicy]]
     filters = ["type==source.local"]
-    maxUsedSpace = "10GB"
+    maxUsedSpace = "5GB"
 
   [[worker.oci.gcpolicy]]
     filters = ["type==source.git.checkout"]
@@ -50,17 +51,17 @@
 
   [[worker.oci.gcpolicy]]
     filters = ["type==exec.cachemount"]
-    maxUsedSpace = "40GB"
+    maxUsedSpace = "25GB"
 
   [[worker.oci.gcpolicy]]
     filters = ["type==regular"]
-    maxUsedSpace = "60GB"
+    maxUsedSpace = "35GB"
 
   [[worker.oci.gcpolicy]]
     reservedSpace = "20GB"
-    maxUsedSpace = "100GB"
+    maxUsedSpace = "60GB"
 
   [[worker.oci.gcpolicy]]
     all = true
     reservedSpace = "20GB"
-    maxUsedSpace = "100GB"
+    maxUsedSpace = "60GB"
