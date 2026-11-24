@@ -76,9 +76,24 @@ export function hasAnswer(after, agentName, min = 12) {
 // citing a reason code in its own answer (prompt collaboration rule 5, e.g. NO_PERMISSION_INITIATOR) does not.
 export const FAILURE_RE = /(没有完成|未能完成|出错了|出现错误|发生错误|CONTEXT_EXHAUSTED|internal error|Something went wrong|empty response|-32602|还不是本频道的成员|不能在本频道回复|不能代你回复)/i;
 
-/** Parse `--only a,b --from x --to y --list --dry-run --stop-on-fail`. */
-export function parseArgs(argv) {
-  const a = { only: null, from: null, to: null, list: false, dryRun: false, stopOnFail: false, skip: [] };
+/**
+ * The text of the channel thread that holds `marker`: of the thread rows' texts (the channel's
+ * `[data-channel-thread-row]` elements: a top-level message with its replies), the last one containing it; null when
+ * none does. An Agent mentioned in a top-level message answers in the thread that message roots
+ * (agent_trigger: "A top-level mention roots its own thread"), so this row holds the prompt and its answer only.
+ */
+export function pickRow(rowTexts, marker) {
+  const rows = (rowTexts || []).filter((t) => String(t).includes(marker));
+  return rows.length ? String(rows.at(-1)) : null;
+}
+
+/**
+ * Parse `--only a,b --from x --to y --skip z --list --dry-run --plan --stop-on-fail --serial --concurrency n`.
+ * The concurrency default comes from ACC_CONCURRENCY, else 4.
+ */
+export function parseArgs(argv, env = {}) {
+  const a = { only: null, from: null, to: null, list: false, dryRun: false, plan: false, stopOnFail: false, skip: [],
+    serial: false, concurrency: Number(env.ACC_CONCURRENCY) || 4 };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--only') a.only = argv[++i].split(',').filter(Boolean);
@@ -88,6 +103,9 @@ export function parseArgs(argv) {
     else if (k === '--list') a.list = true;
     else if (k === '--dry-run') a.dryRun = true;
     else if (k === '--stop-on-fail') a.stopOnFail = true;
+    else if (k === '--plan') a.plan = true;
+    else if (k === '--serial') a.serial = true;
+    else if (k === '--concurrency') { a.concurrency = Number(argv[++i]); if (!(a.concurrency >= 1)) throw new Error('--concurrency needs a number >= 1'); }
     else throw new Error(`unknown argument ${k}`);
   }
   return a;
