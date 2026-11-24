@@ -1,6 +1,6 @@
 // Kailo web and API helpers shared by the steps (zh-CN first, English accepted where a string may not be translated yet,
 // so a missing translation fails the TE-16 text checks, not the flow).
-import { afterMessage, findByTitle, FAILURE_RE, hasAnswer, oneTimeMarker } from './util.mjs';
+import { afterMessage, findByTitle, FAILURE_RE, hasAnswer, oneTimeMarker, pickRow } from './util.mjs';
 
 export const L = {
   login: /^(Continue|继续)$/,
@@ -116,7 +116,37 @@ function turnBusy(after) {
   return BUSY_RE.test(tail);
 }
 
+/**
+ * What follows our message `marker` in the channel page `p`, as `{ after, scoped }`.
+ * Serial run: the page text after the message (the channel is ours alone). Parallel run: the text of the thread that
+ * message roots only (`scoped`), because other steps post their own prompts, answers, reminders and routine output into
+ * the same channel meanwhile, and the page text after our message would hold theirs too. When no thread row holds the
+ * marker the page text is returned with `scoped: false`, which a parallel caller must not accept as an answer.
+ */
+export async function readAfter(h, p, marker) {
+  if (h.parallel) {
+    const rows = () => p.locator('[data-channel-thread-row]').evaluateAll((els) => els.map((e) => e.innerText)).catch(() => []);
+    let row = pickRow(await rows(), marker);
+    // The channel's thread list is virtualized (ThreadList.tsx, overscan 6): when other steps posted many messages
+    // since ours, our thread is above the rendered rows. Scroll up to it (the list keeps that position until reloaded).
+    for (let i = 0; i < 10 && row == null && typeof p.mouse?.wheel === 'function'; i++) {
+      await p.mouse.move(720, 450); await p.mouse.wheel(0, -900); await p.waitForTimeout(800);
+      row = pickRow(await rows(), marker);
+    }
+    if (row != null) return { after: afterMessage(row.replace(/\n{2,}/g, '\n'), marker), scoped: true };
+  }
+  return { after: afterMessage(await h.text(p), marker), scoped: !h.parallel };
+}
+
+/** Run `fn` holding `resource` (h.exclusive), or just run it in a harness without locks (selftest stubs). */
+const holding = (h, resource, fn) => (typeof h.exclusive === 'function' ? h.exclusive(resource, fn) : fn());
+
 export async function ask(h, user, chanUrl, agent, msg, label, okRe, maxS = h.cfg.askTimeoutS) {
+  // One step talks to one Agent at a time: the turn holds the Agent (a no-op when the step declared the lock).
+  return holding(h, `agent:${agent.handle}`, () => askTurn(h, user, chanUrl, agent, msg, label, okRe, maxS));
+}
+
+async function askTurn(h, user, chanUrl, agent, msg, label, okRe, maxS) {
   const p = h.u(user).page;
   // Every prompt carries a one-time marker; the answer is read only after the message that carries it.
   const marker = oneTimeMarker(h.cfg.runId, label);
@@ -138,21 +168,24 @@ export async function ask(h, user, chanUrl, agent, msg, label, okRe, maxS = h.cf
   await p.keyboard.press('Enter');
   const t0 = Date.now(); await p.waitForTimeout(4000);
   await h.shot(p, `${label}-b-sent`);
-  let ok = false; let after = '';
+  let ok = false; let after = ''; let scoped = false;
   while ((Date.now() - t0) / 1000 < maxS) {
     await p.waitForTimeout(10000);
-    after = afterMessage(await h.text(p), marker);
+    ({ after, scoped } = await readAfter(h, p, marker));
+    if (!scoped) continue;
     if (FAILURE_RE.test(after) || (okRe.test(after) && hasAnswer(after, agent.name) && !turnBusy(after))) { ok = !FAILURE_RE.test(after); break; }
   }
   await p.waitForTimeout(6000);
-  after = afterMessage(await h.text(p), marker);
+  ({ after, scoped } = await readAfter(h, p, marker));
   await h.shot(p, `${label}-c-result`);
   const seconds = Math.round((Date.now() - t0) / 1000);
-  const answered = hasAnswer(after, agent.name);
+  // In a parallel run an answer read from the page instead of our thread could be another step's: not an answer.
+  if (!scoped) h.check(`${label}：回复在本消息的话题内读取（并行时与其他步骤隔离）`, false, 'no [data-channel-thread-row] holds the marker; re-run with --serial');
+  const answered = scoped && hasAnswer(after, agent.name);
   const failed = FAILURE_RE.test(after);
   h.log(label, 'composer', composed.slice(0, 160));
   h.log(label, 'after', seconds, 's:', after.slice(0, 900).replace(/\n/g, ' | '));
-  return { ok: ok && answered && !failed, answered, failed, after, seconds, sentAt: t0, marker, sent: msg, prompt,
+  return { ok: ok && answered && !failed, answered, failed, after, scoped, seconds, sentAt: t0, marker, sent: msg, prompt,
     markerSent: composed.includes(marker), mentioned: composed.includes(agent.handle) || composed.includes(agent.name) };
 }
 
@@ -202,14 +235,23 @@ export async function docText(h, user, id) {
   return { status: r.status, text: r.body?.text ?? '' };
 }
 
-/** Poll the channel until `re` matches the text after `anchor` (or the whole page); returns when it first matched. */
+/**
+ * Poll the channel until `re` matches the text after `anchor` (or the whole page); returns when it first matched.
+ * In a parallel run the text after `anchor` is that of its thread only (readAfter); a page without that thread row
+ * never matches.
+ */
 export async function waitChannel(h, user, chanUrl, re, untilMs, anchor, pollMs = 15000) {
   const p = h.u(user).page;
+  let warned = false;
   while (Date.now() < untilMs) {
     await p.goto(chanUrl, { waitUntil: 'load' }); await p.waitForTimeout(6000);
-    const t = await h.text(p);
-    const scope = anchor ? afterMessage(t, anchor) : t;
-    if (re.test(scope)) return { at: Date.now(), text: scope };
+    let scope;
+    if (anchor) {
+      const r = await readAfter(h, p, anchor);
+      if (!r.scoped) { if (!warned) h.warn('thread of the anchor not found; not read from the whole channel in a parallel run', anchor.slice(0, 60)); warned = true; }
+      scope = r.scoped ? r.after : '';
+    } else scope = await h.text(p);
+    if (scope && re.test(scope)) return { at: Date.now(), text: scope };
     await p.waitForTimeout(pollMs);
   }
   return { at: null, text: '' };
