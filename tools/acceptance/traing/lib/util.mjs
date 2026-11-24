@@ -72,7 +72,9 @@ export function hasAnswer(after, agentName, min = 12) {
   return rest.length >= min;
 }
 
-export const FAILURE_RE = /(没有完成|未能完成|出错了|出现错误|发生错误|CONTEXT_EXHAUSTED|internal error|Something went wrong|empty response|-32602|NO_PERMISSION|还不是本频道的成员)/i;
+// The harness's own refusal notices (agent_harness domain/text.rs `unpostable_notice`) count as failures; an Agent
+// citing a reason code in its own answer (prompt collaboration rule 5, e.g. NO_PERMISSION_INITIATOR) does not.
+export const FAILURE_RE = /(没有完成|未能完成|出错了|出现错误|发生错误|CONTEXT_EXHAUSTED|internal error|Something went wrong|empty response|-32602|还不是本频道的成员|不能在本频道回复|不能代你回复)/i;
 
 /** Parse `--only a,b --from x --to y --list --dry-run --stop-on-fail`. */
 export function parseArgs(argv) {

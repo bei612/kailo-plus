@@ -36,6 +36,8 @@ await t('afterMessage / hasAnswer / FAILURE_RE', () => {
   assert.ok(!U.hasAnswer(' 文档助理 思考中…', '文档助理'));
   assert.ok(U.FAILURE_RE.test('回合没有完成：CONTEXT_EXHAUSTED'));
   assert.ok(!U.FAILURE_RE.test('已创建任务'));
+  assert.ok(U.FAILURE_RE.test('资料员 还不是本频道的成员，无法在这里回复。（NO_PERMISSION）'));
+  assert.ok(!U.FAILURE_RE.test('读取正文被拒（HTTP 403），原因码 NO_PERMISSION_INITIATOR，我不再尝试绕过。'));
 });
 await t('parseArgs / selectSteps', async () => {
   const a = U.parseArgs(['--only', '30,40-ring4-card', '--stop-on-fail']);
