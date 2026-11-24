@@ -8,6 +8,9 @@ export default {
   title: '环⑥ 计量入 OpenMeter；额度拒绝在线程中提示并有 DENY 审计（TE-12）',
   covers: ['环⑥', 'D-06', 'D-08', 'TE-12'],
   users: ['alice', 'bob'],
+  after: ['21', '22', '30'],
+  locks: { 'ws:alice': 's', 'ws:bob': 's', chan: 's', 'quota:W': 's', 'agent:tg-research': 'x' },
+  est: 240,
   async run(h) {
     h.need('W', 'chan', 'bots.research');
     const OM = h.cfg.openmeter;

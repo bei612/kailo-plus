@@ -23,6 +23,9 @@ export default {
   title: '工作区切换器：切换后服务端 current 与设置页一致（TE-15）',
   covers: ['TE-15', 'F-09'],
   users: ['carol'],
+  after: ['03', '20'],
+  locks: { 'ws:carol': 'x' },
+  est: 90,
   async run(h) {
     h.need('W', 'ws');
     const own = h.S.ws[`carol:${TEAM.carol}`];

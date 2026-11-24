@@ -1,7 +1,7 @@
 // Ring ⑤ (TE-06/TE-07): @任务协调 sets a follow-up 3 minutes ahead; the reminder arrives in the channel on time
 // (within [due-60 s, due+180 s]) and the follow-up is audited with the Agent as actor.
-import { AGENTS, ask, audit, waitChannel } from '../lib/ui.mjs';
-import { afterMessage, minuteAhead } from '../lib/util.mjs';
+import { AGENTS, ask, audit, readAfter, waitChannel } from '../lib/ui.mjs';
+import { minuteAhead } from '../lib/util.mjs';
 
 const MARK = '检查第一轮电话回访名单';
 
@@ -10,6 +10,9 @@ export default {
   title: '环⑤ Agent 自设跟进，到点按时提醒（TE-06/TE-07）',
   covers: ['环⑤', 'TE-06', 'TE-07', 'E-09'],
   users: ['alice'],
+  after: ['22'],
+  locks: { 'ws:alice': 's', chan: 's', 'quota:W': 's', 'agent:tg-task': 'x' },
+  est: 420,
   async run(h) {
     h.need('chan');
     // The step names the time: "3 minutes from now" left the Agent to pick its own second, and the check measured
@@ -28,7 +31,7 @@ export default {
     h.log('due', new Date(due).toISOString(), 'mark count at reply', n0);
     const hit = await waitChannel(h, 'alice', h.S.chan, { test: (t) => count(t) > n0 }, due + 240000, r.marker, 10000);
     await h.shot(h.u('alice').page, 'followup-reminder');
-    h.check('到点提醒已送达频道', !!hit.at, afterMessage(await h.text(h.u('alice').page), r.marker).slice(0, 400));
+    h.check('到点提醒已送达频道', !!hit.at, (await readAfter(h, h.u('alice').page, r.marker)).after.slice(0, 400));
     if (hit.at) {
       const late = Math.round((hit.at - due) / 1000);
       h.log('reminder seen at', new Date(hit.at).toISOString(), 'offset s', late);

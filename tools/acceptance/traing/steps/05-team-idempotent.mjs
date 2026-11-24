@@ -8,6 +8,9 @@ export default {
   title: '建团队重试幂等：同一 request_id 只产生一个团队（TE-11）',
   covers: ['TE-11'],
   users: ['dave'],
+  after: ['03'],
+  locks: { 'ws:dave': 'x' },
+  est: 20,
   async run(h) {
     const before = await workspaces(h, 'dave');
     const cur = before.find((w) => w.current)?.id;

@@ -8,6 +8,9 @@ export default {
   title: '各人共享工作区命名，记录工作区 id',
   covers: ['环①：Workspace'],
   users: ['alice', 'bob', 'carol', 'dave'],
+  after: ['01'],
+  locks: { 'ws:alice': 'x', 'ws:bob': 'x', 'ws:carol': 'x', 'ws:dave': 'x' },
+  est: 30,
   async run(h) {
     h.S.ws = {};
     for (const [n, name] of Object.entries(TEAM)) {

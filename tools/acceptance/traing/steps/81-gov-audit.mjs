@@ -8,6 +8,9 @@ export default {
   title: '治理：审计四个范围（本人/工作区/平台/实体）与导出列表',
   covers: ['D-05', 'feat/governance-ui', 'TE-13'],
   users: ['alice', 'bob', 'carol', 'dave'],
+  after: ['02', '03', '20', '30', '80'],
+  locks: { 'ws:alice': 's', 'ws:bob': 's', 'ws:carol': 's', 'ws:dave': 's', 'platform-roles': 's' },
+  est: 120,
   async run(h) {
     h.need('W');
     const a = h.u('alice').page; const b = h.u('bob').page;

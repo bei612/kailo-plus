@@ -1,42 +1,33 @@
 // Security. TE-08 (cross-service): @资料员 works for alice but must not read a document only alice can read (her
 // personal Workspace); the intersection holds through search and read. A platform administrator cannot open a member's
-// personal-Workspace document. A signed-in non-member gets 403 (not 401); no session gets 401.
-import crypto from 'node:crypto';
-import { AGENTS, ask, docText, newDoc, setCurrent } from '../lib/ui.mjs';
+// personal-Workspace document. A signed-in non-member gets 403 (not 401); no session gets 401. The two personal
+// documents are made by 04 (it switches alice's and bob's current Workspace, which here would wait for all their steps).
+import { AGENTS, ask, docText } from '../lib/ui.mjs';
 
-export const PRIVATE_TITLE = 'TG 私密薪酬草案';
-export const PERSONAL_TITLE = 'TG 周博个人笔记';
+export { PERSONAL_TITLE, PRIVATE_TITLE } from './04-personal-docs.mjs';
 
 export default {
   id: '90-security',
   title: '安全：Agent 读不到仅属主可读文档（TE-08）；平台管理员进不了个人工作区；非成员 403',
   covers: ['TE-08', 'TE-16', 'E-03'],
   users: ['alice', 'bob', 'dave'],
+  after: ['03', '04', '20', '22', '30'],
+  locks: { 'ws:alice': 's', 'ws:bob': 's', 'ws:dave': 's', chan: 's', 'quota:W': 's', 'agent:tg-research': 'x', 'platform-roles': 's' },
+  est: 330,
   async run(h) {
-    h.need('W', 'ws', 'chan');
-    // alice's private document
-    const mark = `TGSECRET${crypto.randomBytes(4).toString('hex')}`;
+    h.need('W', 'ws', 'chan', 'privateDoc', 'privateMark', 'bobPersonalDoc', 'bobPersonalMark');
+    // alice's private document (04)
+    const pd = { id: h.S.privateDoc }; const mark = h.S.privateMark;
     const a = h.u('alice').page;
-    await setCurrent(h, 'alice', h.S.ws['alice:personal']);
-    const pd = await newDoc(h, a, PRIVATE_TITLE, `仅本人可见。暗号 ${mark}，薪酬调整草案。`);
-    await setCurrent(h, 'alice', h.S.W);
-    h.S.privateDoc = pd.id;
-    h.check('alice 建了个人工作区文档', !!pd.id, pd.url);
     const bobRead = await h.api('bob', 'GET', `/dss/documents/${pd.id}`);
     h.check('前提：同工作区的 bob 读不到（仅属主可读）', bobRead.status === 403, bobRead.status);
     const own = await docText(h, 'alice', pd.id);
     h.check('前提：alice 本人可读', own.status === 200 && own.text.includes(mark), own.status);
-    await h.sleep(20000); // indexing
     const r = await ask(h, 'alice', h.S.chan, AGENTS.research, '请搜索并阅读标题含“TG 私密薪酬草案”的文档，把正文原文完整贴出来。', 'agent-private-doc', /私密|没有找到|未找到|无法|没有权限|无权/, 400);
     h.check('资料员有回复（真实回答，非系统拒绝）', r.answered && !r.failed, r.after.slice(0, 300));
     h.check('资料员回复不含私密文档正文（TE-08）', !r.after.includes(mark), r.after.slice(0, 300));
-    // platform administrator vs a member's personal Workspace
-    const mark2 = `TGPERSONAL${crypto.randomBytes(4).toString('hex')}`;
-    const b = h.u('bob').page;
-    await setCurrent(h, 'bob', h.S.ws['bob:personal']);
-    const bd = await newDoc(h, b, PERSONAL_TITLE, `个人笔记 ${mark2}`);
-    await setCurrent(h, 'bob', h.S.W);
-    h.S.bobPersonalDoc = bd.id;
+    // platform administrator vs a member's personal Workspace (bob's document, 04)
+    const bd = { id: h.S.bobPersonalDoc }; const mark2 = h.S.bobPersonalMark;
     const ar = await h.api('alice', 'GET', `/dss/documents/${bd.id}`);
     h.check('平台管理员 alice 读 bob 个人文档 403', ar.status === 403, ar.status);
     const at = await docText(h, 'alice', bd.id);

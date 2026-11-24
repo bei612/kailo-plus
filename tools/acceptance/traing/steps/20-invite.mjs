@@ -10,6 +10,9 @@ export default {
   title: '邀请 bob、carol 加入 W（中文邀请框 TE-16，邮件 + 设置页加入）',
   covers: ['环②：3 人', 'TE-16'],
   users: ['alice', 'bob', 'carol'],
+  after: ['03', '04'],
+  locks: { 'ws:alice': 's', 'ws:bob': 'x', 'ws:carol': 'x' },
+  est: 120,
   async run(h) {
     h.need('W', 'domain');
     const a = h.u('alice').page;

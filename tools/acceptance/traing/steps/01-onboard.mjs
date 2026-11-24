@@ -7,6 +7,9 @@ export default {
   title: '引导流程走完，每人恰好一个共享工作区（TE-11）',
   covers: ['TE-11'],
   users: ['alice', 'bob', 'carol', 'dave'],
+  after: ['00'],
+  locks: { 'ws:alice': 'x', 'ws:bob': 'x', 'ws:carol': 'x', 'ws:dave': 'x' },
+  est: 120,
   async run(h) {
     for (const n of ['alice', 'bob', 'carol', 'dave']) {
       const p = h.u(n).page;

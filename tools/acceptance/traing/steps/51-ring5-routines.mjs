@@ -54,6 +54,10 @@ export default {
   title: '环⑤ 对话中定下的一次性/周期例程按时以 Agent 身份运行（审计 actor=bot）',
   covers: ['环⑤', 'T-08', 'routine-agent-access', 'TE-06'],
   users: ['alice'],
+  after: ['21', '22'],
+  locks: { 'ws:alice': 's', chan: 's', 'quota:W': 's', 'agent:tg-task': 'x' },
+  est: 960,
+  release: { 'agent:tg-task': 420 },
   async run(h) {
     h.need('chan');
     // Lead time covers an Agent turn on a 32k-window model (2026-11-23: 490 s), so the run is checked at its time.
@@ -72,6 +76,9 @@ export default {
     h.S.routines = [once?.id, cron?.id].filter(Boolean);
     for (const x of [once, cron].filter(Boolean)) h.log(x.name, JSON.stringify(x).slice(0, 700));
     h.check('例程归属 Agent（记录 bot）', [once, cron].filter(Boolean).every((x) => JSON.stringify(x).includes(h.S.bots?.task ?? '__none__') || /"(agent_?id|bot_?id|agentId|botId)":"[0-9a-f-]{36}"/i.test(JSON.stringify(x))), h.S.bots?.task);
+    // From here the step only waits for the scheduled runs (their own Agent sessions) and reads their records: other
+    // steps may talk to @任务协调 meanwhile.
+    h.unlock('agent:tg-task');
     const a = h.u('alice').page;
     await a.goto(`${h.BASE}/app/routines`, { waitUntil: 'load' }); await a.waitForTimeout(6000);
     await h.shot(a, 'routines-list');

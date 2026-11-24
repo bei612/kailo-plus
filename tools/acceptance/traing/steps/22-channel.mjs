@@ -15,6 +15,9 @@ export default {
   title: '团队频道：3 人 + 4 个 Agent，三人讨论',
   covers: ['环②：频道里 3 人 + 多个 Agent'],
   users: ['alice', 'bob', 'carol'],
+  after: ['20', '21'],
+  locks: { 'ws:alice': 's', 'ws:bob': 's', 'ws:carol': 's', chan: 'x' },
+  est: 180,
   async run(h) {
     h.need('W');
     const a = h.u('alice').page;

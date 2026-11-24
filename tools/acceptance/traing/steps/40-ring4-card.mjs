@@ -10,6 +10,9 @@ export default {
   title: '环④ Codex 出卡显示、人确认一次、换 actionId 不能二次确认（TE-04/TE-14）',
   covers: ['环④', 'TE-04', 'TE-14', 'TE-06'],
   users: ['alice', 'bob', 'dave'],
+  after: ['22'],
+  locks: { 'ws:alice': 's', 'ws:bob': 's', 'ws:dave': 's', chan: 's', 'quota:W': 's', 'agent:tg-task': 'x' },
+  est: 480,
   async run(h) {
     h.need('chan');
     const a = h.u('alice').page;

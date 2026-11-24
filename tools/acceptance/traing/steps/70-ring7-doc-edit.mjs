@@ -8,6 +8,9 @@ export default {
   title: '环⑦ @Kailo 两次修改文档均成功（TE-05），关系图可见',
   covers: ['环⑦', 'TE-05', 'TE-06'],
   users: ['alice'],
+  after: ['30'],
+  locks: { 'ws:alice': 's', chan: 's', 'quota:W': 's', 'agent:kailo': 'x' },
+  est: 600,
   async run(h) {
     h.need('chan', 'docId');
     const r1 = await ask(h, 'alice', h.S.chan, AGENTS.kailo, `请在文档《${h.S.docTitle ?? DOC_TITLE}》末尾追加一节“风险与应对”，写两条风险和对应措施，完成后回复。`, 'edit-1', /风险|已追加|已更新/, 400);

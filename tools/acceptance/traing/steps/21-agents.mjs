@@ -10,6 +10,9 @@ export default {
   title: '在 Kailo Codex 上建三个团队 Agent（文档助理/资料员/任务协调）',
   covers: ['环②：多 Agent（Codex 运行时 KD-35）', 'TE-16'],
   users: ['alice'],
+  after: ['03', '04'],
+  locks: { 'ws:alice': 's' },
+  est: 150,
   async run(h) {
     h.need('W');
     const a = h.u('alice').page;

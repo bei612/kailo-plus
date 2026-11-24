@@ -9,6 +9,9 @@ export default {
   title: '平台管理员（引导令牌或现有管理员授予）与平台角色界面',
   covers: ['D-03 平台角色'],
   users: ['alice', 'bob'],
+  after: ['01'],
+  locks: { 'ws:alice': 's', 'ws:bob': 's', 'platform-roles': 'x' },
+  est: 60,
   async run(h) {
     const a = h.u('alice').page;
     let st = (await h.api('alice', 'GET', '/dss/platform/settings')).body;

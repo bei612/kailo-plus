@@ -11,6 +11,9 @@ export default {
   title: '模型目录经部署同步含 flatten/complete-replayed-messages；编辑→确定不崩溃（TE-10/TE-09）',
   covers: ['TE-10', 'TE-09', 'TE-03'],
   users: ['alice'],
+  after: ['02'],
+  locks: { 'ws:alice': 's', 'platform-roles': 's' },
+  est: 60,
   async run(h) {
     const v = await h.api('alice', 'GET', '/dss/platform/models');
     h.check('GET /dss/platform/models 200', v.status === 200, v.status);

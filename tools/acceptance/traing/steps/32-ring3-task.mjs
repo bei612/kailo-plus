@@ -8,6 +8,9 @@ export default {
   title: '环③ Agent 建任务（指派、截止，TE-02）',
   covers: ['环③', 'TE-02'],
   users: ['alice', 'bob'],
+  after: ['22'],
+  locks: { 'ws:alice': 's', 'ws:bob': 's', chan: 's', 'quota:W': 's', 'agent:tg-task': 'x' },
+  est: 240,
   async run(h) {
     h.need('chan');
     const r = await ask(h, 'alice', h.S.chan, AGENTS.task,

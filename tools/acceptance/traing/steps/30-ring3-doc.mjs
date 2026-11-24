@@ -9,6 +9,9 @@ export default {
   title: '环③ Agent 建文档（无空回复，TE-01）',
   covers: ['环③', 'TE-01', 'TE-03'],
   users: ['alice'],
+  after: ['22'],
+  locks: { 'ws:alice': 's', chan: 's', 'quota:W': 's', 'agent:tg-doc': 'x' },
+  est: 300,
   async run(h) {
     h.need('chan');
     // A title of this run's own: earlier runs left documents of the base title, which made the Agent pick among

@@ -12,6 +12,9 @@ export default {
   title: '环③ Agent 查资料并汇总（无空回复，TE-01）',
   covers: ['环③', 'TE-01'],
   users: ['alice'],
+  after: ['22'],
+  locks: { 'ws:alice': 's', chan: 's', 'quota:W': 's', 'agent:tg-research': 'x' },
+  est: 300,
   async run(h) {
     h.need('chan', 'W');
     const a = h.u('alice').page;

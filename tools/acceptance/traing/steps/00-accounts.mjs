@@ -4,6 +4,9 @@ export default {
   id: '00-accounts',
   title: '四个测试账号开通并经 Keycloak 登录（zh-CN）',
   covers: ['环①：Keycloak 登录'],
+  after: [],
+  locks: {},
+  est: 90,
   async run(h) {
     h.S.runStart = h.S.runStart || new Date().toISOString();
     const people = [['alice', '安', '林'], ['bob', '博', '周'], ['carol', '可', '陈'], ['dave', '达', '王']];

@@ -13,6 +13,9 @@ export default {
   title: '中文界面：邀请框、Agent 页、例程页（TE-16）',
   covers: ['TE-16'],
   users: ['alice'],
+  after: ['21'],
+  locks: { 'ws:alice': 's' },
+  est: 90,
   async run(h) {
     const a = h.u('alice').page;
     const pages = [

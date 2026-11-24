@@ -9,6 +9,9 @@ export default {
   title: '治理：审批中心、审批人收件箱条目与深链、批准后导出完成',
   covers: ['D-04', 'D-05', 'feat/governance-ui'],
   users: ['alice', 'bob'],
+  after: ['02', '03'],
+  locks: { 'ws:alice': 's', 'ws:bob': 's', approvals: 'x', 'platform-roles': 's' },
+  est: 240,
   async run(h) {
     const b = h.u('bob').page;
     await settings(h, b, 'my-activity');

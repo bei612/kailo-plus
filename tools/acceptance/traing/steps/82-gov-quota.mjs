@@ -8,6 +8,10 @@ export default {
   title: '治理：额度页（平台工作区选择器、设额度）与成员只读用量页',
   covers: ['D-02', 'D-08', 'feat/governance-ui'],
   users: ['alice', 'bob'],
+  after: ['02', '03', '20'],
+  locks: { 'ws:alice': 's', 'ws:bob': 's', 'quota:W': 'x', 'platform-roles': 's' },
+  est: 120,
+  release: { 'quota:W': 60 },
   async run(h) {
     h.need('W');
     const pw = await h.api('alice', 'GET', `/dss/platform/workspaces?search=${encodeURIComponent('TG 安林')}`);
@@ -36,6 +40,8 @@ export default {
     } finally {
       const r = await h.api('alice', 'PUT', `/dss/quota/teams/${h.S.W}`, { monthlyTokens: before?.monthlyTokens ?? null });
       h.check('恢复 W 额度', r.status < 300, r.status);
+      // W's quota is as found again: Agent steps (quota:W shared) may run from here on.
+      h.unlock('quota:W');
     }
     // Design 04 §5.6: 用量与额度 is read-only for a Workspace's administrators and settable by platform administrators;
     // a plain member has no entry. bob is a member of W and the owner (administrator) of his own Workspace.
@@ -45,13 +51,16 @@ export default {
     h.check('W 的普通成员没有“用量与额度”入口', !/用量与额度/.test(await h.text(b)));
     const bobWs = h.S.ws?.[`bob:${TEAM.bob}`];
     if (bobWs) {
-      await setCurrent(h, 'bob', bobWs);
-      try {
-        await settings(h, b, 'team-usage', 6000);
-        await h.shot(b, 'bob-own-ws-team-usage');
-        h.check('工作区管理员（非平台管理员）看到只读额度（由平台管理员设置）', /额度由平台管理员设置/.test(await h.text(b)));
-        h.check('工作区管理员改本工作区额度 403', (await h.api('bob', 'PUT', `/dss/quota/teams/${bobWs}`, { monthlyTokens: 1 })).status === 403);
-      } finally { await setCurrent(h, 'bob', h.S.W); }
+      // bob's current Workspace leaves W for this section only: no other step of bob's runs meanwhile.
+      await h.exclusive('ws:bob', async () => {
+        await setCurrent(h, 'bob', bobWs);
+        try {
+          await settings(h, b, 'team-usage', 6000);
+          await h.shot(b, 'bob-own-ws-team-usage');
+          h.check('工作区管理员（非平台管理员）看到只读额度（由平台管理员设置）', /额度由平台管理员设置/.test(await h.text(b)));
+          h.check('工作区管理员改本工作区额度 403', (await h.api('bob', 'PUT', `/dss/quota/teams/${bobWs}`, { monthlyTokens: 1 })).status === 403);
+        } finally { await setCurrent(h, 'bob', h.S.W); }
+      });
     } else h.check('bob 自己的工作区已记录', false, Object.keys(h.S.ws || {}));
     h.check('成员改 W 额度 403', (await h.api('bob', 'PUT', `/dss/quota/teams/${h.S.W}`, { monthlyTokens: 1 })).status === 403);
   },
