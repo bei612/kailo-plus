@@ -1,6 +1,8 @@
-// Dry-run of the suite without the stack: the pure helpers, the harness bookkeeping (checks, results, 0600 state),
-// the UI helpers against a stubbed session, the zh-CN label patterns against the train-g zh-Hans strings, and the
-// step modules (ids, titles, covers, order). usage: node selftest.mjs
+// Dry-run of the suite without the stack: the pure helpers, the harness bookkeeping (checks, results, 0600 state, one
+// scope per concurrent step), the UI helpers against a stubbed session, the zh-CN label patterns against the train-g
+// zh-Hans strings, the step modules (ids, titles, covers, order), the scheduler (locks, order, stop-on-fail) and the
+// step graph (no cycles, every state read has an earlier producer, the locks each step's source needs are declared).
+// usage: node selftest.mjs
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -9,6 +11,7 @@ import * as U from './lib/util.mjs';
 import { createHarness, loadConfig } from './lib/harness.mjs';
 import * as UI from './lib/ui.mjs';
 import { loadSteps } from './run-all.mjs';
+import * as SCH from './lib/schedule.mjs';
 
 let n = 0;
 const t = async (name, fn) => { await fn(); n++; console.log('ok', name); };
@@ -131,6 +134,177 @@ await t('step modules: unique ids, titles, covers, users', async () => {
   for (const need of ['环①', '环②', '环③', '环④', '环⑤', '环⑥', '环⑦', 'TE-01', 'TE-02', 'TE-03', 'TE-04', 'TE-05', 'TE-08', 'TE-09', 'TE-11', 'TE-12', 'TE-14', 'TE-15', 'TE-16'])
     assert.ok(covered.has(need), `nothing covers ${need}`);
 });
+await t('parseArgs: --serial, --concurrency, --plan; pickRow', () => {
+  const a = U.parseArgs(['--serial', '--concurrency', '3', '--plan']);
+  assert.ok(a.serial && a.plan); assert.equal(a.concurrency, 3);
+  assert.equal(U.parseArgs([]).concurrency, 4);
+  assert.equal(U.parseArgs([], { ACC_CONCURRENCY: '6' }).concurrency, 6);
+  assert.throws(() => U.parseArgs(['--concurrency', '0']));
+  const rows = ['安林 讨论', '安林 @文档助理 请新建 〔验收 r·doc·a1〕 文档助理 已创建', '安林 @资料员 〔验收 r·research·b2〕'];
+  assert.equal(U.pickRow(rows, '〔验收 r·doc·a1〕'), rows[1]);
+  assert.equal(U.pickRow(rows, '〔验收 r·x·zz〕'), null);
+});
+
+await t('harness: a scope per concurrent step (own record, shared run state)', async () => {
+  const x = h.fork(); const y = h.fork();
+  assert.equal(x.S, h.S); assert.equal(y.acc, h.acc); assert.equal(x.locks, h.locks);
+  x._begin({ id: 'p', title: 'P' }); y._begin({ id: 'q', title: 'Q' });
+  x.check('x one', true); y.check('y one', false); x.S.fromX = 1;
+  const rx = await x._end(); const ry = await y._end();
+  assert.deepEqual(rx.checks.map((c) => c.name), ['x one']); assert.equal(rx.status, 'pass');
+  assert.deepEqual(ry.checks.map((c) => c.name), ['y one']); assert.equal(ry.status, 'fail');
+  assert.equal(h.S.fromX, 1); delete h.S.fromX;
+  // A section lock is the step's own: re-entrant inside its declared lock, waits for another step's.
+  h.locks.tryAll('p', [['agent:tg-task', 'x']]);
+  x._begin({ id: 'p', title: 'P' }); y._begin({ id: 'q', title: 'Q' });
+  let inside = false; await x.exclusive('agent:tg-task', async () => { inside = true; });
+  assert.ok(inside);
+  let yRan = false; const yp = y.exclusive('agent:tg-task', async () => { yRan = true; });
+  await new Promise((r) => setImmediate(r)); assert.ok(!yRan);
+  x.unlock('agent:tg-task'); await yp; assert.ok(yRan);
+  x.check('c', true); y.check('c', true); await x._end(); await y._end();
+});
+
+await t('readAfter: parallel reads the thread of the message only; serial the page', async () => {
+  const marker = '〔验收 r·doc·a1〕';
+  const page = (rows) => ({ locator: () => ({ evaluateAll: async () => rows }) });
+  const body = `安林 @文档助理 请新建 ${marker} 文档助理 已创建 安林 @资料员 额度验收：请只用一句中文回复“收到”。`;
+  const stub = (parallel) => ({ parallel, text: async () => body });
+  let r = await UI.readAfter(stub(false), page([]), marker);
+  assert.ok(r.scoped); assert.match(r.after, /收到/);
+  r = await UI.readAfter(stub(true), page(['别的话题', `安林 @文档助理 请新建 ${marker}\n\n文档助理 已创建`]), marker);
+  assert.ok(r.scoped); assert.equal(r.after.trim(), '文档助理 已创建');
+  r = await UI.readAfter(stub(true), page([]), marker);
+  assert.ok(!r.scoped);
+});
+
+await t('Locks: shared/exclusive, re-entrant, all-or-nothing, FIFO waiters block new holders', async () => {
+  const L = new SCH.Locks();
+  assert.ok(L.tryAll('a', [['r', 's'], ['q', 'x']]));
+  assert.ok(L.tryAll('b', [['r', 's']]));
+  assert.ok(!L.tryAll('c', [['r', 'x']]));
+  assert.ok(!L.tryAll('c', [['z', 's'], ['q', 's']])); assert.equal(L.holders('z').s.length, 0); // nothing taken
+  assert.ok(L.tryAll('a', [['q', 'x']])); // re-entrant
+  let got = false; const w = L.acquire('c', 'r', 'x').then(() => { got = true; });
+  assert.ok(!L.tryAll('d', [['r', 's']])); // a waiting exclusive keeps new shared holders out
+  L.releaseAll('a'); await new Promise((r) => setImmediate(r)); assert.ok(!got);
+  L.releaseAll('b'); await w; assert.ok(got);
+  assert.equal(L.holders('r').x, 'c');
+  L.release('c', 'r', 'x'); assert.ok(L.tryAll('d', [['r', 's']]));
+  // A sole shared holder may upgrade.
+  assert.ok(L.tryAll('d', [['r', 'x']]));
+});
+
+const fake = (id, extra = {}) => ({ id, title: id, est: 60, after: [], locks: {}, run() {}, ...extra });
+await t('runSchedule: dependencies, locks, limit; serial is file order; stop-on-fail; unschedulable', async () => {
+  const st = [fake('00-a', { est: 10 }), fake('10-b', { after: ['00'], locks: { k: 'x' } }), fake('20-c', { after: ['00'], locks: { k: 's' } }),
+    fake('30-d', { after: ['00'] }), fake('40-e', { after: ['00'] }), fake('50-f', { after: ['10', '20'], est: 5 })];
+  const par = await SCH.simulate(st, { limit: 2 });
+  const at = Object.fromEntries(par.rows.map((r) => [r.id, r]));
+  for (const s of st) for (const d of SCH.buildGraph(st).deps.get(s.id)) assert.ok(at[s.id].start >= at[d].end, `${s.id} after ${d}`);
+  assert.ok(at['10-b'].end <= at['20-c'].start || at['20-c'].end <= at['10-b'].start, 'k is exclusive');
+  for (const r of par.rows) assert.ok(par.rows.filter((o) => o.start <= r.start && o.end > r.start).length <= 2, 'limit 2');
+  const ser = await SCH.simulate(st, { serial: true });
+  assert.deepEqual(ser.rows.map((r) => r.id), st.map((s) => s.id)); assert.equal(ser.total, 10 + 60 * 4 + 5);
+  const seen = [];
+  const res = await SCH.runSchedule(st, { limit: 3, stopOnFail: true, run: async (s) => { seen.push(s.id); return { id: s.id, status: s.id === '00-a' ? 'fail' : 'pass' }; } });
+  assert.deepEqual(seen, ['00-a']); assert.ok([...res.values()].slice(1).every((r) => r.status === 'skipped'));
+  const L = new SCH.Locks(); L.tryAll('outsider', [['k', 'x']]);
+  const res2 = await SCH.runSchedule([fake('10-b', { locks: { k: 'x' } })], { locks: L, run: async () => ({ status: 'pass' }) });
+  assert.equal(res2.get('10-b').status, 'error');
+  assert.throws(() => SCH.buildGraph([fake('10-a', { after: ['20'] }), fake('20-b', { after: ['10'] })]), /cycle/);
+  assert.throws(() => SCH.buildGraph([fake('10-a', { after: ['77'] })]), /names no step/);
+  // A selection drops dependencies on steps outside it (their state is from an earlier run).
+  assert.deepEqual(SCH.buildGraph([st[5]], st).deps.get('50-f'), []);
+});
+
+// The step graph, checked against each step's own source.
+const SRC = path.dirname(new URL(import.meta.url).pathname);
+const steps = await loadSteps();
+const src = Object.fromEntries(steps.map((s) => [s.id, fs.readFileSync(path.join(SRC, 'steps', s.file), 'utf8')]));
+const graph = SCH.buildGraph(steps);
+const ancestors = (id, out = new Set()) => { for (const d of graph.deps.get(id)) if (!out.has(d)) { out.add(d); ancestors(d, out); } return out; };
+const HANDLE = { doc: 'tg-doc', research: 'tg-research', task: 'tg-task', kailo: 'kailo' };
+await t('step graph: declared, backwards, acyclic, resources known', () => {
+  for (const s of steps) {
+    assert.ok(Array.isArray(s.after), `${s.id} after`); assert.ok(Number(s.est) > 0, `${s.id} est`);
+    assert.ok(s.locks && typeof s.locks === 'object', `${s.id} locks`);
+    for (const [r, m] of Object.entries(s.locks)) { assert.ok(r in SCH.RESOURCES, `${s.id} lock ${r} unknown`); assert.ok(['s', 'x'].includes(m), `${s.id} ${r} mode ${m}`); }
+    for (const r of Object.keys(s.release || {})) assert.ok(s.locks[r], `${s.id} releases ${r} it does not hold`);
+    for (const ref of s.after) assert.ok(graph.index.get(SCH.resolveStep(steps, ref).id) < graph.index.get(s.id), `${s.id} after ${ref}: not earlier in file order (--serial would break)`);
+  }
+  const last = steps.at(-1);
+  assert.equal(last.id, '99-cleanup');
+  assert.equal(ancestors(last.id).size, steps.length - 1, '99-cleanup after every other step');
+});
+await t('step graph: every run-state read has a producer among its predecessors', () => {
+  const sets = {}; const reads = {};
+  for (const s of steps) {
+    const code = src[s.id];
+    for (const m of code.matchAll(/h\.S\.(\w+)\s*(=(?!=)|\|\|=)/g)) (sets[m[1]] ||= new Set()).add(s.id);
+    reads[s.id] = new Set([...code.matchAll(/h\.S\.(\w+)/g)].map((m) => m[1]));
+    for (const m of code.matchAll(/h\.need\(([^)]*)\)/g)) for (const k of m[1].matchAll(/'([\w.]+)'/g)) reads[s.id].add(k[1].split('.')[0]);
+  }
+  for (const s of steps) {
+    const anc = ancestors(s.id);
+    for (const k of reads[s.id]) {
+      const prod = [...(sets[k] || [])];
+      assert.ok(prod.length, `${s.id} reads h.S.${k}, which no step sets`);
+      const earlier = prod.filter((p) => p !== s.id && graph.index.get(p) < graph.index.get(s.id));
+      if (!prod.includes(s.id)) assert.ok(earlier.length, `${s.id} reads h.S.${k}, set only by later steps ${prod}`);
+      for (const p of earlier) assert.ok(anc.has(p), `${s.id} reads h.S.${k} from ${p} but does not come after it`);
+    }
+  }
+});
+await t('step graph: the locks a step source needs are declared', () => {
+  const dyn = {};
+  for (const s of steps) {
+    const code = src[s.id]; const L = s.locks; const users = s.users || [];
+    const x = (r) => L[r] === 'x' || code.includes(`h.exclusive('${r}'`);
+    for (const u of users) assert.ok(L[`ws:${u}`], `${s.id} uses ${u}: ws:${u} not declared`);
+    for (const m of code.matchAll(/setCurrent\(h, ('(\w+)'|\w+), ([^)]+)\)/g)) {
+      if (m[3].trim() === 'h.S.W') continue; // back to W: what every step sharing ws:<user> relies on
+      for (const u of m[2] ? [m[2]] : users) assert.ok(x(`ws:${u}`), `${s.id} switches ${u}'s Workspace: ws:${u} must be exclusive`);
+    }
+    if (/switchTo\(/.test(code)) for (const u of users) assert.ok(x(`ws:${u}`), `${s.id} switches Workspaces in the UI`);
+    if (/'(PATCH|POST)', '\/auth\/team'/.test(code)) for (const u of users) assert.ok(x(`ws:${u}`), `${s.id} creates or renames a team`);
+    for (const m of code.matchAll(/\bask\(h, [^,]+, [^,]+, AGENTS\.(\w+)/g)) {
+      assert.equal(L[`agent:${HANDLE[m[1]]}`], 'x', `${s.id} talks to ${m[1]}: agent:${HANDLE[m[1]]} must be declared exclusive`);
+      assert.ok(L.chan && L['quota:W'], `${s.id} asks an Agent: chan and quota:W needed`);
+    }
+    if (/\b(say|inviteBots)\(/.test(code)) assert.equal(L.chan, 'x', `${s.id} sets up the channel: chan exclusive`);
+    if (/waitChannel\(/.test(code)) assert.ok(L.chan, `${s.id} reads the channel`);
+    if (/'PUT', `\/dss\/quota\/bots\/\$\{B\}`|quota\/bots\/\$\{h\.S\.bots\.research\}/.test(code)) assert.equal(L['agent:tg-research'], 'x', `${s.id} caps @资料员`);
+    if (/'alice', 'PUT', `\/dss\/quota\/teams\/\$\{h\.S\.W\}`/.test(code)) assert.equal(L['quota:W'], 'x', `${s.id} sets W's quota`);
+    if (/\/dss\/approvals|\/dss\/audit\/exports'/.test(code)) assert.equal(L.approvals, 'x', `${s.id} uses the approval inbox`);
+    if (/'(POST|DELETE)', '\/dss\/platform\/roles'/.test(code)) assert.equal(L['platform-roles'], 'x', `${s.id} grants platform roles`);
+    for (const m of code.matchAll(/h\.unlock\('([^']+)'\)/g)) assert.ok(L[m[1]] && s.release?.[m[1]], `${s.id} unlocks ${m[1]}: declare it in locks and release`);
+    for (const m of code.matchAll(/h\.exclusive\('([^']+)'/g)) {
+      assert.notEqual(L[m[1]], 'x', `${s.id}: section on ${m[1]} it already holds exclusively`);
+      // Two steps upgrading one shared resource in sections could wait for each other.
+      assert.ok(!dyn[m[1]] || dyn[m[1]] === s.id, `${m[1]} taken in sections by ${dyn[m[1]]} and ${s.id}`); dyn[m[1]] = s.id;
+    }
+  }
+});
+await t('the round on paper: dependencies and exclusive locks respected, shorter than serial', async () => {
+  const par = await SCH.simulate(steps, { limit: 4 });
+  const ser = await SCH.simulate(steps, { serial: true });
+  const at = Object.fromEntries(par.rows.map((r) => [r.id, r]));
+  assert.equal(par.rows.length, steps.length);
+  for (const s of steps) for (const d of graph.deps.get(s.id)) assert.ok(at[s.id].start >= at[d].end, `${s.id} before ${d} ended`);
+  const held = (s, r) => [at[s.id].start, at[s.id].start + (s.release?.[r] ?? Number(s.est))];
+  for (const a of steps) for (const b of steps) {
+    if (a.id >= b.id) continue;
+    for (const [r, m] of Object.entries(a.locks)) {
+      const m2 = b.locks[r]; if (!m2 || (m === 's' && m2 === 's')) continue;
+      const [a0, a1] = held(a, r); const [b0, b1] = held(b, r);
+      assert.ok(a1 <= b0 || b1 <= a0, `${a.id} and ${b.id} overlap on ${r}`);
+    }
+  }
+  assert.ok(par.total < ser.total * 0.6, `parallel ${par.total}s vs serial ${ser.total}s`);
+  console.log(`   plan: ${Math.round(par.total / 60)} min at concurrency 4, ${Math.round(ser.total / 60)} min serial`);
+});
+
 await h.close();
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`SELFTEST_OK ${n} groups`);
