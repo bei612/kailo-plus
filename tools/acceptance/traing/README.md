@@ -17,15 +17,32 @@
 ```bash
 cd /volumes/kailo/acceptance/traing
 ./run.sh dry-run                  # 无需栈：语法、bash -n、步骤模块校验、helper 自测（有宿主 node 用宿主的，否则在 playwright 镜像内 --network none 只读运行）
-RUN_ID=g1 ./run.sh all            # 部署后检查 + 全部浏览器步骤（约 1.5–2 h，建议 tmux / nohup）
+RUN_ID=g1 ./run.sh all            # 部署后检查 + 全部浏览器步骤（并行约 40 min，--serial 约 1.5 h；建议 tmux / nohup）
 RUN_ID=g1 ./run.sh post-deploy    # 只跑部署后检查
 RUN_ID=g1 ./run.sh steps --list   # 列出步骤
 RUN_ID=g1 ./run.sh steps --only 40,50   # 只重跑某几步（沿用 state/run.json 里前序步骤留下的状态）
 RUN_ID=g1 ./run.sh steps --from 80 --stop-on-fail
+RUN_ID=g1 ./run.sh steps --plan          # 依赖图、锁与按 est 估算的时间线（不执行）
+RUN_ID=g1 ./run.sh steps --serial        # 旧行为：按文件顺序逐个执行
 RUN_ID=g1 ./run.sh evidence       # 只读取证：Temporal schedule / RoutineRun、例程运行记录、TE-08 SpiceDB 检查
 ```
 
-参数（环境变量，见 `config.env.example`）：`KAILO_URL`、`RUN_ID`、`ACC_DOMAIN`、`ADMIN_ACCOUNT_FILE`、`ASK_TIMEOUT_S`、
+## 并行执行
+
+步骤默认并行（`lib/schedule.mjs`）：前序步骤（模块的 `after`）结束、所需资源锁（`locks`）空闲时即开始，同时最多
+`--concurrency`（默认 `ACC_CONCURRENCY` 或 4）个，剩余链最长者优先；一轮约 40 分钟（串行约 90 分钟），以 `--plan` 为准。
+
+- 锁（`RESOURCES`）：`ws:<人>` 当前工作区（切换者独占，依赖其为 W 者共享）、`chan` 团队频道（22 独占搭建，其余共享）、
+  `agent:<handle>` 同一 Agent 同时只与一步对话（51 建好例程后释放）、`quota:W` W 的额度（82 独占设置并恢复后释放）、
+  `approvals` 审批收件箱、`platform-roles` 平台角色。步骤内也可只锁一段（`h.exclusive`，82 切换 bob 工作区）。
+- 每步每人一个独立页面（同一人的浏览器上下文、会话共享，续登按人串行）；日志行以 `[步骤 id]` 开头，截图命名不变。
+- 并行时 Agent 回复只从本消息所在话题（`[data-channel-thread-row]`）读取，不读整个频道：其他步骤的提问、回复、提醒、
+  例程输出不会被算作本步的回答；找不到本话题即判失败（提示改用 `--serial`），不退回整页读取。
+- `--stop-on-fail`：不再开始新步骤，正在执行的步骤跑完，其余记 skipped。`--serial` 与改造前一致（逐个、文件顺序、整页读取）。
+- 90 用到的两篇个人工作区文档由 04 建（切换 alice、bob 当前工作区要独占，放在最前不阻塞其他步骤）；99 删除后清掉其状态，
+  单独重跑 90 要连同 04：`--only 04,90`。
+
+参数（环境变量，见 `config.env.example`）：`KAILO_URL`、`RUN_ID`、`ACC_DOMAIN`、`ADMIN_ACCOUNT_FILE`、`ASK_TIMEOUT_S`、`ACC_CONCURRENCY`、
 `KAILO_SRC`、`M0_DIR`、`KAILO_DOCKER_HOST`、`KAILO_SECRETS`、`PW_IMAGE`、`PW_NODE_MODULES`。
 
 账号：默认每次新开 alice / bob / carol（同域）与 dave（另一域，局外人）。要复用一组账号，把 `state/accounts.json` 留着即可（00 步检测到就只登录）；
@@ -49,6 +66,7 @@ RUN_ID=g1 ./run.sh evidence       # 只读取证：Temporal schedule / RoutineRu
 | 01-onboard | 引导走完；每人恰好一个共享工作区 | TE-11 |
 | 02-platform-admin | 平台管理员（引导令牌/现有管理员授予）；授予与撤销审计员 | D-03 |
 | 03-workspaces | 工作区命名，记录 W | 环① |
+| 04-personal-docs | alice、bob 各在个人工作区建一篇仅本人可读的文档（供 90） | TE-08、E-03 |
 | 05-team-idempotent | 同一 `request_id` 连发 3 次建团队 → 同一 id，列表只 1 个 | TE-11 |
 | 10-model-catalog | 目录含 flatten-tool-namespaces、complete-replayed-messages，修订由 `svc|model-catalog-sync` 写入、之后无人工修订；管理→模型 编辑→确定 无页面错误、不保存 | TE-10、TE-09 |
 | 20-invite | 中文邀请框，邮件邀请 bob/carol，加入 W | 环②、TE-16 |
@@ -73,6 +91,6 @@ RUN_ID=g1 ./run.sh evidence       # 只读取证：Temporal schedule / RoutineRu
 - 检查（`h.check`）决定通过与否；`WARN` 只提示（例如实体菜单的通用定位找不到“活动与审计”时，以 API 证据代替截图）。
 - 等 Agent 回复的规则：消息之后出现该 Agent 名下至少 12 个可见字符、且符合本步正则，并且不含失败文本
   （没有完成 / 出错 / CONTEXT_EXHAUSTED / -32602 等）。
-- 51 步要等例程到点：一次性约 6 分钟后、周期在下一个 5 分钟边界，整步约 12–15 分钟。
+- 51 步要等例程到点：一次性约 12 分钟后、周期在下一个 5 分钟边界，整步约 15 分钟；建好例程后即释放 @任务协调，等待与其他步骤重叠。
 - 步骤依赖前序状态（`h.need`）；缺状态的步骤记为 blocked 而不是 fail。
 - 本套件不改产品代码、不改部署配置；10 步只打开编辑框，不保存修订。

@@ -3,6 +3,7 @@
 #   dry-run               no stack: node --check of every script, bash -n, runner --dry-run, selftest.mjs (node in .tools/)
 #   post-deploy           host checks after the deploy → results/$RUN_ID/00-post-deploy.json
 #   steps [runner args]   the browser suite in a playwright container on kailo_internal → results/$RUN_ID/<step>.json
+#                         (steps run concurrently, ACC_CONCURRENCY or --concurrency at once; --serial: one at a time)
 #   all [runner args]     post-deploy, then steps
 #   evidence              read-only Temporal / DB / SpiceDB evidence → results/$RUN_ID/evidence/
 # Secrets (internal API key, bootstrap token) reach the container through a 0600 env file, never a command line.
@@ -31,7 +32,7 @@ steps() {
     --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PW_NODE_MODULES:/w/node_modules:ro" -v "$D:/w" -w /w --env-file "$envf" \
     -e SUITE_DIR=/w -e RUN_ID -e KAILO_URL="$KAILO_URL" -e MAILPIT_URL="${MAILPIT_URL:-http://mailpit:8025}" \
     -e AUTH_INTERNAL_URL="${AUTH_INTERNAL_URL:-http://authentication-service:8080}" -e OPENMETER_URL="${OPENMETER_URL:-http://openmeter:8888/api/v1}" \
-    -e ACC_DOMAIN="${ACC_DOMAIN:-}" -e ASK_TIMEOUT_S="${ASK_TIMEOUT_S:-600}" "${admin[@]}" \
+    -e ACC_DOMAIN="${ACC_DOMAIN:-}" -e ASK_TIMEOUT_S="${ASK_TIMEOUT_S:-600}" -e ACC_CONCURRENCY="${ACC_CONCURRENCY:-4}" "${admin[@]}" \
     "$PW_IMAGE" node run-all.mjs "$@" 2>&1 | tee -a "$D/logs/steps-$RUN_ID.log"
   local rc=${PIPESTATUS[0]}
   set -e
@@ -68,5 +69,5 @@ case "$cmd" in
   steps) steps "$@" ;;
   all) bash "$D/post-deploy.sh" || echo "post-deploy had failures (see results/$RUN_ID/00-post-deploy.json); continuing with the browser suite"; steps "$@" ;;
   evidence) bash "$D/host/evidence.sh" ;;
-  *) sed -n '2,8p' "$0"; exit 2 ;;
+  *) sed -n '2,9p' "$0"; exit 2 ;;
 esac
