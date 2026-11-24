@@ -22,10 +22,17 @@ export default {
     const msg = '需要大家确认一件事：第二轮上门拜访是否从 12 月 15-20 日改到 12 月 16-21 日。请用 RenderSurface 在频道里出一张确认卡片（标题“确认调整上门拜访时间”，按钮“确认调整”和“不调整”），只需要林安确认一次；收到确认后在频道里回复结果。';
     const r = await ask(h, 'alice', h.S.chan, AGENTS.task, msg, 'card', /确认调整|不调整|卡片/);
     h.check('任务协调出卡回合无失败', r.ok, r.after.slice(0, 300));
-    let btn = a.getByRole('button', { name: /^确认调整$/ });
+    // The card is in this mention's thread row. A channel card draws lazily (LazyDecorator, within 400px of the
+    // viewport) and shows only its fallback text before that, and concurrent steps keep posting below it: scroll the
+    // row's card into view and wait for the drawn card's button there. The fallback is this reply's own session.
+    const row = a.locator('[data-channel-thread-row]').filter({ hasText: r.marker }).last();
+    const card = row.locator('section[aria-label="确认调整上门拜访时间"], [data-a2ui-card]').last();
+    if (await card.count()) await card.scrollIntoViewIfNeeded().catch(() => {});
+    let btn = row.getByRole('button', { name: /^确认调整$/ });
+    await btn.first().waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
     let where = 'channel';
     if (!(await btn.count())) {
-      const open = a.getByText(L.openSession).last();
+      const open = row.getByText(L.openSession).last();
       if (await open.count()) { await open.click(); await a.waitForTimeout(8000); where = 'session'; }
       btn = a.getByRole('button', { name: /^确认调整$/ });
     }
