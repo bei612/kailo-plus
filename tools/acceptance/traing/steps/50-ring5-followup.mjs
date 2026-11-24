@@ -19,7 +19,11 @@ export default {
     const r = await ask(h, 'alice', h.S.chan, AGENTS.task, msg, 'followup-set', /跟进|分钟|提醒/, 300);
     h.check('设定跟进的回合成功', r.ok, r.after.slice(0, 300));
     const due = at.date.getTime();
-    const count = (t) => t.split(MARK).length - 1;
+    // The reminder is a new Agent message in the thread after the reply: it names the note, or says it reminds.
+    // An Agent rephrases the note (2026-11-24: "检查一下《TG 整理第一轮电话回访名单》"), so its exact words alone are
+    // not the test; "提醒" counted after the reply is (the reply itself says it will remind, so it is the baseline).
+    const occurrences = (t, word) => t.split(word).length - 1;
+    const count = (t) => occurrences(t, MARK) + occurrences(t, '提醒');
     const n0 = count(r.after);
     h.log('due', new Date(due).toISOString(), 'mark count at reply', n0);
     const hit = await waitChannel(h, 'alice', h.S.chan, { test: (t) => count(t) > n0 }, due + 240000, r.marker, 10000);
