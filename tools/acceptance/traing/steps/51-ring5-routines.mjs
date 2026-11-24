@@ -59,7 +59,7 @@ export default {
   est: 960,
   release: { 'agent:tg-task': 420 },
   async run(h) {
-    h.need('chan');
+    h.need('roundChannel', 'chan');
     // Lead time covers an Agent turn on a 32k-window model (2026-11-23: 490 s), so the run is checked at its time.
     const at = minuteAhead(12 * 60000);
     const msg = `我们说定了：请用 Routine 工具建两个例程。①一次性：名称“${ONCE}”，今天 ${at.hhmm}（UTC）执行一次，内容是在本频道发“TG 提醒：请检查回访名单”。②周期：名称“${CRON}”，每 5 分钟执行一次（cron */5 * * * *，UTC），内容是在本频道发“TG 周期汇总：回访进度检查”。建好后回复两个例程的名称和执行时间。`;

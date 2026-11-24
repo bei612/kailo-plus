@@ -15,7 +15,7 @@ export default {
   locks: { 'ws:alice': 's', 'ws:bob': 's', 'ws:dave': 's', chan: 's', 'quota:W': 's', 'agent:tg-research': 'x', 'platform-roles': 's' },
   est: 330,
   async run(h) {
-    h.need('W', 'ws', 'chan', 'privateDoc', 'privateMark', 'bobPersonalDoc', 'bobPersonalMark');
+    h.need('W', 'ws', 'roundChannel', 'chan', 'privateDoc', 'privateMark', 'bobPersonalDoc', 'bobPersonalMark');
     // alice's private document (04)
     const pd = { id: h.S.privateDoc }; const mark = h.S.privateMark;
     const a = h.u('alice').page;

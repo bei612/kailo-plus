@@ -12,7 +12,7 @@ export default {
   locks: { 'ws:alice': 's', chan: 's', 'quota:W': 's', 'agent:kailo': 'x' },
   est: 600,
   async run(h) {
-    h.need('chan', 'docId');
+    h.need('roundChannel', 'chan', 'docId');
     const r1 = await ask(h, 'alice', h.S.chan, AGENTS.kailo, `请在文档《${h.S.docTitle ?? DOC_TITLE}》末尾追加一节“风险与应对”，写两条风险和对应措施，完成后回复。`, 'edit-1', /风险|已追加|已更新/, 400);
     h.check('第一次修改回合成功', r1.ok, r1.after.slice(0, 300));
     const t1 = await docText(h, 'alice', h.S.docId);

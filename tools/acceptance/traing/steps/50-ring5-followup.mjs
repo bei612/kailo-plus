@@ -14,7 +14,7 @@ export default {
   locks: { 'ws:alice': 's', chan: 's', 'quota:W': 's', 'agent:tg-task': 'x' },
   est: 420,
   async run(h) {
-    h.need('chan');
+    h.need('roundChannel', 'chan');
     // The step names the time: "3 minutes from now" left the Agent to pick its own second, and the check measured
     // against the step's guess (2026-11-23: set for 22:45:50, reminded at 22:47:36, judged against 22:44:03).
     const at = minuteAhead(5 * 60000);

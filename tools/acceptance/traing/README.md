@@ -71,7 +71,7 @@ RUN_ID=g1 ./run.sh evidence       # 只读取证：Temporal schedule / RoutineRu
 | 10-model-catalog | 目录含 flatten-tool-namespaces、complete-replayed-messages，修订由 `svc|model-catalog-sync` 写入、之后无人工修订；管理→模型 编辑→确定 无页面错误、不保存 | TE-10、TE-09 |
 | 20-invite | 中文邀请框，邮件邀请 bob/carol，加入 W | 环②、TE-16 |
 | 21-agents | 设置→Agent 建 3 个 Kailo Codex 团队 Agent | 环②、TE-16 |
-| 22-channel | 在 W 新建本轮团队频道（`TG 客户回访 <runId>`，删除上轮遗留的），3 人 + 4 Agent，三人讨论 | 环② |
+| 22-channel | 在 W 新建本轮团队频道（`TG 客户回访 <runId>`，按新建频道对话框的请求：先建频道再邀请 2 人、加 4 Agent；按身份核对删除上轮遗留的；id 记入 `roundChannel`，99 只删这一个），三人讨论 | 环② |
 | 30/31/32-ring3-* | 建文档、查资料汇总、建任务（指派、截止），均非空回复且实体存在 | 环③、TE-01/02/03 |
 | 40-ring4-card | Codex 出卡可见；界面确认；同 actionId 重试为重复；换 actionId 409 `SURFACE_ALREADY_SUBMITTED`；局外人被拒；Agent 继续；审计 | 环④、TE-04/14 |
 | 50-ring5-followup | 3 分钟跟进按时提醒（到点 −60 s～+180 s），审计 actor=bot | 环⑤、TE-06/07 |

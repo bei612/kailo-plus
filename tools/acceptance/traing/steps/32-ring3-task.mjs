@@ -12,7 +12,7 @@ export default {
   locks: { 'ws:alice': 's', 'ws:bob': 's', chan: 's', 'quota:W': 's', 'agent:tg-task': 'x' },
   est: 240,
   async run(h) {
-    h.need('chan');
+    h.need('roundChannel', 'chan');
     const r = await ask(h, 'alice', h.S.chan, AGENTS.task,
       `请新建一个任务《${TASK_TITLE}》，指派给周博，截止日期 12 月 1 日，描述写上要覆盖 30 家重点客户。完成后回复任务标题。`,
       'task', new RegExp(`${TASK_TITLE}|已创建|已新建|指派`));

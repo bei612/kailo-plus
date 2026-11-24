@@ -14,7 +14,7 @@ export default {
   locks: { 'ws:alice': 's', 'ws:bob': 's', 'ws:dave': 's', chan: 's', 'quota:W': 's', 'agent:tg-task': 'x' },
   est: 480,
   async run(h) {
-    h.need('chan');
+    h.need('roundChannel', 'chan');
     const a = h.u('alice').page;
     const acts = [];
     const onReq = (req) => { if (/\/surfaces\/[^/]+\/actions$/.test(req.url().split('?')[0]) && req.method() === 'POST') acts.push({ url: req.url(), body: req.postData() }); };

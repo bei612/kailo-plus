@@ -16,7 +16,7 @@ export default {
   locks: { 'ws:alice': 's', chan: 's', 'quota:W': 's', 'agent:tg-research': 'x' },
   est: 300,
   async run(h) {
-    h.need('chan', 'W');
+    h.need('roundChannel', 'chan', 'W');
     const a = h.u('alice').page;
     await setCurrent(h, 'alice', h.S.W);
     h.S.seeds = h.S.seeds || {};

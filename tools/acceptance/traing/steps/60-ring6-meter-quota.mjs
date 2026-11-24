@@ -12,7 +12,7 @@ export default {
   locks: { 'ws:alice': 's', 'ws:bob': 's', chan: 's', 'quota:W': 's', 'agent:tg-research': 'x' },
   est: 240,
   async run(h) {
-    h.need('W', 'chan', 'bots.research');
+    h.need('W', 'roundChannel', 'chan', 'bots.research');
     const OM = h.cfg.openmeter;
     const cust = await h.fetchJson(`${OM}/customers?pageSize=100`);
     const items = cust.body?.items || (Array.isArray(cust.body) ? cust.body : []);

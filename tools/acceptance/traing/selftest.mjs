@@ -305,6 +305,18 @@ await t('the round on paper: dependencies and exclusive locks respected, shorter
   console.log(`   plan: ${Math.round(par.total / 60)} min at concurrency 4, ${Math.round(ser.total / 60)} min serial`);
 });
 
+await t('round channel identity: only alice-owned TG round channels of W qualify', async () => {
+  const { isRoundChannel, roundChannelName } = await import('./steps/22-channel.mjs');
+  const who = { W: 'w1', ownerId: 'macro|a', workspaceName: 'TG 团队' };
+  const ok = { id: 'c1', name: roundChannelName('g1'), team_id: 'w1', channel_type: 'team', owner_id: 'macro|a', auto_join_team: false };
+  assert.ok(isRoundChannel(ok, who));
+  for (const bad of [{ name: 'TG 团队' }, { name: 'TG 客户回访' }, { name: 'TG 客户回访 g1 extra' }, { auto_join_team: true },
+    { team_id: 'w2' }, { owner_id: 'macro|b' }, { channel_type: 'private' }]) assert.ok(!isRoundChannel({ ...ok, ...bad }, who), JSON.stringify(bad));
+  assert.ok(!isRoundChannel(ok, { ...who, workspaceName: ok.name }));
+  assert.ok(!isRoundChannel(ok, { ...who, ownerId: undefined }));
+  assert.ok(!isRoundChannel(undefined, who));
+});
+
 await h.close();
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`SELFTEST_OK ${n} groups`);

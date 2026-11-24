@@ -9,7 +9,7 @@ import { findDocs } from '../lib/ui.mjs';
 import { DOC_TITLE } from './30-ring3-doc.mjs';
 import { TASK_TITLE } from './32-ring3-task.mjs';
 import { PERSONAL_TITLE, PRIVATE_TITLE } from './04-personal-docs.mjs';
-import { roundChannels } from './22-channel.mjs';
+import { CHANNEL_PREFIX, channels, isRoundChannel } from './22-channel.mjs';
 
 /** Every document and task whose title starts with `title` (each run adds a suffix to the document's). */
 async function made(h, title, user = 'alice') {
@@ -47,17 +47,23 @@ export default {
       const left = await made(h, title, user);
       h.check(`已删除《${title}》`, left.length === 0, left.map((d) => d.id));
     }
-    // The round's channel, and any an earlier round that stopped before 99 left.
-    if (h.S.W) {
-      const ids = new Set((await roundChannels(h)).map((c) => c.id));
-      if (h.S.chanId) ids.add(h.S.chanId);
-      for (const id of ids) h.log('delete channel', id, (await h.api('alice', 'DELETE', `/dss/channels/${id}`)).status);
-      const left = await roundChannels(h);
-      h.check('已删除本轮频道', left.length === 0, left.map((c) => c.id));
-    }
+    // This round's channel: the one 22 recorded in this run, deleted only when it is still, by every mark, a round
+    // channel of W (isRoundChannel: alice's, auto-join off, named "TG 客户回访 <run>", not W's own team channel).
+    // Nothing else is deleted here: a channel in the state from an earlier run, or one only found by name, is not
+    // this run's (rerun-g1-x deleted W's team channel that way); 22 sweeps leftover round channels before it starts.
+    const rc = h.S.roundChannel;
+    if (rc?.id && rc.runId === h.cfg.runId && rc.W === h.S.W) {
+      const listed = (await channels(h, 'alice')).find((c) => c.id === rc.id);
+      if (!listed) h.log('round channel already gone', rc.id);
+      else if (listed.name !== rc.name || !listed.name.startsWith(CHANNEL_PREFIX) || !isRoundChannel(listed, rc)) {
+        h.check('本轮频道身份核对', false, { id: listed.id, name: listed.name, team_id: listed.team_id, auto_join_team: listed.auto_join_team });
+      } else h.log('delete channel', rc.id, rc.name, (await h.api('alice', 'DELETE', `/dss/channels/${rc.id}`)).status);
+      const left = (await channels(h, 'alice')).some((c) => c.id === rc.id && isRoundChannel(c, rc));
+      h.check('已删除本轮频道', !left, rc.id);
+    } else if (rc) h.log('round channel of another run left for 22 to sweep', rc.id, rc.runId);
     // The personal documents and the channel are gone: a later --only 90 is blocked until 04 makes new documents, and a
     // later --only 30-90 until 22 makes a new channel, instead of reading these.
-    for (const k of ['privateDoc', 'privateMark', 'bobPersonalDoc', 'bobPersonalMark', 'chan', 'chanId']) delete h.S[k];
+    for (const k of ['privateDoc', 'privateMark', 'bobPersonalDoc', 'bobPersonalMark', 'chan', 'chanId', 'roundChannel']) delete h.S[k];
     h.check('清理完成', true);
   },
 };

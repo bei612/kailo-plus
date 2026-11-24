@@ -13,7 +13,7 @@ export default {
   locks: { 'ws:alice': 's', chan: 's', 'quota:W': 's', 'agent:tg-doc': 'x' },
   est: 300,
   async run(h) {
-    h.need('chan');
+    h.need('roundChannel', 'chan');
     // A title of this run's own: earlier runs left documents of the base title, which made the Agent pick among
     // copies and the checks read an old one (2026-11-23).
     const title = `${DOC_TITLE}·${Date.now().toString(36).slice(-5)}`;
