@@ -55,14 +55,14 @@ class Policy(unittest.TestCase):
                                  "/var/lib/kailo-ci/ci-fs/dev-check/slot-2/test-target",
                                  "/var/lib/kailo-ci/ci-fs/dev-check/slot-3/test-target"])
         self.assertEqual(policy["grace_seconds"], 2 * HOUR)
-        # cargo targets: three slots of at most 30 GiB (90 GiB) and kailo-dev-check's up to four slots of 25 GiB
-        # (OPS-05, dev_check.slots; the real per-slot cap is dev_check.target_cap_gb) plus their --test targets of
-        # 20 GiB (dev_check.test_target_cap_gb, 18 GiB, applies first), all on ci-fs
-        self.assertEqual(sum(r.get("max_bytes", 0) for r in policy["roots"]), 270 * 2**30)
-        # default builder: same limit as daemon.json builder.gc; kailo-builder state lives on the 4T disk (OPS-01)
+        # NVMe budget (2026-11-23): three CI target slots of 27 GiB, kailo-dev-check slot 0 only (target 15 GiB,
+        # test-target 10 GiB), slots 1-3 at the 1 GiB minimum for both; all on ci-fs
+        self.assertEqual(sum(r.get("max_bytes", 0) for r in policy["roots"]), 112 * 2**30)
+        # default builder: same limit as daemon.json builder.gc; kailo-builder: buildkitd.toml's total GC cap (state on
+        # NVMe since 2026-11-22; 90GB since 2026-11-24 so the Rust target cache mounts survive GC)
         self.assertEqual(policy["docker_build_cache"]["keep_storage"], "10GB")
         self.assertEqual(policy["docker_build_cache"]["builders"],
-                         ["default", dict(name="kailo-builder", keep_storage="160GB")])
+                         ["default", dict(name="kailo-builder", keep_storage="90GB")])
 
     def test_invalid_policies_are_refused(self):
         for bad in (dict(grace_seconds=60, roots=[dict(path="/a", max_idle_seconds=DAY)]),

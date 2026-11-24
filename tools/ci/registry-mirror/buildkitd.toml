@@ -41,6 +41,9 @@
   # target slots and the daemon's images); what lasts stays on the 4T disk: base images in the registry mirrors (an evicted base
   # is pulled back from the local mirror, never from the internet), release images in the release registry, and
   # the dependency caches (npm, Go, crates, files, git).
+  # 2026-11-24: cache mounts 25GB -> 55GB, total 60GB -> 90GB. The Rust targets (backend, web wasm, codex, sync) are
+  # cache mounts and together exceed 25GB, so GC dropped them after every build and each deploy recompiled all 1658
+  # crates from scratch (step 0: 3608-4374 s). They now stay, so a deploy recompiles only the crates that changed.
   [[worker.oci.gcpolicy]]
     filters = ["type==source.local"]
     maxUsedSpace = "5GB"
@@ -51,7 +54,7 @@
 
   [[worker.oci.gcpolicy]]
     filters = ["type==exec.cachemount"]
-    maxUsedSpace = "25GB"
+    maxUsedSpace = "55GB"
 
   [[worker.oci.gcpolicy]]
     filters = ["type==regular"]
@@ -59,9 +62,9 @@
 
   [[worker.oci.gcpolicy]]
     reservedSpace = "20GB"
-    maxUsedSpace = "60GB"
+    maxUsedSpace = "90GB"
 
   [[worker.oci.gcpolicy]]
     all = true
     reservedSpace = "20GB"
-    maxUsedSpace = "60GB"
+    maxUsedSpace = "90GB"
