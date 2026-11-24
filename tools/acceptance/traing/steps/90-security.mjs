@@ -4,6 +4,9 @@
 import crypto from 'node:crypto';
 import { AGENTS, ask, docText, newDoc, setCurrent } from '../lib/ui.mjs';
 
+export const PRIVATE_TITLE = 'TG 私密薪酬草案';
+export const PERSONAL_TITLE = 'TG 周博个人笔记';
+
 export default {
   id: '90-security',
   title: '安全：Agent 读不到仅属主可读文档（TE-08）；平台管理员进不了个人工作区；非成员 403',
@@ -15,7 +18,7 @@ export default {
     const mark = `TGSECRET${crypto.randomBytes(4).toString('hex')}`;
     const a = h.u('alice').page;
     await setCurrent(h, 'alice', h.S.ws['alice:personal']);
-    const pd = await newDoc(h, a, 'TG 私密薪酬草案', `仅本人可见。暗号 ${mark}，薪酬调整草案。`);
+    const pd = await newDoc(h, a, PRIVATE_TITLE, `仅本人可见。暗号 ${mark}，薪酬调整草案。`);
     await setCurrent(h, 'alice', h.S.W);
     h.S.privateDoc = pd.id;
     h.check('alice 建了个人工作区文档', !!pd.id, pd.url);
@@ -31,7 +34,7 @@ export default {
     const mark2 = `TGPERSONAL${crypto.randomBytes(4).toString('hex')}`;
     const b = h.u('bob').page;
     await setCurrent(h, 'bob', h.S.ws['bob:personal']);
-    const bd = await newDoc(h, b, 'TG 周博个人笔记', `个人笔记 ${mark2}`);
+    const bd = await newDoc(h, b, PERSONAL_TITLE, `个人笔记 ${mark2}`);
     await setCurrent(h, 'bob', h.S.W);
     h.S.bobPersonalDoc = bd.id;
     const ar = await h.api('alice', 'GET', `/dss/documents/${bd.id}`);
