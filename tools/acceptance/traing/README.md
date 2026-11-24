@@ -1,0 +1,78 @@
+# 列车 g 线上复验套件（traing）
+
+源码：kailo-plus `tools/acceptance/traing/`（修改只走提交，在节点上用 `tools/acceptance/install.sh` 安装）；运行目录：CI 节点 `/volumes/kailo/acceptance/traing/`（state/、shots/、logs/、results/ 只在节点上）。由列车 e 验收（`../traine-20261121/steps/*.js`）重构而来：
+同一套 playwright-core 1.62 操作，改为参数化的步骤模块 + 一个运行器，每步输出通过/失败 JSON，每步 zh-CN 截图。
+
+## 前提
+
+- 列车 g 已部署（本套件不启动部署栈，不动节点服务）；`/volumes/kailo/kailo-macro` 已是部署的提交。
+- 浏览器在 `mcr.microsoft.com/playwright:v1.62.0-noble` 容器里，接 `kailo_internal` 网络（与列车 e 相同，经 `/run/kailo-docker/docker.sock`），
+  `node_modules` 复用 `../m0/node_modules`（playwright-core 1.62）。
+- 机密只经 0600 文件：内部 API key 与平台引导令牌由 `run.sh` 从 `secrets.env` 抽到 `state/.env-*`（0600，运行后清空删除）；
+  测试账号密码在 `state/accounts.json`（0600，本套件生成），会话 cookie 在 `state/<user>.json`（0600），运行状态（id、URL）在 `state/run.json`（0600）。
+  日志与结果不含密码、令牌。
+
+## 运行
+
+```bash
+cd /volumes/kailo/acceptance/traing
+./run.sh dry-run                  # 无需栈：语法、bash -n、步骤模块校验、helper 自测（有宿主 node 用宿主的，否则在 playwright 镜像内 --network none 只读运行）
+RUN_ID=g1 ./run.sh all            # 部署后检查 + 全部浏览器步骤（约 1.5–2 h，建议 tmux / nohup）
+RUN_ID=g1 ./run.sh post-deploy    # 只跑部署后检查
+RUN_ID=g1 ./run.sh steps --list   # 列出步骤
+RUN_ID=g1 ./run.sh steps --only 40,50   # 只重跑某几步（沿用 state/run.json 里前序步骤留下的状态）
+RUN_ID=g1 ./run.sh steps --from 80 --stop-on-fail
+RUN_ID=g1 ./run.sh evidence       # 只读取证：Temporal schedule / RoutineRun、例程运行记录、TE-08 SpiceDB 检查
+```
+
+参数（环境变量，见 `config.env.example`）：`KAILO_URL`、`RUN_ID`、`ACC_DOMAIN`、`ADMIN_ACCOUNT_FILE`、`ASK_TIMEOUT_S`、
+`KAILO_SRC`、`M0_DIR`、`KAILO_DOCKER_HOST`、`KAILO_SECRETS`、`PW_IMAGE`、`PW_NODE_MODULES`。
+
+账号：默认每次新开 alice / bob / carol（同域）与 dave（另一域，局外人）。要复用一组账号，把 `state/accounts.json` 留着即可（00 步检测到就只登录）；
+换新账号就先把它移走。平台管理员：引导未关闭时 02 步用部署的引导令牌在“设置→平台”成为管理员；已关闭时给
+`ADMIN_ACCOUNT_FILE`（0600 JSON `{"email","password"}`，现有平台管理员，例如列车 e 的 alice），由它授予 alice。
+
+## 结果
+
+- `results/<RUN_ID>/00-post-deploy.json`、`results/<RUN_ID>/<step>.json`：`status`（pass / fail / error / blocked / skipped）、
+  `checks[]`（名称、是否通过、证据摘要）、`failed[]`、`shots[]`、期间所见 4xx/5xx、页面错误、步骤日志。
+- `results/<RUN_ID>/summary.json`：全部步骤一览；运行器全部通过时退出码 0。
+- `shots/<RUN_ID>/<step>--<label>.png`：zh-CN、1440×900 截图；API 证据也渲染成截图放在同处。
+- `logs/steps-<RUN_ID>.log`：控制台全文（PASS/FAIL 逐条）。
+
+## 步骤与覆盖
+
+| 步骤 | 内容 | 覆盖 |
+|---|---|---|
+| 00-post-deploy（`post-deploy.sh`） | 试用账号登录、冒烟 upload-pdf / agent-turns（含 Codex）/ default-share、spicedb verify、authz verify、model-catalog-sync 作业、official.sh | 部署后检查、TE-03 |
+| 00-accounts | 开通 4 个账号，Keycloak 登录 | 环① |
+| 01-onboard | 引导走完；每人恰好一个共享工作区 | TE-11 |
+| 02-platform-admin | 平台管理员（引导令牌/现有管理员授予）；授予与撤销审计员 | D-03 |
+| 03-workspaces | 工作区命名，记录 W | 环① |
+| 05-team-idempotent | 同一 `request_id` 连发 3 次建团队 → 同一 id，列表只 1 个 | TE-11 |
+| 10-model-catalog | 目录含 flatten-tool-namespaces、complete-replayed-messages，修订由 `svc|model-catalog-sync` 写入、之后无人工修订；管理→模型 编辑→确定 无页面错误、不保存 | TE-10、TE-09 |
+| 20-invite | 中文邀请框，邮件邀请 bob/carol，加入 W | 环②、TE-16 |
+| 21-agents | 设置→Agent 建 3 个 Kailo Codex 团队 Agent | 环②、TE-16 |
+| 22-channel | 团队频道 3 人 + 4 Agent，三人讨论 | 环② |
+| 30/31/32-ring3-* | 建文档、查资料汇总、建任务（指派、截止），均非空回复且实体存在 | 环③、TE-01/02/03 |
+| 40-ring4-card | Codex 出卡可见；界面确认；同 actionId 重试为重复；换 actionId 409 `SURFACE_ALREADY_SUBMITTED`；局外人被拒；Agent 继续；审计 | 环④、TE-04/14 |
+| 50-ring5-followup | 3 分钟跟进按时提醒（到点 −60 s～+180 s），审计 actor=bot | 环⑤、TE-06/07 |
+| 51-ring5-routines | 对话中建一次性与周期例程，按时运行，运行审计 actor=bot；结束删除 | 环⑤、T-08 |
+| 60-ring6-meter-quota | OpenMeter 计量 > 0 且无校验错误；资料员上限 1 token → 线程中文额度提示（QUOTA_BLOCKED）+ DENY 审计；恢复 | 环⑥、TE-12 |
+| 70-ring7-doc-edit | @Kailo 连续两次改文档都落地；关系图 | 环⑦、TE-05 |
+| 80-gov-approvals | 我的操作记录→导出事件→等待审批；alice 收件箱条目与深链 `/app/settings/approvals?approval=<id>`；批准；导出完成可下载；自审被拒 | D-04、D-05 |
+| 81-gov-audit | 审计四个范围（本人/工作区/平台/实体）页面与 API 权限、导出列表 | D-05、TE-13 |
+| 82-gov-quota | 管理→额度：平台工作区选择器、设额度并恢复；成员只读 | D-02/D-08 |
+| 83-ws-switcher | 侧栏工作区切换器；服务端 current 与设置页一致 | TE-15 |
+| 84-zh-text | 邀请框、Agent 页、例程页无英文残留 | TE-16 |
+| 90-security | 资料员读不到仅属主可读文档（TE-08）；平台管理员打不开成员个人工作区文档；非成员 403、无会话 401 | TE-08、TE-16 |
+| 99-cleanup | 删例程、清额度、撤回未决审批 | — |
+
+## 判定与注意
+
+- 检查（`h.check`）决定通过与否；`WARN` 只提示（例如实体菜单的通用定位找不到“活动与审计”时，以 API 证据代替截图）。
+- 等 Agent 回复的规则：消息之后出现该 Agent 名下至少 12 个可见字符、且符合本步正则，并且不含失败文本
+  （没有完成 / 出错 / CONTEXT_EXHAUSTED / -32602 等）。
+- 51 步要等例程到点：一次性约 6 分钟后、周期在下一个 5 分钟边界，整步约 12–15 分钟。
+- 步骤依赖前序状态（`h.need`）；缺状态的步骤记为 blocked 而不是 fail。
+- 本套件不改产品代码、不改部署配置；10 步只打开编辑框，不保存修订。
