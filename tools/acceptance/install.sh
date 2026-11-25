@@ -28,4 +28,7 @@ find "$dst" -maxdepth 3 -name '*.bak*' -not -path '*/node_modules/*' -exec rm -r
 m0dst=${M0_DIR:-/volumes/kailo/acceptance/m0}
 mkdir -p "$m0dst"
 for f in "$here"/m0/*; do install -m "$( [ -x "$f" ] && echo 0755 || echo 0644 )" "$f" "$m0dst/$(basename "$f")"; done
+# Release and round helpers (ops/): beside the suite, not in a temporary directory that retention empties.
+install -d /volumes/kailo/acceptance/ops
+for f in "$here"/ops/*; do install -m "$( [ -x "$f" ] && echo 0755 || echo 0644 )" "$f" /volumes/kailo/acceptance/ops/; done
 echo "acceptance suite installed into $dst from $(git -C "$here" rev-parse --short HEAD 2>/dev/null || echo checkout)"
