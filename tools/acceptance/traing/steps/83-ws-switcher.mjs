@@ -12,7 +12,8 @@ async function switchTo(h, p, name) {
   await h.shot(p, `switcher-menu-to-${name.replace(/\s+/g, '')}`);
   await p.getByRole('menuitem', { name: new RegExp(name) }).first().click()
     .catch(() => p.getByText(name, { exact: true }).last().click());
-  await p.waitForTimeout(4000);
+  // The confirmation is a transient toast (4.5 s): read it as soon as it shows, within the same 4 s bound.
+  await p.getByText(/已切换到/).first().waitFor({ timeout: 4000 }).catch(() => {});
   const toast = await h.text(p);
   await h.shot(p, `switched-to-${name.replace(/\s+/g, '')}`);
   return { menu, toast };
