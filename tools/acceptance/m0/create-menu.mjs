@@ -16,10 +16,10 @@ export async function createFromMenu(page, entry, { attempts = 3 } = {}) {
     await page.keyboard.press('c');
     const item = page.getByText(name).first();
     if (await item.waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false)) {
-      // Selecting an entry previews it; the menu's footer button (新建文档 / 新建任务 / …) creates it.
+      // The launcher (apps/web features/command/Launcher.tsx) opens in search mode by default with its field focused:
+      // a pointer click only selects the entry (setSelectedIndexFromPointer) and Enter runs the selected entry.
       await item.click();
-      const create = page.getByRole('button', { name: /^(新建|创建|New |Create )/ }).last();
-      if (await create.waitFor({ state: 'visible', timeout: 3000 }).then(() => true, () => false)) await create.click();
+      await page.keyboard.press('Enter');
       return;
     }
     await page.keyboard.press('Escape');
