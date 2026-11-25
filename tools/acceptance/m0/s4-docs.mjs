@@ -4,7 +4,7 @@ const newDoc = async (page, title) => {
   await page.goto(`${process.env.KAILO_URL}/app/home`, { waitUntil: 'load' });
   await page.getByText(/^(What should we work on\?|我们应该处理什么？)$/).waitFor({ timeout: 60000 });
   await page.waitForTimeout(1500);
-  await createFromMenu(page, 'd');
+  await createFromMenu(page, 'document');
   await page.waitForURL(/\/app\/drive\/md\//, { timeout: 30000 });
   // The body editor mounts once the document's sync session is open: until then only the title and the comment box
   // are editable (a skeleton stands in for the body).

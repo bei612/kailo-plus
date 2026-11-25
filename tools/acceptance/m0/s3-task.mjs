@@ -4,7 +4,7 @@ export default async ({ page, shot, text, BASE }) => {
   await page.goto(`${BASE}/app/home`, { waitUntil: 'load' });
   await page.getByText(/^(What should we work on\?|我们应该处理什么？)$/).waitFor({ timeout: 60000 });
   await page.waitForTimeout(2000);
-  await createFromMenu(page, 't');
+  await createFromMenu(page, 'task');
   await page.waitForTimeout(2500);
   await shot('10-task-form');
   console.log((await text()).slice(-600));
