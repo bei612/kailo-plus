@@ -24,4 +24,8 @@ for d in lib steps host; do
   done
 done
 find "$dst" -maxdepth 3 -name '*.bak*' -not -path '*/node_modules/*' -exec rm -rf {} +
+# The M0 official script (post-deploy "official" check) lives in m0/; installed beside its node_modules.
+m0dst=${M0_DIR:-/volumes/kailo/acceptance/m0}
+mkdir -p "$m0dst"
+for f in "$here"/m0/*; do install -m "$( [ -x "$f" ] && echo 0755 || echo 0644 )" "$f" "$m0dst/$(basename "$f")"; done
 echo "acceptance suite installed into $dst from $(git -C "$here" rev-parse --short HEAD 2>/dev/null || echo checkout)"

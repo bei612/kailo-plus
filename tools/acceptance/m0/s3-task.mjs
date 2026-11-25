@@ -1,0 +1,18 @@
+// Step 3: create a task.
+import { createFromMenu } from './create-menu.mjs';
+export default async ({ page, shot, text, BASE }) => {
+  await page.goto(`${BASE}/app/home`, { waitUntil: 'load' });
+  await page.getByText(/^(What should we work on\?|我们应该处理什么？)$/).waitFor({ timeout: 60000 });
+  await page.waitForTimeout(2000);
+  await createFromMenu(page, 't');
+  await page.waitForTimeout(2500);
+  await shot('10-task-form');
+  console.log((await text()).slice(-600));
+  await page.keyboard.type('M0 acceptance task', { delay: 30 });
+  await page.waitForTimeout(500);
+  await page.getByRole('button', { name: /Create Task|创建任务/i }).click();
+  await page.waitForTimeout(5000);
+  console.log('URL', page.url());
+  await shot('11-task-created');
+  console.log((await text()).slice(0, 800));
+};
