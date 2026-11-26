@@ -8,6 +8,11 @@ export default async ({ page, shot, text, BASE }) => {
   await page.waitForTimeout(2500);
   await shot('10-task-form');
   console.log((await text()).slice(-600));
+  // Type into the title itself (the composer marks it data-task-composer-title, new-task-title-focus.ts), not into
+  // whatever holds focus: the title autofocuses, but a key that reached it first moves focus to the description.
+  const title = page.locator('[data-task-composer-title] [contenteditable="true"]').first();
+  await title.waitFor({ state: 'visible', timeout: 15000 });
+  await title.click();
   await page.keyboard.type('M0 acceptance task', { delay: 30 });
   await page.waitForTimeout(500);
   await page.getByRole('button', { name: /Create Task|创建任务/i }).click();

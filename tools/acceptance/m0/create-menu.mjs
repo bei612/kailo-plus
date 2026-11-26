@@ -8,18 +8,26 @@ const ENTRIES = {
   channel: /^(Channel|频道)$/,
 };
 
+// The launcher dialog (Launcher.tsx DesktopLauncher, aria-label create.createNew).
+const MENU = (page) => page.getByRole('dialog', { name: /^(Create New|新建)$/ });
+
 export async function createFromMenu(page, entry, { attempts = 3 } = {}) {
   const name = ENTRIES[entry];
   if (!name) throw new Error(`unknown create-menu entry ${entry}`);
   for (let attempt = 1; attempt <= attempts; attempt++) {
     await page.locator('body').click({ position: { x: 900, y: 120 } });
     await page.keyboard.press('c');
-    const item = page.getByText(name).first();
+    const item = MENU(page).getByText(name).first();
     if (await item.waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false)) {
-      // The launcher (apps/web features/command/Launcher.tsx) opens in search mode by default with its field focused:
-      // a pointer click only selects the entry (setSelectedIndexFromPointer) and Enter runs the selected entry.
+      // The launcher (apps/web features/command/Launcher.tsx) opens in search mode by default with its field focused.
+      // What a click does depends on its layout (CreateMenuPreview.tsx): the details layout only selects the entry
+      // (setSelectedIndexFromPointer) and Enter runs it, the list layout runs it on the click (onSelect = onChoose).
+      // Enter goes only to a menu that is still open: after a click that already opened the composer it lands in the
+      // composer's autofocused title, whose Enter moves on to the description (title-editor.tsx), and the title
+      // typed next went into the description (Create Task stayed disabled, 2026-11-26 full-b8-r1 official).
       await item.click();
-      await page.keyboard.press('Enter');
+      const menuClosed = await MENU(page).waitFor({ state: 'hidden', timeout: 1500 }).then(() => true, () => false);
+      if (!menuClosed) await page.keyboard.press('Enter');
       return;
     }
     await page.keyboard.press('Escape');
