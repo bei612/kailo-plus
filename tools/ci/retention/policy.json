@@ -50,6 +50,12 @@
       "lock": "/var/lib/kailo-ci/check-target/kailo-macro/slot3.lock"
     },
     {
+      "path": "/var/lib/kailo-ci/check-target/kailo-macro/release",
+      "max_idle_seconds": 604800,
+      "max_bytes": 30064771072,
+      "lock": "/var/lib/kailo-ci/check-target/kailo-macro/release.lock"
+    },
+    {
       "path": "/var/lib/kailo-ci/check-cache/kailo-macro",
       "max_idle_seconds": 86400
     },
@@ -153,7 +159,7 @@
           {
             "path": "/var/lib/kailo-ci/check-target/kailo-macro",
             "cap": "90G",
-            "role": "cargo target slots 3x30G (CHECK_SLOT_CAP_GB; inside ci-cache.xfs)"
+            "role": "cargo target slots 3x30G (CHECK_SLOT_CAP_GB) and the release build directory release/ (CHECK_RELEASE_CAP_GB 28G: backend and web release targets, the prebuilt handoff out/; one release build at a time, release.lock); inside ci-cache.xfs"
           },
           {
             "path": "/var/lib/kailo-ci/sccache/kailo-macro",

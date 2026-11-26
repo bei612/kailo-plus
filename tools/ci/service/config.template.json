@@ -108,7 +108,8 @@
         "sqlx",
         "verify",
         "full",
-        "infra-smoke"
+        "infra-smoke",
+        "release"
       ],
       "postgres_steps": [
         "migrate",
@@ -139,7 +140,11 @@
         "CHECK_HEAVY_LOCK": "/var/lib/kailo-ci/locks/image-build.lock",
         "CHECK_PEAKS_LOG": "/volumes/data/kailo/capacity/logs/peaks/ci-peaks.jsonl",
         "CHECK_PREFLIGHT_WAIT": "3600",
-        "CHECK_SLOT_CAP_GB": "30"
+        "CHECK_SLOT_CAP_GB": "30",
+        "CHECK_RELEASE_MEMORY": "32g",
+        "CHECK_RELEASE_CAP_GB": "28",
+        "CHECK_DEPLOY_ENV": "/volumes/kailo/deploy/kailo/kailo.env",
+        "CHECK_GIT_MIRROR_SYNC": "/volumes/kailo/apps/tools/ci/dep-cache/git-mirror.sh"
       },
       "concurrency": 3,
       "min_job_free_bytes": 25769803776

@@ -44,21 +44,26 @@
   # 2026-11-24: cache mounts 25GB -> 55GB, total 60GB -> 90GB. The Rust targets (backend, web wasm, codex, sync) are
   # cache mounts and together exceed 25GB, so GC dropped them after every build and each deploy recompiled all 1658
   # crates from scratch (step 0: 3608-4374 s). They now stay, so a deploy recompiles only the crates that changed.
+  # 2026-11-26 (b9/prebuilt-deploy): BuildKit compares every rule's maxUsedSpace with the size of ALL cache records, the
+  # rule's filter only selects what it may delete (moby/buildkit cache/manager.go prune: DiskUsage without a filter,
+  # then pruneOnce with the rule's filter). The former per-type figures (source.local 5GB, git 2GB, cache mounts 55GB,
+  # regular 35GB) were therefore not quotas: with the cache mounts alone at 45GB, the "regular 35GB" rule deleted every
+  # image layer after every build (kailo-builder held 11 cache mounts and 0 layers after deploy d2c2b375e6), so each
+  # deploy re-pulled base images and re-ran apt, bun install (75-2925 s per image) and the wasm tool installs, and the
+  # cache-mount rule evicted the wasm package cache. The rules are now an eviction order over the total: build contexts
+  # first, then git checkouts, then image layers (least recently used first), and only above the full cap anything,
+  # cache mounts included.
   [[worker.oci.gcpolicy]]
     filters = ["type==source.local"]
-    maxUsedSpace = "5GB"
+    maxUsedSpace = "40GB"
 
   [[worker.oci.gcpolicy]]
     filters = ["type==source.git.checkout"]
-    maxUsedSpace = "2GB"
-
-  [[worker.oci.gcpolicy]]
-    filters = ["type==exec.cachemount"]
-    maxUsedSpace = "55GB"
+    maxUsedSpace = "40GB"
 
   [[worker.oci.gcpolicy]]
     filters = ["type==regular"]
-    maxUsedSpace = "35GB"
+    maxUsedSpace = "70GB"
 
   [[worker.oci.gcpolicy]]
     reservedSpace = "20GB"
