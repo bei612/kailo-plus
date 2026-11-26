@@ -317,6 +317,31 @@ await t('round channel identity: only alice-owned TG round channels of W qualify
   assert.ok(!isRoundChannel(undefined, who));
 });
 
+await t('parity helpers: test files, messages, notifications, routes', async () => {
+  const C = await import('./lib/collab.mjs');
+  assert.equal(C.crc32(Buffer.from('123456789')), 0xcbf43926);
+  const png = C.pngBytes(10, 6);
+  assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  assert.equal(png.readUInt32BE(16), 10); assert.equal(png.readUInt32BE(20), 6);
+  assert.equal(png.readUInt32BE(29), C.crc32(png.subarray(12, 29)), 'IHDR crc');
+  const pdf = C.pdfBytes('report TGF1（中文）');
+  assert.match(pdf.toString('latin1'), /^%PDF-1\.4[\s\S]*\(report TGF1\) Tj[\s\S]*%%EOF\n$/);
+  const items = [{ id: 'm1', content: 'a TGM1', thread: { preview: [{ id: 'r1', content: 'b TGM1-r' }] } }, { id: 'm2', content: 'c' }];
+  assert.equal(C.findMessage(items, 'TGM1-r').id, 'r1'); assert.equal(C.findMessage(items, 'TGM1').id, 'm1');
+  assert.equal(C.findMessage(items, 'zzz'), null);
+  assert.ok(C.mentionsUser({ mentions: [{ entity_type: 'user', entity_id: 'macro|B' }] }, 'macro|b'));
+  assert.ok(C.mentionsUser({ content: '<m-user-mention>{"userId":"macro|b"}</m-user-mention>' }, 'macro|b'));
+  assert.ok(!C.mentionsUser({ content: 'hi' }, 'macro|b'));
+  const ns = [{ notification_event_type: 'channel_mention', notification_metadata: { messageId: 'm1' } }, { notification_event_type: 'task_assigned', entity_id: 't1' }];
+  assert.ok(C.findNotification(ns, 'channel_mention', 'm1')); assert.ok(C.findNotification(ns, 'task_assigned', 't1'));
+  assert.equal(C.findNotification(ns, 'channel_mention', 't1'), null);
+  const u = '0198f0a4-1111-7222-8333-444455556666';
+  assert.equal(C.idInUrl(`https://x/app/drive/database/${u}`, 'database'), u);
+  assert.equal(C.idInUrl(`https://x/app/form/${u}/respond`, 'form'), u);
+  assert.equal(C.idInUrl(`https://x/app/channels/${u}`, '(?:task|tasks|md)'), null);
+  assert.match(C.token('TGX'), /^TGX[0-9a-z]{6}$/);
+});
+
 await h.close();
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`SELFTEST_OK ${n} groups`);
