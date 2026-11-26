@@ -133,9 +133,35 @@ export async function readAfter(h, p, marker) {
       await p.mouse.move(720, 450); await p.mouse.wheel(0, -900); await p.waitForTimeout(800);
       row = pickRow(await rows(), marker);
     }
+    if (row != null && (await revealMentions(p, marker))) row = pickRow(await rows(), marker) ?? row;
     if (row != null) return { after: afterMessage(row.replace(/\n{2,}/g, '\n'), marker), scoped: true };
   }
+  await revealMentions(p, marker);
   return { after: afterMessage(await h.text(p), marker), scoped: !h.parallel };
+}
+
+/**
+ * Bring the entity mentions of our thread into view, as a person reading the answer does. A message's mention chip is
+ * a viewport-gated placeholder until it comes within 400px of the viewport (apps/web LazyDecorator.tsx, used by
+ * StaticMarkdown); a chip whose mention carries no stored name reads "Loading..." until then. In a parallel run other
+ * steps' messages push our thread out of view while the list keeps it rendered (overscan), so its text was read with
+ * the chip never resolved (2026-11-26 full-b8-r1 step 30: the document existed and was readable). Returns whether a
+ * chip was scrolled to (the caller reads again).
+ */
+async function revealMentions(p, marker) {
+  if (typeof p.evaluate !== 'function') return false;
+  const found = await p.evaluate(async (m) => {
+    const rows = [...document.querySelectorAll('[data-channel-thread-row]')].filter((e) => e.innerText.includes(m));
+    // Without thread rows (a serial run reads the page), the latest chips are the answer's.
+    const chips = [...(rows.at(-1) ?? document).querySelectorAll('[data-document-mention]')].slice(-12);
+    for (const chip of chips) {
+      chip.scrollIntoView({ block: 'center' });
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    return chips.length;
+  }, marker).catch(() => 0);
+  if (found) await p.waitForTimeout(2500);
+  return found > 0;
 }
 
 /** Run `fn` holding `resource` (h.exclusive), or just run it in a harness without locks (selftest stubs). */
