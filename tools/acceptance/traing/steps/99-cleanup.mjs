@@ -6,6 +6,7 @@
 // Accounts and the seed documents stay. Earlier runs left those documents and tasks behind, and ③'s research then
 // summarized twelve copies of them instead of the seeds (2026-11-24); the screenshots and logs are the evidence.
 import { findDocs } from '../lib/ui.mjs';
+import { deleteEntities, forgetMade, madeEntities } from '../lib/collab.mjs';
 import { DOC_TITLE } from './30-ring3-doc.mjs';
 import { TASK_TITLE } from './32-ring3-task.mjs';
 import { PERSONAL_TITLE, PRIVATE_TITLE } from './04-personal-docs.mjs';
@@ -19,10 +20,10 @@ async function made(h, title, user = 'alice') {
 
 export default {
   id: '99-cleanup',
-  title: '清理：例程、额度、未决审批、Agent 建的文档与任务、本轮频道',
+  title: '清理：例程、额度、未决审批、Agent 与对等用例建的内容、本轮频道',
   covers: [],
   users: ['alice', 'bob'],
-  after: ['00', '01', '02', '03', '04', '05', '10', '20', '21', '22', '30', '31', '32', '40', '50', '51', '60', '70', '80', '81', '82', '83', '84', '90'],
+  after: ['00', '01', '02', '03', '04', '05', '10', '20', '21', '22', '23', '24', '25', '26', '30', '31', '32', '33', '34', '35', '36', '37', '38', '39', '40', '50', '51', '60', '70', '80', '81', '82', '83', '84', '90'],
   locks: { 'ws:alice': 's', 'ws:bob': 's', chan: 'x', approvals: 'x', 'agent:tg-research': 'x' },
   est: 60,
   async run(h) {
@@ -47,6 +48,25 @@ export default {
       const left = await made(h, title, user);
       h.check(`已删除《${title}》`, left.length === 0, left.map((d) => d.id));
     }
+    // What the parity steps (23–39) made: documents, tasks and uploads (DSS), projects, databases and forms (trashed,
+    // then deleted permanently); alice's timer, should 36 have stopped before stopping it.
+    const parity = madeEntities(h);
+    const timer = (await h.api('alice', 'GET', '/dss/time/timer')).body?.timer;
+    if (timer && (parity.doc || []).includes(timer.taskId ?? timer.task_id)) {
+      h.log('discard timer', (await h.api('alice', 'POST', '/dss/time/timer/discard', { timerId: timer.id })).status);
+    }
+    for (const id of parity.doc || []) h.log('delete', id, (await h.api('alice', 'DELETE', `/dss/documents/${id}`)).status);
+    if (parity.doc?.length) {
+      const left = (await findDocs(h, 'alice', /./)).filter((d) => parity.doc.includes(d.id));
+      h.check('已删除对等用例建的文档、任务与上传文件', left.length === 0, left.map((d) => d.id));
+      forgetMade(h, 'doc');
+    }
+    for (const [kind, type] of [['form', 'FORM'], ['database', 'DATABASE'], ['initiative', 'INITIATIVE']]) {
+      if (!parity[kind]?.length) continue;
+      const errs = await deleteEntities(h, 'alice', type, parity[kind]);
+      h.check(`已删除对等用例建的${{ form: '表单', database: '数据库', initiative: '项目' }[kind]}`, errs.length === 0, errs);
+      forgetMade(h, kind);
+    }
     // This round's channel: the one 22 recorded in this run, deleted only when it is still, by every mark, a round
     // channel of W (isRoundChannel: alice's, auto-join off, named "TG 客户回访 <run>", not W's own team channel).
     // Nothing else is deleted here: a channel in the state from an earlier run, or one only found by name, is not
@@ -63,7 +83,7 @@ export default {
     } else if (rc) h.log('round channel of another run left for 22 to sweep', rc.id, rc.runId);
     // The personal documents and the channel are gone: a later --only 90 is blocked until 04 makes new documents, and a
     // later --only 30-90 until 22 makes a new channel, instead of reading these.
-    for (const k of ['privateDoc', 'privateMark', 'bobPersonalDoc', 'bobPersonalMark', 'chan', 'chanId', 'roundChannel']) delete h.S[k];
+    for (const k of ['privateDoc', 'privateMark', 'bobPersonalDoc', 'bobPersonalMark', 'chan', 'chanId', 'roundChannel', 'mention', 'files']) delete h.S[k];
     h.check('清理完成', true);
   },
 };

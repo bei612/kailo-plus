@@ -17,7 +17,7 @@
 ```bash
 cd /volumes/kailo/acceptance/traing
 ./run.sh dry-run                  # 无需栈：语法、bash -n、步骤模块校验、helper 自测（有宿主 node 用宿主的，否则在 playwright 镜像内 --network none 只读运行）
-RUN_ID=g1 ./run.sh all            # 部署后检查 + 全部浏览器步骤（并行约 40 min，--serial 约 1.5 h；建议 tmux / nohup）
+RUN_ID=g1 ./run.sh all            # 部署后检查 + 全部浏览器步骤（并行约 50 min，--serial 约 2 h；建议 tmux / nohup）
 RUN_ID=g1 ./run.sh post-deploy    # 只跑部署后检查
 RUN_ID=g1 ./run.sh steps --list   # 列出步骤
 RUN_ID=g1 ./run.sh steps --only 40,50   # 只重跑某几步（沿用 state/run.json 里前序步骤留下的状态）
@@ -30,7 +30,7 @@ RUN_ID=g1 ./run.sh evidence       # 只读取证：Temporal schedule / RoutineRu
 ## 并行执行
 
 步骤默认并行（`lib/schedule.mjs`）：前序步骤（模块的 `after`）结束、所需资源锁（`locks`）空闲时即开始，同时最多
-`--concurrency`（默认 `ACC_CONCURRENCY` 或 4）个，剩余链最长者优先；一轮约 40 分钟（串行约 90 分钟），以 `--plan` 为准。
+`--concurrency`（默认 `ACC_CONCURRENCY` 或 4）个，剩余链最长者优先；一轮约 50 分钟（串行约 2 小时），以 `--plan` 为准。
 
 - 锁（`RESOURCES`）：`ws:<人>` 当前工作区（切换者独占，依赖其为 W 者共享）、`chan` 本轮团队频道（22 独占新建，99 独占删除，其余共享）、
   `agent:<handle>` 同一 Agent 同时只与一步对话（51 建好例程后释放）、`quota:W` W 的额度（82 独占设置并恢复后释放）、
@@ -72,7 +72,18 @@ RUN_ID=g1 ./run.sh evidence       # 只读取证：Temporal schedule / RoutineRu
 | 20-invite | 中文邀请框，邮件邀请 bob/carol，加入 W | 环②、TE-16 |
 | 21-agents | 设置→Agent 建 3 个 Kailo Codex 团队 Agent | 环②、TE-16 |
 | 22-channel | 在 W 新建本轮团队频道（`TG 客户回访 <runId>`，按新建频道对话框的请求：先建频道再邀请 2 人、加 4 Agent；按身份核对删除上轮遗留的；id 记入 `roundChannel`，99 只删这一个），三人讨论 | 环② |
+| 23-chan-messages | 本轮频道：bob 在 alice 消息的话题里回复、👍 反应；alice 编辑（（已编辑））、删除（确认框），API 与 bob 视角核对 | CHAN-04 |
+| 24-chan-composer | 草稿离开再回来仍在；@提及 bob + 图片附件发出；“附件”页签；消息转任务（预填标题、指派 bob） | CHAN-03、CHAN-05 |
+| 25-chan-dm | 新建私信：与 bob（get_or_create_dm 为同一频道，bob 看到）、与 @文档助理（在私信里回复） | CHAN-02 |
+| 26-inbox | bob 收到 24 的提及与任务指派通知（REST + 通知页中文行），标记完成后状态 done；首页、动态页 | INBOX-01 |
 | 30/31/32-ring3-* | 建文档、查资料汇总、建任务（指派、截止），均非空回复且实体存在 | 环③、TE-01/02/03 |
+| 33-search | 新文档被检索服务收录（POST /dss/search）、Ctrl+K 找到并打开、搜索页、收藏（文件操作→收藏）、最近 | SRCH-01 |
+| 34-files | 云盘 新建→上传文件：图片、PDF、代码文件上传完成并在各自查看器渲染 | FILE-02、DOC-03 |
+| 35-file-text | 34 的 PDF 文本已抽取（text-content）且按正文可检索；抽取与上传索引处理器未部署时为红 | FILE-03 |
+| 36-task-time | 新建任务，“时间”记录 1h 30m、计时器开始/停止，工时 API 核对；任务看板视图 | TASK-02、TASK-01 |
+| 37-project | 项目页新建项目、在项目中新建任务；/dss/initiatives 与任务“项目”属性核对 | PROJ-01 |
+| 38-database | 新建数据库、界面新建记录、选择列与记录（SQL）、新建看板视图（界面英文残留记 WARN） | DB-01 |
+| 39-form | 新建表单、加简答题、发布为任何人可填、无会话浏览器匿名填写、结果计数与答复页 | FORM-01 |
 | 40-ring4-card | Codex 出卡可见；界面确认；同 actionId 重试为重复；换 actionId 409 `SURFACE_ALREADY_SUBMITTED`；局外人被拒；Agent 继续；审计 | 环④、TE-04/14 |
 | 50-ring5-followup | 3 分钟跟进按时提醒（到点 −60 s～+180 s），审计 actor=bot | 环⑤、TE-06/07 |
 | 51-ring5-routines | 对话中建一次性与周期例程，按时运行，运行审计 actor=bot；结束删除 | 环⑤、T-08 |
@@ -84,7 +95,10 @@ RUN_ID=g1 ./run.sh evidence       # 只读取证：Temporal schedule / RoutineRu
 | 83-ws-switcher | 侧栏工作区切换器；服务端 current 与设置页一致 | TE-15 |
 | 84-zh-text | 邀请框、Agent 页、例程页无英文残留 | TE-16 |
 | 90-security | 资料员读不到仅属主可读文档（TE-08）；平台管理员打不开成员个人工作区文档；非成员 403、无会话 401 | TE-08、TE-16 |
-| 99-cleanup | 删例程、清额度、撤回未决审批、删 Agent 建的文档与任务、删本轮频道（产品无归档，只有退出与删除） | — |
+| 99-cleanup | 删例程、清额度、撤回未决审批、删 Agent 建的文档与任务、删对等用例（23–39）建的文档/任务/上传/项目/数据库/表单、删本轮频道（产品无归档，只有退出与删除） | — |
+
+对等用例（23–26、33–39）的辅助函数在 `lib/collab.mjs`（消息、通知、上传、任务属性、GraphQL 删除、测试用 PNG/PDF）；每步只读自己用一次性令牌（`TGM…`、`TGS…` 等）标记的内容，
+建的实体记入运行状态由 99 删除；`kailo-macro` `kailo/parity/parity.yaml` 对应行的 `cases.playwright` 写步骤 id。
 
 ## 判定与注意
 
