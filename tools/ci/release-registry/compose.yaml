@@ -10,7 +10,5 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:55000:5000"
-    environment:
-      REGISTRY_STORAGE_DELETE_ENABLED: "true"
     volumes:
       - /volumes/data/kailo/capacity/release-registry:/var/lib/registry
