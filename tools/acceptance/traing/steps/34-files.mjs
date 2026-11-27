@@ -1,5 +1,5 @@
 // FILE-02 and DOC-03: files uploaded in 云盘 open in their viewers. alice uploads, through Drive's 新建 → 上传文件 (the
-// file chooser, drive-create-menu.tsx), an image, a PDF and a code file; each upload completes (location_v3 ready, as
+// file chooser, drive-create-menu.tsx), an image, a PDF and a code file and opens each from its new row in the list; each upload completes (location_v3 ready, as
 // the deploy's upload smoke checks), opens on its own route, and renders: the image loaded (block-image), the PDF's
 // first page drawn (block-pdf .pdfViewer .page canvas), the code in the editor (block-code CodeMirror .cm-content).
 // What Kailo does not deploy is not asserted here: image variants (image_optimizer) and DOCX/legacy Office

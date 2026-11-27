@@ -244,9 +244,21 @@ export async function uploadInDrive(h, user, file) {
     p.getByText(/^(上传文件|Upload files)$/).first().click(),
   ]);
   await chooser.setFiles(file);
-  // One file uploaded opens it (lib/utils/handleFileUpload.ts): /app/drive/<blockType>/<id>.
-  await p.waitForURL(/\/app\/(drive\/)?[a-z]+\/[0-9a-f-]{36}/, { timeout: 90000 }).catch(() => {});
-  await p.waitForTimeout(4000);
+  // Drive's 上传文件 uploads without opening (drive-host-actions.ts: upload(files, false), as upstream macro): the
+  // file appears as a row of the list, named without its extension (core/util/upload.ts getFileName), and a click on
+  // that row opens it inline at /app/drive/<blockType>/<id> (drive-list.tsx → openEntity → navigation.openRoot).
+  const name = file.name.replace(/\.[^.]+$/, '');
+  const row = p.getByRole('row').filter({ hasText: name }).first();
+  let shown = false;
+  for (let i = 0; i < 3 && !shown; i++) {
+    shown = await row.waitFor({ state: 'visible', timeout: 30000 }).then(() => true, () => false);
+    if (!shown) { await p.reload({ waitUntil: 'load' }); await p.waitForTimeout(5000); }
+  }
+  if (shown) {
+    await row.click();
+    await p.waitForURL(/\/app\/(drive\/)?[a-z]+\/[0-9a-f-]{36}/, { timeout: 30000 }).catch(() => {});
+    await p.waitForTimeout(4000);
+  }
   const m = p.url().match(/\/app\/(?:drive\/)?([a-z]+)\/([0-9a-f-]{36})/);
   return { url: p.url(), type: m?.[1] ?? null, id: m?.[2] ?? null };
 }

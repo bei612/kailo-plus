@@ -29,8 +29,9 @@ export default {
     h.check('从新建菜单建数据库并打开', !!id, a.url());
     if (!id) return;
     const db = await h.api('alice', 'GET', `/dss/databases/${id}`);
-    const table = (db.body?.tables || [])[0];
-    h.check('数据库有起始表（GET /dss/databases/{id}）', db.status === 200 && !!table?.name, { status: db.status, tables: (db.body?.tables || []).map((t) => t.name) });
+    // DatabaseDetail.tables are TableDetail: { table: { id, name, … }, sql_name, columns, views } (crates/databases models.rs).
+    const table = (db.body?.tables || [])[0]?.table;
+    h.check('数据库有起始表（GET /dss/databases/{id}）', db.status === 200 && !!table?.name, { status: db.status, tables: (db.body?.tables || []).map((t) => t.table?.name) });
     if (!table?.name) return;
     const T = quote(table.name);
     await h.shot(a, 'database-new');
