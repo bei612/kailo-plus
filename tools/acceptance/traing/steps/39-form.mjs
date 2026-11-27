@@ -2,8 +2,8 @@
 // question in the builder (Add question → Short answer, builder-view.tsx), publishes it to anyone with the link
 // (Publish → Who can respond: Anyone with the link, audience-panel.tsx), and someone without an account answers on
 // the public respond page (/app/form/<id>/respond) in a browser with no session. The response is counted
-// (/dss/forms/{id}/responses/summary) and alice reads it under Responses. The form builder's copy is English in this
-// build (zh-CN gap, a warning here).
+// (/dss/forms/{id}/responses/summary) and alice reads it under Responses. Labels are the zh-Hans copy (B9: 简短回答,
+// 知道链接的任何人), English as the fallback; English left in the builder is a warning (zh-CN gap).
 import { createFromMenu, idInUrl, token, track } from '../lib/collab.mjs';
 import { englishLeaks } from '../lib/util.mjs';
 
@@ -35,8 +35,8 @@ export default {
     // A short-answer question.
     const question = `你最希望我们改进什么？${tk}`;
     await a.getByRole('button', { name: /Add question|添加问题/ }).first().click(); await a.waitForTimeout(1200);
-    await a.getByRole('menuitem', { name: /^(Short answer|简答)$/ }).first().click()
-      .catch(() => a.getByText(/^(Short answer|简答)$/).first().click());
+    await a.getByRole('menuitem', { name: /^(Short answer|简短回答|简答)$/ }).first().click()
+      .catch(() => a.getByText(/^(Short answer|简短回答|简答)$/).first().click());
     await a.waitForTimeout(2500);
     const q = a.getByLabel(/^(Question|问题)$/).first();
     const editing = await q.waitFor({ state: 'visible', timeout: 10000 }).then(() => true, () => false);
@@ -49,7 +49,7 @@ export default {
     // Publish to anyone with the link.
     await a.getByRole('button', { name: /^(Publish|发布)$/ }).first().click().catch((e) => h.warn('publish button', e.message));
     await a.waitForTimeout(2000);
-    await a.getByText(/^(Anyone with the link|任何拿到链接的人)$/).first().click().catch((e) => h.warn('audience option', e.message));
+    await a.getByText(/^(Anyone with the link|知道链接的任何人|任何拿到链接的人)$/).first().click().catch((e) => h.warn('audience option', e.message));
     await a.waitForTimeout(2500);
     await h.shot(a, 'form-publish');
     const f1 = await h.api('alice', 'GET', `/dss/forms/${id}`);

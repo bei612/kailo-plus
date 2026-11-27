@@ -1,4 +1,4 @@
-// PROJ-01: projects. alice creates a project on 项目 (/app/projects → 新建项目, create-project.tsx: 项目名称, 创建项目),
+// PROJ-01: projects. alice creates a project on 项目 (/app/projects → 新建… → 项目, create-project.tsx: 项目名称, 创建项目),
 // opens its 任务 section and adds a new task to it (添加任务 → 新建任务, add-project-tasks.tsx); the project API
 // (/dss/initiatives, the backend's name for projects) holds the project and lists the task, and the task carries the
 // project property.
@@ -19,7 +19,13 @@ export default {
     const tk = token('TGJ');
     const name = `TG 采购项目 ${tk}`;
     await a.goto(`${h.BASE}/app/projects`, { waitUntil: 'load' }); await a.waitForTimeout(5000);
-    await a.getByRole('button', { name: /^(新建项目|New project)$/ }).first().click(); await a.waitForTimeout(2000);
+    // The projects toolbar's create button is a menu (tasks-create-action.tsx → TasksCreateMenu.tsx, aria-label
+    // 新建任务、子任务、项目或标签); its 项目 item opens the project composer (create-project.tsx).
+    await a.getByRole('button', { name: /^(新建任务、子任务、项目或标签|New task, subtask, project,? or tag)/ }).first().click();
+    await a.waitForTimeout(1000);
+    await a.getByRole('menuitem', { name: /^(项目|Project)/ }).first().click()
+      .catch(() => a.getByRole('menu').getByText(/^(项目|Project)$/).first().click());
+    await a.waitForTimeout(2000);
     const field = a.getByLabel(/^(项目名称|Project name)$/).first();
     const opened = await field.waitFor({ state: 'visible', timeout: 10000 }).then(() => true, () => false);
     h.check('新建项目表单打开（中文）', opened);

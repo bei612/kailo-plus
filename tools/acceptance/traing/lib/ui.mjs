@@ -1,5 +1,6 @@
 // Kailo web and API helpers shared by the steps (zh-CN first, English accepted where a string may not be translated yet,
 // so a missing translation fails the TE-16 text checks, not the flow).
+import { createFromMenu } from './collab.mjs';
 import { afterMessage, findByTitle, FAILURE_RE, hasAnswer, oneTimeMarker, pickRow } from './util.mjs';
 
 export const L = {
@@ -73,12 +74,15 @@ export async function setCurrent(h, user, teamId) {
   return r.status;
 }
 
-/** A new markdown document from Home (the "c" shortcut), titled `title`, with `body` typed into it. */
+/**
+ * A new markdown document from Home (the "c" launcher, its 文档 entry), titled `title`, with `body` typed into it.
+ * The entry is picked by name: the launcher lists recently used kinds first (command/core/launcher-history.ts), so
+ * once a database or form was created from it, Enter on the first entry makes one of those.
+ */
 export async function newDoc(h, page, title, body) {
   await page.goto(`${h.BASE}/app/home`, { waitUntil: 'load' });
   await page.waitForTimeout(4000);
-  await page.locator('body').click({ position: { x: 900, y: 120 } });
-  await page.keyboard.press('c'); await page.waitForTimeout(1500); await page.keyboard.press('Enter');
+  await createFromMenu(h, page, 'document');
   await page.waitForURL(/\/app\/drive\/md\//, { timeout: 30000 });
   await page.waitForFunction(() => document.querySelectorAll('[contenteditable=true]').length >= 3, null, { timeout: 60000 });
   await page.waitForTimeout(1000);

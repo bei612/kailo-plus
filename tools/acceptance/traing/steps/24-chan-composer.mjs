@@ -1,8 +1,8 @@
 // CHAN-03 (the composer: @mentions, attachments, drafts) and CHAN-05 (the channel's 附件 tab, message → task) in this
 // round's channel. alice keeps an unsent draft across leaving the channel (Input/shared-draft.ts: per-channel
-// localStorage), sends a message @mentioning bob with an image attached (添加附件, InputActions.tsx), finds it in the
-// channel's 附件 tab, and turns the message into a task (the toolbar's 任务, Channel.tsx onCreateTask: the message's text
-// as title, the mentioned people as assignees). The API shows the mention, the attachment and bob as the task's
+// localStorage), sends a message @mentioning bob with an image attached (+ → 添加附件, ComposerAddMenu.tsx), finds it in
+// the channel's 附件 tab, and turns the message into a task (the toolbar's 任务, Channel.tsx onCreateTask: the message's
+// text as title, the mentioned people as assignees). The API shows the mention, the attachment and bob as the task's
 // assignee. 26 checks that bob is notified of both.
 import { compose, composing, fillTaskComposer, messageAction, openChannel, mentionsUser, PROP, pngBytes, taskProperty, token, track, waitMessage } from '../lib/collab.mjs';
 import { channelTab, findDocs } from '../lib/ui.mjs';
@@ -41,9 +41,14 @@ export default {
       await box.click(); await a.keyboard.press('ControlOrMeta+a'); await a.keyboard.press('Backspace'); await a.waitForTimeout(800);
 
       // A message @mentioning bob, with an image attached through the composer's file input.
-      const input = a.locator(`[data-input-id="channel-input-${cid}"] input[data-input-attach-file-picker]`);
-      const picker = (await input.count()) ? input.first() : a.locator('input[data-input-attach-file-picker]').first();
-      await picker.setInputFiles({ name: `采购清单-${tk}.png`, mimeType: 'image/png', buffer: pngBytes() });
+      // The composer's 添加 (+) menu → 添加附件 opens the system file picker (ComposerAddMenu.tsx; ChannelInput.tsx
+      // addMenuGroups 'attach' → create-collapsed-input-state.ts): the file goes to that chooser.
+      const scope = a.locator(`[data-input-id="channel-input-${cid}"]`);
+      const plus = (await scope.count()) ? scope.getByRole('button', { name: /^(添加|Add)$/ }).first() : a.getByRole('button', { name: /^(添加|Add)$/ }).last();
+      await plus.click(); await a.waitForTimeout(800);
+      const chooser = a.waitForEvent('filechooser', { timeout: 15000 });
+      await a.getByRole('menuitem', { name: /^(添加附件|Attach files)/ }).first().click();
+      await (await chooser).setFiles({ name: `采购清单-${tk}.png`, mimeType: 'image/png', buffer: pngBytes() });
       await a.waitForTimeout(4000);
       await h.shot(a, 'attachment-staged');
       await compose(h, 'alice', box, ['请 ', { mention: '博', pick: /周博|博 周|博周/ }, ` 核对采购清单 ${tk}`]);
