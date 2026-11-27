@@ -22,6 +22,13 @@ export const RESOURCES = {
   'agent:tg-research': '@资料员 (x: as above; 60 caps its quota at 1 token, 99 clears it)',
   'agent:tg-task': '@任务协调 (x: as above; 51 releases it once its routines are created)',
   'agent:kailo': '@Kailo 助手 (x: as above)',
+  // A person's pages share one browser context, so one localStorage: a channel composer's unsent text is one stored
+  // draft per channel (Input/shared-draft.ts) that every page of that person reads when its composer mounts. Two steps
+  // typing as the same person at once would send each other's half-typed text.
+  'draft:alice': "alice's channel composers (x: a section opens a composer, types and sends; taken with h.exclusive)",
+  'draft:bob': "bob's channel composers (as draft:alice)",
+  'draft:carol': "carol's channel composers (as draft:alice)",
+  'draft:dave': "dave's channel composers (as draft:alice)",
   'quota:W': "W's monthly token quota (x: 82 sets and restores it; s: the step makes Agents spend W's tokens)",
   approvals: "alice's approval inbox (x: 80 asks and decides, 99 withdraws what is pending)",
   'platform-roles': 'platform roles (x: 02 grants and revokes; s: the step relies on alice admin, bob/carol without roles)',

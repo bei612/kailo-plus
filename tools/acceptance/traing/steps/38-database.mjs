@@ -1,9 +1,9 @@
 // DB-01: databases. alice creates a database from the launcher (新建 → 数据库, Launcher.tsx: POST /dss/databases), adds
-// a record in its table (New record, database-editor-toolbar.tsx), gives the table a select column and two records
-// through the database's SQL (POST /dss/databases/query, the same engine the Agents' QueryDatabase uses), and adds a
-// Board view grouped by that column (New view → Board, database-toolbar.tsx). The API shows the rows and the view; the
-// board shows both stages. The database screens' copy is English in this build (zh-CN gap, reported by this step as
-// a warning, not a failure). AI questions need the model and are not part of this step.
+// a record in its table (New record, database-editor-toolbar.tsx, and its title typed in the row that opens), gives the
+// table a select column and two records through the database's SQL (POST /dss/databases/query, the same engine the
+// Agents' QueryDatabase uses), and adds a Board view grouped by that column (New view → Board, database-toolbar.tsx).
+// The API shows the rows and the view; the board shows both stages. English left in the database screens is reported
+// as a warning (zh-CN gap), not a failure. AI questions need the model and are not part of this step.
 import { createFromMenu, idInUrl, track } from '../lib/collab.mjs';
 import { englishLeaks } from '../lib/util.mjs';
 
@@ -36,11 +36,19 @@ export default {
     const T = quote(table.name);
     await h.shot(a, 'database-new');
 
-    // A record from the UI.
+    // A record from the UI. In a table New record (aria-label 新建记录, shown as 新建) opens the blank row's title cell for
+    // typing (record-actions.ts focusBlankRow); the row is written when the cell is committed (Enter, grid-cell.tsx).
+    const first = '打印纸';
     await a.getByRole('button', { name: /^(New record|新建记录)$/ }).first().click();
-    await a.waitForTimeout(3000);
-    let rows = await sql(h, id, `SELECT * FROM ${T}`);
-    h.check('界面新建了一条记录（SQL 读到 1 行）', rows.status === 200 && (rows.body?.result?.rowIds || []).length >= 1, { status: rows.status, rows: (rows.body?.result?.rowIds || []).length, err: rows.body?.message });
+    await a.waitForTimeout(1500);
+    await a.keyboard.type(first, { delay: 40 }); await a.keyboard.press('Enter');
+    let rows = null;
+    for (let i = 0; i < 5; i++) {
+      await a.waitForTimeout(2000);
+      rows = await sql(h, id, `SELECT "Name" FROM ${T}`);
+      if (JSON.stringify(rows.body?.result?.rows ?? '').includes(first)) break;
+    }
+    h.check('界面新建了一条记录（SQL 读到该行）', rows.status === 200 && JSON.stringify(rows.body?.result?.rows ?? '').includes(first), { status: rows.status, rows: (rows.body?.result?.rowIds || []).length, err: rows.body?.message });
 
     // A select column and two named records.
     const alter = await sql(h, id, `ALTER TABLE ${T} ADD COLUMN "阶段" select OPTIONS ('待采购', '已到货')`);

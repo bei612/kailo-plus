@@ -3,7 +3,7 @@
 // action is done in the web (the message toolbar, Message/ActionMenu.tsx) and read back through the messages API
 // (crates/messages: /dss/messages/channel/{cid}), and the other person sees it. Only this step's messages are read
 // (found by a one-time marker), so other steps posting into the channel meanwhile do not matter.
-import { compose, findMessage, hoverMessage, messageAction, messages, openChannel, thread, token, waitMessage } from '../lib/collab.mjs';
+import { compose, composing, findMessage, hoverMessage, messageAction, messages, openChannel, thread, token, waitMessage } from '../lib/collab.mjs';
 
 export default {
   id: '23-chan-messages',
@@ -21,18 +21,20 @@ export default {
     const a = h.u('alice').page; const b = h.u('bob').page;
 
     // alice posts; bob replies in its thread.
-    let box = await openChannel(h, 'alice', cid);
-    await compose(h, 'alice', box, [rootText]);
+    // Each open-type-send holds the person's composers (composing): other steps type into this channel as alice too.
+    await composing(h, 'alice', async () => compose(h, 'alice', await openChannel(h, 'alice', cid), [rootText]));
     const root = await waitMessage(h, 'alice', cid, tk);
     h.check('alice 发出的消息已在频道中', !!root, tk);
     if (!root) return;
-    await openChannel(h, 'bob', cid);
-    await messageAction(b, root.id, 'reply');
     const replyText = `我来补充第二轮的上门名单 ${tk}-r`;
-    const replyBox = b.locator(`[data-input-id="thread-reply-input-${root.id}"] div[role="textbox"][contenteditable="true"]`).first();
-    const inline = await replyBox.waitFor({ state: 'visible', timeout: 10000 }).then(() => true, () => false);
-    // With the unified input (touch, or the flag on) the reply goes through the main composer in reply mode.
-    await compose(h, 'bob', inline ? replyBox : b.locator('div[role="textbox"][contenteditable="true"]').last(), [replyText]);
+    await composing(h, 'bob', async () => {
+      await openChannel(h, 'bob', cid);
+      await messageAction(b, root.id, 'reply');
+      const replyBox = b.locator(`[data-input-id="thread-reply-input-${root.id}"] div[role="textbox"][contenteditable="true"]`).first();
+      const inline = await replyBox.waitFor({ state: 'visible', timeout: 10000 }).then(() => true, () => false);
+      // With the unified input (touch, or the flag on) the reply goes through the main composer in reply mode.
+      await compose(h, 'bob', inline ? replyBox : b.locator('div[role="textbox"][contenteditable="true"]').last(), [replyText]);
+    });
     await h.shot(b, 'thread-reply');
     let th = await thread(h, 'bob', cid, root.id);
     for (let i = 0; i < 5 && !th.replies.some((r) => String(r.content).includes(`${tk}-r`)); i++) { await h.sleep(2500); th = await thread(h, 'bob', cid, root.id); }
@@ -52,7 +54,7 @@ export default {
     await h.shot(b, 'reaction');
 
     // alice edits her message: Enter saves (InlineMessageEditor.tsx), the message reads （已编辑）.
-    box = await openChannel(h, 'alice', cid);
+    await openChannel(h, 'alice', cid);
     await messageAction(a, root.id, 'edit');
     const editor = a.locator(`[data-message-id="${root.id}"] div[contenteditable="true"]`).first();
     const editorOpen = await editor.waitFor({ state: 'visible', timeout: 10000 }).then(() => true, () => false);
@@ -77,8 +79,7 @@ export default {
 
     // alice deletes a second message of hers: the confirmation dialog (删除消息), then it is gone for bob too.
     const gone = `这条发错了，马上删除 ${tk}-x`;
-    box = await openChannel(h, 'alice', cid);
-    await compose(h, 'alice', box, [gone]);
+    await composing(h, 'alice', async () => compose(h, 'alice', await openChannel(h, 'alice', cid), [gone]));
     const doomed = await waitMessage(h, 'alice', cid, `${tk}-x`);
     h.check('待删除的消息已发出', !!doomed);
     if (!doomed) return;

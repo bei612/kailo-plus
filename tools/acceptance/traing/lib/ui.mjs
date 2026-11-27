@@ -93,13 +93,16 @@ export async function newDoc(h, page, title, body) {
 export async function say(h, user, chanUrl, msg) {
   const p = h.u(user).page;
   const box = p.locator('div[role="textbox"][contenteditable="true"]').last();
-  // On the channel's other tabs (参与者 etc.) the URL still starts with the channel URL but there is no composer.
-  if (!p.url().startsWith(chanUrl) || !(await box.isVisible().catch(() => false))) {
-    await p.goto(chanUrl, { waitUntil: 'load' }); await p.waitForTimeout(6000);
-    if (!(await box.isVisible().catch(() => false))) { await channelTab(p, 'messages').catch(() => {}); await p.waitForTimeout(3000); }
-  }
-  await box.click(); await box.pressSequentially(msg, { delay: 15 }); await p.waitForTimeout(500);
-  await p.keyboard.press('Enter'); await p.waitForTimeout(2500);
+  // As the person's only composer meanwhile (see askTurn: their pages share the channel's stored draft).
+  await holding(h, `draft:${user}`, async () => {
+    // On the channel's other tabs (参与者 etc.) the URL still starts with the channel URL but there is no composer.
+    if (!p.url().startsWith(chanUrl) || !(await box.isVisible().catch(() => false))) {
+      await p.goto(chanUrl, { waitUntil: 'load' }); await p.waitForTimeout(6000);
+      if (!(await box.isVisible().catch(() => false))) { await channelTab(p, 'messages').catch(() => {}); await p.waitForTimeout(3000); }
+    }
+    await box.click(); await box.pressSequentially(msg, { delay: 15 }); await p.waitForTimeout(500);
+    await p.keyboard.press('Enter'); await p.waitForTimeout(2500);
+  });
 }
 
 /**
@@ -178,21 +181,29 @@ async function askTurn(h, user, chanUrl, agent, msg, label, okRe, maxS) {
   const marker = oneTimeMarker(h.cfg.runId, label);
   const prompt = msg;
   msg = `${prompt} ${marker}`;
-  await p.goto(chanUrl, { waitUntil: 'load' }); await p.waitForTimeout(5000);
-  const box = p.locator('div[role="textbox"][contenteditable="true"]').last();
-  let menuOk = false;
-  for (let attempt = 0; attempt < 4 && !menuOk; attempt++) {
-    await box.click(); await p.keyboard.press('Control+a'); await p.keyboard.press('Backspace'); await p.waitForTimeout(400);
-    await box.pressSequentially('@' + agent.handle, { delay: 150 }); await p.waitForTimeout(3500);
-    menuOk = (await p.getByText(agent.name, { exact: false }).count()) > 0 || (await p.locator('[role=listbox],[role=option],[role=menu]').count()) > 0;
-  }
-  await h.shot(p, `${label}-a-menu`);
-  await p.keyboard.press('Enter'); await p.waitForTimeout(1200);
-  await box.click(); await p.keyboard.press('End'); await p.waitForTimeout(300);
-  await box.pressSequentially(' ' + msg, { delay: 20 }); await p.waitForTimeout(800);
-  const composed = (await box.innerText()).replace(/\s+/g, ' ');
-  await p.keyboard.press('Enter');
-  const t0 = Date.now(); await p.waitForTimeout(4000);
+  // Opening the composer through sending holds the person's composers: every page of theirs shares the channel's
+  // stored draft (Input/shared-draft.ts), so another step typing as them meanwhile would mix into this prompt.
+  let t0 = 0;
+  const composed = await holding(h, `draft:${user}`, async () => {
+    await p.goto(chanUrl, { waitUntil: 'load' }); await p.waitForTimeout(5000);
+    const box = p.locator('div[role="textbox"][contenteditable="true"]').last();
+    let menuOk = false;
+    for (let attempt = 0; attempt < 4 && !menuOk; attempt++) {
+      await box.click(); await p.keyboard.press('Control+a'); await p.keyboard.press('Backspace'); await p.waitForTimeout(400);
+      await box.pressSequentially('@' + agent.handle, { delay: 150 }); await p.waitForTimeout(3500);
+      menuOk = (await p.getByText(agent.name, { exact: false }).count()) > 0 || (await p.locator('[role=listbox],[role=option],[role=menu]').count()) > 0;
+    }
+    await h.shot(p, `${label}-a-menu`);
+    await p.keyboard.press('Enter'); await p.waitForTimeout(1200);
+    await box.click(); await p.keyboard.press('End'); await p.waitForTimeout(300);
+    await box.pressSequentially(' ' + msg, { delay: 20 }); await p.waitForTimeout(800);
+    const text = (await box.innerText()).replace(/\s+/g, ' ');
+    await p.keyboard.press('Enter'); t0 = Date.now();
+    // Sent once the composer is empty again (its stored draft cleared): then another step may type as this person.
+    for (let i = 0; i < 8 && (await box.innerText({ timeout: 1000 }).catch(() => '')).trim(); i++) await p.waitForTimeout(500);
+    return text;
+  });
+  await p.waitForTimeout(Math.max(0, 4000 - (Date.now() - t0)));
   await h.shot(p, `${label}-b-sent`);
   let ok = false; let after = ''; let scoped = false;
   while ((Date.now() - t0) / 1000 < maxS) {

@@ -198,13 +198,30 @@ export async function hoverMessage(page, id) {
   return row;
 }
 
-/** Click toolbar action `action` (data-message-action: reply, edit, delete, create-task, react-quick …) of message `id`. */
+/**
+ * Click toolbar action `action` (data-message-action: reply, edit, delete, create-task, react-quick …) of message `id`.
+ * Only that message's own toolbar (it renders inside the row, Message/Root.tsx → ActionMenu.tsx): a message arriving
+ * meanwhile moves the list under the pointer, and the toolbar then showing is another message's (B9 r1: 23 deleted
+ * the Agent prompt 70 had just sent).
+ */
 export async function messageAction(page, id, action, extra = '') {
-  const row = await hoverMessage(page, id);
   const sel = `[data-message-action="${action}"]${extra}`;
-  const inRow = row.locator(sel).first();
-  const btn = (await inRow.count()) ? inRow : page.locator(sel).first();
-  await btn.click(); await page.waitForTimeout(1200);
+  for (let i = 0; i < 4; i++) {
+    const row = await hoverMessage(page, id);
+    const btn = row.locator(sel).first();
+    if (await btn.isVisible().catch(() => false)) { await btn.click(); await page.waitForTimeout(1200); return; }
+    await page.waitForTimeout(800);
+  }
+  throw new Error(`message ${id}: no ${action} action in its toolbar`);
+}
+
+/**
+ * Run `fn` (open a channel composer, type, send) as the only composer of `user`: all of a person's pages share one
+ * localStorage, where a channel's unsent text is one draft (Input/shared-draft.ts) a composer reads when it mounts, so
+ * two steps typing as the same person at once send each other's half-typed text (B9 r1: 23 sent "@kailo" typed by 70).
+ */
+export function composing(h, user, fn) {
+  return typeof h.exclusive === 'function' ? h.exclusive(`draft:${user}`, fn) : fn();
 }
 
 /** Whether `content` (Macro Markdown) or `mentions` of a message name user `userId`. */

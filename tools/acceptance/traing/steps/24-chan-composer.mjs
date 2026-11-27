@@ -4,7 +4,7 @@
 // channel's 附件 tab, and turns the message into a task (the toolbar's 任务, Channel.tsx onCreateTask: the message's text
 // as title, the mentioned people as assignees). The API shows the mention, the attachment and bob as the task's
 // assignee. 26 checks that bob is notified of both.
-import { compose, fillTaskComposer, messageAction, openChannel, mentionsUser, PROP, pngBytes, taskProperty, token, track, waitMessage } from '../lib/collab.mjs';
+import { compose, composing, fillTaskComposer, messageAction, openChannel, mentionsUser, PROP, pngBytes, taskProperty, token, track, waitMessage } from '../lib/collab.mjs';
 import { channelTab, findDocs } from '../lib/ui.mjs';
 import { workspaceMembers } from './22-channel.mjs';
 
@@ -26,25 +26,28 @@ export default {
     h.check('找到 bob 的账号', !!bobId);
     if (!bobId) return;
 
-    // Draft: typed, not sent, still there after leaving and coming back.
-    let box = await openChannel(h, 'alice', cid);
-    const draft = `草稿：采购预算待定 ${tk}-d`;
-    await compose(h, 'alice', box, [draft], { send: false });
-    await a.goto(`${h.BASE}/app/home`, { waitUntil: 'load' }); await a.waitForTimeout(3000);
-    box = await openChannel(h, 'alice', cid);
-    const kept = (await box.innerText().catch(() => '')).includes(`${tk}-d`);
-    const stored = await a.evaluate((k) => localStorage.getItem(k) || '', `input-value-channel:${cid}-persist-v0`).catch(() => '');
-    h.check('离开频道再回来，未发送的草稿仍在', kept, { editor: kept, localStorage: stored.includes(`${tk}-d`) });
-    await h.shot(a, 'draft-kept');
-    await box.click(); await a.keyboard.press('ControlOrMeta+a'); await a.keyboard.press('Backspace'); await a.waitForTimeout(800);
+    // Draft: typed, not sent, still there after leaving and coming back. Until the message below is sent this step is
+    // alice's only composer (composing): the stored draft is shared by all her pages.
+    await composing(h, 'alice', async () => {
+      let box = await openChannel(h, 'alice', cid);
+      const draft = `草稿：采购预算待定 ${tk}-d`;
+      await compose(h, 'alice', box, [draft], { send: false });
+      await a.goto(`${h.BASE}/app/home`, { waitUntil: 'load' }); await a.waitForTimeout(3000);
+      box = await openChannel(h, 'alice', cid);
+      const kept = (await box.innerText().catch(() => '')).includes(`${tk}-d`);
+      const stored = await a.evaluate((k) => localStorage.getItem(k) || '', `input-value-channel:${cid}-persist-v0`).catch(() => '');
+      h.check('离开频道再回来，未发送的草稿仍在', kept, { editor: kept, localStorage: stored.includes(`${tk}-d`) });
+      await h.shot(a, 'draft-kept');
+      await box.click(); await a.keyboard.press('ControlOrMeta+a'); await a.keyboard.press('Backspace'); await a.waitForTimeout(800);
 
-    // A message @mentioning bob, with an image attached through the composer's file input.
-    const input = a.locator(`[data-input-id="channel-input-${cid}"] input[data-input-attach-file-picker]`);
-    const picker = (await input.count()) ? input.first() : a.locator('input[data-input-attach-file-picker]').first();
-    await picker.setInputFiles({ name: `采购清单-${tk}.png`, mimeType: 'image/png', buffer: pngBytes() });
-    await a.waitForTimeout(4000);
-    await h.shot(a, 'attachment-staged');
-    await compose(h, 'alice', box, ['请 ', { mention: '博', pick: /周博|博 周|博周/ }, ` 核对采购清单 ${tk}`]);
+      // A message @mentioning bob, with an image attached through the composer's file input.
+      const input = a.locator(`[data-input-id="channel-input-${cid}"] input[data-input-attach-file-picker]`);
+      const picker = (await input.count()) ? input.first() : a.locator('input[data-input-attach-file-picker]').first();
+      await picker.setInputFiles({ name: `采购清单-${tk}.png`, mimeType: 'image/png', buffer: pngBytes() });
+      await a.waitForTimeout(4000);
+      await h.shot(a, 'attachment-staged');
+      await compose(h, 'alice', box, ['请 ', { mention: '博', pick: /周博|博 周|博周/ }, ` 核对采购清单 ${tk}`]);
+    });
     await a.waitForTimeout(3000);
     const m = await waitMessage(h, 'alice', cid, tk);
     h.check('带提及与附件的消息已发出', !!m, tk);
