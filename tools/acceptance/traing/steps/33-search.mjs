@@ -49,12 +49,14 @@ export default {
       const field = palette.locator('textarea').first();
       h.check('命令面板输入框为中文（搜索...）', /搜索/.test((await field.getAttribute('placeholder').catch(() => '')) || ''));
       await field.fill(tk); await a.waitForTimeout(4000);
-      const opts = palette.getByRole('option').filter({ hasText: tk });
+      // The document's own result (its title), not the 搜索“<token>” row that leads the list and also holds the token.
+      const opts = palette.getByRole('option').filter({ hasText: title });
       const shown = (await opts.count()) > 0;
       h.check('命令面板结果中有该文档', shown, (await palette.innerText().catch(() => '')).slice(0, 200));
       await h.shot(a, 'palette');
       if (shown) {
-        await opts.first().click(); await a.waitForTimeout(4000);
+        await opts.first().click();
+        await a.waitForURL((u) => u.href.includes(doc.id), { timeout: 15000 }).catch(() => {});
         h.check('从命令面板打开该文档', a.url().includes(doc.id), a.url());
       }
     }

@@ -1,8 +1,8 @@
-// PROJ-01: projects. alice creates a project on 项目 (/app/projects → 新建… → 项目, create-project.tsx: 项目名称, 创建项目),
+// PROJ-01: projects. alice creates a project (新建 launcher → 项目, create-project.tsx: 项目名称, 创建项目),
 // opens its 任务 section and adds a new task to it (添加任务 → 新建任务, add-project-tasks.tsx); the project API
 // (/dss/initiatives, the backend's name for projects) holds the project and lists the task, and the task carries the
 // project property.
-import { fillTaskComposer, PROP, taskProperty, token, track } from '../lib/collab.mjs';
+import { createFromMenu, fillTaskComposer, PROP, taskProperty, token, track } from '../lib/collab.mjs';
 import { findByTitle } from '../lib/util.mjs';
 
 export default {
@@ -18,18 +18,15 @@ export default {
     const a = h.u('alice').page;
     const tk = token('TGJ');
     const name = `TG 采购项目 ${tk}`;
-    await a.goto(`${h.BASE}/app/projects`, { waitUntil: 'load' }); await a.waitForTimeout(5000);
-    // The projects toolbar's create button is a menu (tasks-create-action.tsx → TasksCreateMenu.tsx, aria-label
-    // 新建任务、子任务、项目或标签); its 项目 item opens the project composer (create-project.tsx).
-    await a.getByRole('button', { name: /^(新建任务、子任务、项目或标签|New task, subtask, project,? or tag)/ }).first().click();
-    await a.waitForTimeout(1000);
-    await a.getByRole('menuitem', { name: /^(项目|Project)/ }).first().click()
-      .catch(() => a.getByRole('menu').getByText(/^(项目|Project)$/).first().click());
+    // The project composer (create-project.tsx) from the create launcher's 项目 entry (Launcher.tsx 'initiative' →
+    // project-compose). The /app/projects toolbar's create menu was not found in B9 r5 (no screenshot before the
+    // timeout), so the step uses the launcher, which every page has, then opens the project's 任务 section.
+    await createFromMenu(h, a, 'project');
     await a.waitForTimeout(2000);
     const field = a.getByLabel(/^(项目名称|Project name)$/).first();
     const opened = await field.waitFor({ state: 'visible', timeout: 10000 }).then(() => true, () => false);
     h.check('新建项目表单打开（中文）', opened);
-    if (!opened) return;
+    if (!opened) { await h.shot(a, 'project-form-missing'); return; }
     await field.fill(name);
     await h.shot(a, 'project-form');
     await a.getByRole('button', { name: /^(创建项目|Create project)$/ }).first().click();

@@ -71,10 +71,19 @@ export default {
       await h.sleep(2000);
     }
     h.check('编辑已保存（edited_at、新内容）', !!edited?.edited_at && /第二版/.test(edited?.content || ''), edited && { edited_at: edited.edited_at, content: String(edited.content).slice(0, 80) });
-    await b.reload({ waitUntil: 'load' }); await b.waitForTimeout(5000);
-    const row = await hoverMessage(b, root.id);
-    const rowText = await row.innerText().catch(() => '');
-    h.check('bob 看到新内容和“（已编辑）”', /第二版/.test(rowText) && /已编辑/.test(rowText), rowText.slice(0, 200));
+    // bob's page reads the edit from the server (reload), then the row is read until it shows it (or 20 s pass). A
+    // message grouped under the sender's previous one has no header line (ChannelMessage.tsx GroupedMessageLayout),
+    // and so no 已编辑 (B9 r5: 24's message just above was alice's too); the detail says when the row was grouped.
+    await b.reload({ waitUntil: 'load' });
+    let row = null; let rowText = '';
+    for (let i = 0; i < 10; i++) {
+      row = await hoverMessage(b, root.id);
+      rowText = await row.innerText().catch(() => '');
+      if (/第二版/.test(rowText) && /已编辑/.test(rowText)) break;
+      await b.waitForTimeout(2000);
+    }
+    const grouped = !rowText.includes('林安'); // no sender line: the row is grouped under alice's previous message
+    h.check('bob 看到新内容和“（已编辑）”', /第二版/.test(rowText) && /已编辑/.test(rowText), { grouped, row: rowText.slice(0, 200) });
     await h.shot(b, 'edited');
 
     // alice deletes a second message of hers: the confirmation dialog (删除消息), then it is gone for bob too.

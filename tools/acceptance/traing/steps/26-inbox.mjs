@@ -27,13 +27,22 @@ export default {
     else h.check('24 已从消息建任务', false, 'no taskId');
 
     const b = h.u('bob').page;
-    await b.goto(`${h.BASE}/app/notifications`, { waitUntil: 'load' }); await b.waitForTimeout(7000);
+    await b.goto(`${h.BASE}/app/notifications`, { waitUntil: 'load' });
     h.check('通知页打开（未被重定向）', /\/app\/notifications/.test(b.url()), b.url());
-    await h.shot(b, 'inbox');
+    // The mention's row: a channel mention card is "<who> in <channel>" over the message itself, the mention shown as a
+    // badge (notifications-inbox/primitives/describe-row.ts), so the row is the one holding the message's token and its
+    // @mention. Rows load and settle asynchronously: read until it is there (or 30 s pass), not after a fixed wait.
     const rows = b.locator('[data-notification-row]');
-    const texts = await rows.evaluateAll((els) => els.map((e) => e.innerText)).catch(() => []);
-    const mentionRow = texts.findIndex((t) => /提到了你|提及/.test(t) && (t.includes(tk) || /TG 客户回访/.test(t)));
-    h.check('收件箱有提及 bob 的一行（中文）', mentionRow >= 0, texts.slice(0, 6).map((t) => t.slice(0, 80)));
+    let texts = []; let mentionRow = -1;
+    for (let i = 0; i < 15 && mentionRow < 0; i++) {
+      await b.waitForTimeout(2000);
+      texts = await rows.evaluateAll((els) => els.map((e) => e.innerText)).catch(() => []);
+      mentionRow = texts.findIndex((t) => t.includes(tk) && /@/.test(t) && !/给你分配了任务|assigned you/i.test(t));
+    }
+    await h.shot(b, 'inbox');
+    h.check('收件箱有提及 bob 的一行', mentionRow >= 0, texts.slice(0, 6).map((t) => t.slice(0, 80)));
+    // describe-row.ts inPlace() joins who and where with a literal English " in " (zh-CN gap).
+    if (mentionRow >= 0 && /\S in #/.test(texts[mentionRow])) h.warn('收件箱提及行英文残留（“in #频道”，zh-CN 缺口）', texts[mentionRow].slice(0, 80));
     h.check('收件箱有指派给 bob 的任务一行', texts.some((t) => /给你分配了任务|分配/.test(t)), texts.slice(0, 6).map((t) => t.slice(0, 80)));
     if (mentionRow < 0) return;
     const row = rows.nth(mentionRow);

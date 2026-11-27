@@ -86,10 +86,13 @@ export default {
     }
     h.check('答复已提交并计数（responses/summary）', Number(sum?.body?.submitted) >= 1, sum?.body);
     await a.reload({ waitUntil: 'load' }); await a.waitForTimeout(5000);
-    await a.getByRole('tab', { name: /^(Responses|答复|回复)$/ }).first().click()
-      .catch(() => a.getByText(/^(Responses|答复|回复)$/).first().click()).catch((e) => h.warn('responses tab', e.message));
-    await a.waitForTimeout(5000);
-    h.check('结果页显示该答复', (await h.text(a)).includes(answer));
+    // The 回复 tab carries the response count in its name (B9: "回复 1").
+    const tab = /^(Responses|答复|回复)\s*\d*$/;
+    await a.getByRole('tab', { name: tab }).first().click({ timeout: 10000 })
+      .catch(() => a.getByRole('button', { name: tab }).first().click({ timeout: 10000 }))
+      .catch((e) => h.warn('responses tab', e.message));
+    const shown = await a.getByText(answer).first().waitFor({ state: 'visible', timeout: 20000 }).then(() => true, () => false);
+    h.check('结果页显示该答复', shown, a.url());
     await h.shot(a, 'form-responses', { fullPage: true });
   },
 };
