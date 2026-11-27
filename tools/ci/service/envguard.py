@@ -65,6 +65,11 @@ ENV_PATTERNS = [
                    r"Error response from daemon: .*(EOF|connection reset|context deadline exceeded)"),
 ]
 KILL_PATTERN = r"\b137\b|signal: 9, SIGKILL|Killed\s*$"
+# Network signatures a code failure also prints: a compiler error (rustc, tsc) in the same attempt is the failure, and
+# a lookup error next to it is its consequence (sqlx macros resolving a database that a failed earlier part stopped).
+# Retrying such an attempt reruns hours of checks into the same compile error.
+CODE_PATTERN = r"^error\[E\d{4}\]|\berror TS\d{4}:"
+NETWORK_SIGNATURES = {"dns", "connection-reset"}
 
 
 def size(value, default=None):
@@ -393,7 +398,10 @@ def sweep(cfg, dry_run=False, say=print):
 # -- classification --------------------------------------------------------------------------------------------------
 def classify(text, oom_delta=0, patterns=None):
     """The environment-failure signature of a failed attempt's log, or None for a code failure."""
+    code = re.search(CODE_PATTERN, text, re.M)
     for signature, pattern in patterns or ENV_PATTERNS:
+        if code and signature in NETWORK_SIGNATURES:
+            continue
         m = re.search(pattern, text, re.M)
         if m:
             return f"{signature}: {m.group(0)[:80]}"

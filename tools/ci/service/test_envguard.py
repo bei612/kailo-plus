@@ -55,6 +55,13 @@ class Classify(unittest.TestCase):
         self.assertIsNone(envguard.classify(text, oom_delta=0))
         self.assertTrue(envguard.classify(text, oom_delta=1).startswith("oom"))
 
+    def test_lookup_error_after_a_compile_error_is_the_code(self):
+        text = ("error[E0061]: this function takes 5 arguments but 4 arguments were supplied\n"
+                "error: error communicating with database: failed to lookup address information: Temporary failure")
+        self.assertIsNone(envguard.classify(text))
+        self.assertTrue(envguard.classify("src/a.tsx(1,2): error TS2322: x\nNo space left on device")
+                        .startswith("disk-full"))
+
     def test_code_failures(self):
         for text in ["error[E0308]: mismatched types", "test result: FAILED. 3 passed; 1 failed",
                      "assertion `left == right` failed", "FAIL(1)"]:
