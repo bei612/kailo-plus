@@ -28,17 +28,21 @@ export default {
     const row = a.locator('[data-channel-thread-row]').filter({ hasText: r.marker }).last();
     const card = row.locator('section[aria-label="确认调整上门拜访时间"], [data-a2ui-card]').last();
     if (await card.count()) await card.scrollIntoViewIfNeeded().catch(() => {});
+    // Visible is decided once, by a wait: a bare count() is one instant, and the button can be gone for a moment while
+    // the row redraws as messages arrive below it (B9 r2: counted 0 between two counts > 0 while 51's routine posted).
+    const shows = (loc) => loc.first().waitFor({ state: 'visible', timeout: 15000 }).then(() => true, () => false);
     let btn = row.getByRole('button', { name: /^确认调整$/ });
-    await btn.first().waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
     let where = 'channel';
-    if (!(await btn.count())) {
+    let visible = await shows(btn);
+    if (!visible) {
       const open = row.getByText(L.openSession).last();
       if (await open.count()) { await open.click(); await a.waitForTimeout(8000); where = 'session'; }
       btn = a.getByRole('button', { name: /^确认调整$/ });
+      visible = await shows(btn);
     }
     await h.shot(a, `card-visible-${where}`);
-    h.check('卡片按钮可见（TE-04）', (await btn.count()) > 0, where);
-    if (!(await btn.count())) { a.off('request', onReq); return; }
+    h.check('卡片按钮可见（TE-04）', visible, where);
+    if (!visible) { a.off('request', onReq); return; }
     const respP = a.waitForResponse((x) => /\/surfaces\/[^/]+\/actions$/.test(x.url().split('?')[0]) && x.request().method() === 'POST', { timeout: 30000 }).catch(() => null);
     await btn.last().click();
     const resp = await respP;

@@ -68,17 +68,20 @@ export default {
     const adm = await startDm(h, 'alice', ag.name, ask, ag.name);
     h.check(`与 @${ag.handle} 的私信已建立`, !!adm, h.u('alice').page.url());
     if (!adm) return;
-    const t0 = Date.now(); let answer = null; let mine = null;
+    const t0 = Date.now(); let answer = null; let mine = null; let replies = [];
     while (Date.now() - t0 < h.cfg.askTimeoutS * 1000) {
       const items = (await messages(h, 'alice', adm)).items;
       mine = items.find((x) => String(x.content).includes(`${tk}-a`)) ?? mine;
-      if (mine) answer = items.find((x) => x.sender_id !== mine.sender_id && Date.parse(x.created_at) > Date.parse(mine.created_at) && /收到/.test(String(x.content))) ?? null;
+      if (mine) replies = items.filter((x) => x.sender_id !== mine.sender_id && Date.parse(x.created_at) > Date.parse(mine.created_at));
+      answer = replies.find((x) => /收到/.test(String(x.content))) ?? null;
       if (answer) break;
       await h.sleep(10000);
     }
+    // What the Agent did say instead (an empty turn reads 这次没能给出回复。, agent_harness text.rs empty_reply).
+    if (!answer) h.log('agent replies after the ask', JSON.stringify(replies.map((x) => String(x.content).slice(0, 200))));
     const a = h.u('alice').page;
     await a.goto(`${h.BASE}/app/channels/${adm}`, { waitUntil: 'load' }); await a.waitForTimeout(6000);
     await h.shot(a, 'dm-agent');
-    h.check(`@${ag.handle} 在私信里回复`, !!answer, answer && { sender: answer.sender_id, content: String(answer.content).slice(0, 200), seconds: Math.round((Date.now() - t0) / 1000) });
+    h.check(`@${ag.handle} 在私信里回复`, !!answer, answer ? { sender: answer.sender_id, content: String(answer.content).slice(0, 200), seconds: Math.round((Date.now() - t0) / 1000) } : { sent: !!mine, replies: replies.map((x) => String(x.content).slice(0, 120)) });
   },
 };
