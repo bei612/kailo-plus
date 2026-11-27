@@ -1,0 +1,16 @@
+# Kailo release registry (127.0.0.1:55000): images the CI `release` step publishes for b02-deploy / up.sh to pull
+# ("pulled from the release registry"). Cold capacity: its blobs live on the 4T HDD with the registry mirrors, not on
+# the NVMe root, which holds the hot build state (BuildKit, ci-fs, check targets).
+# Run on the Kailo daemon: DOCKER_HOST=unix:///run/kailo-docker/docker.sock docker compose -f <this> up -d
+name: kailo-release-registry
+services:
+  registry:
+    image: registry:2
+    container_name: kailo-registry
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:55000:5000"
+    environment:
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+    volumes:
+      - /volumes/data/kailo/capacity/release-registry:/var/lib/registry
