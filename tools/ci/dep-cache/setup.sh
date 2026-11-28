@@ -199,7 +199,10 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 strict = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect)
 
 def links(index, name):
-    html = opener.open(f"{index}/{name}/", timeout=180).read().decode()
+    # Ask as pip does (PEP 691): proxpi answers a request without a simple-index media type with 406.
+    req = urllib.request.Request(f"{index}/{name}/", headers={
+        "Accept": "application/vnd.pypi.simple.v1+html, text/html;q=0.01"})
+    html = opener.open(req, timeout=180).read().decode()
     return re.findall(r'<a href="([^"#]+)(?:#([^"]*))?"([^>]*)>', html)
 
 def fetch(index, name, href):
