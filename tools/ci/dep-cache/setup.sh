@@ -275,6 +275,10 @@ print(f"Hugging Face 缓存：repo_info（{sha[:12]}）、树列表、config.jso
 PY
 }
 
+sccache_dav() {  # curl 参数… → 打印 HTTP 状态码（连接失败为 000），不打印响应体
+  curl -sS --noproxy '*' -m 10 -o /dev/null -w '%{http_code}' "$@" || true
+}
+
 cmd_probe() {
   local npm="http://$DEP_CACHE_BIND:$NPM_CACHE_PORT" go="http://$DEP_CACHE_BIND:$GO_CACHE_PORT"
   curl -fsS --noproxy '*' -m 10 -o /dev/null "$npm/-/ping" || die "npm 缓存未在 $npm 响应"
@@ -296,13 +300,20 @@ cmd_probe() {
     "$files/github.com/klausbetz/apple-identity-provider-keycloak/releases/download/1.17.0/apple-identity-provider-1.17.0.jar" \
     | awk '$1 == 200 && $2 > 10000 { ok = 1 } END { exit !ok }' || die "文件缓存未返回 GitHub release 文件（跳转跟随）"
   echo "文件缓存：Debian 与安全更新索引、rust 渠道清单、GitHub release 文件可取"
-  # The compile cache answers sccache's WebDAV calls: a put under a new directory, then the same bytes back.
-  local sc="http://$DEP_CACHE_BIND:$SCCACHE_CACHE_PORT" probe
-  probe=".probe/$(date +%s)-$$"
-  curl -fsS --noproxy '*' -m 10 -X PUT --data-binary "kailo" "$sc/$probe" >/dev/null || die "编译缓存不接受写入（$sc）"
-  [ "$(curl -fsS --noproxy '*' -m 10 "$sc/$probe")" = kailo ] || die "编译缓存读回的内容不一致（$sc）"
-  curl -fsS --noproxy '*' -m 10 -X DELETE "$sc/$probe" >/dev/null || true
-  echo "编译缓存：WebDAV 写入与读回可用"
+  # The compile cache answers the calls sccache's WebDAV client (opendal) makes for one entry: MKCOL of the parent
+  # collections, PUT, PROPFIND (stat), GET of the same bytes; then DELETE (the probe removes what it wrote).
+  local sc="http://$DEP_CACHE_BIND:$SCCACHE_CACHE_PORT" probe code
+  probe="$sc/.probe/$(date +%s)-$$"
+  code=$(sccache_dav -X MKCOL "$sc/.probe/")
+  case $code in 201|405) ;; *) die "编译缓存不接受 MKCOL（$sc/.probe/：HTTP $code）" ;; esac  # 405: exists
+  code=$(sccache_dav -X MKCOL "$probe/"); [ "$code" = 201 ] || die "编译缓存不接受 MKCOL（$probe/：HTTP $code）"
+  code=$(sccache_dav -X PUT --data-binary kailo "$probe/entry")
+  case $code in 201|204) ;; *) die "编译缓存不接受写入（$probe/entry：HTTP $code）" ;; esac
+  code=$(sccache_dav -X PROPFIND -H 'Depth: 0' "$probe/entry"); [ "$code" = 207 ] || die "编译缓存 PROPFIND 失败（HTTP $code）"
+  [ "$(curl -fsS --noproxy '*' -m 10 "$probe/entry")" = kailo ] || die "编译缓存读回的内容不一致（$probe/entry）"
+  code=$(sccache_dav -X DELETE "$probe/"); [ "$code" = 204 ] || die "编译缓存不接受删除（$probe/：HTTP $code）"
+  code=$(sccache_dav "$probe/entry"); [ "$code" = 404 ] || die "编译缓存删除后仍可读（$probe/entry：HTTP $code）"
+  echo "编译缓存：WebDAV MKCOL、PUT、PROPFIND、GET、DELETE 可用"
   # 经缓存实际取内容（未命中即回源一次）：pnpm 的 packument 必须带 npm 原站的签名，Corepack 校验依赖它
   curl -fsS --noproxy '*' -m 180 "$npm/pnpm" | python3 -I -c '
 import json, sys

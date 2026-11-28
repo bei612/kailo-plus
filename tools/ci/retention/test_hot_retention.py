@@ -44,6 +44,7 @@ class Policy(unittest.TestCase):
                                  "/var/lib/kailo-ci/check-target/kailo-macro/slot1",
                                  "/var/lib/kailo-ci/check-target/kailo-macro/slot2",
                                  "/var/lib/kailo-ci/check-target/kailo-macro/slot3",
+                                 "/var/lib/kailo-ci/check-target/kailo-macro/release",
                                  "/var/lib/kailo-ci/check-cache/kailo-macro",
                                  "/volumes/data/kailo/capacity/ci/check-cache/kailo-macro",
                                  "/var/lib/kailo-ci/ci-fs/dev-check/target",
@@ -53,11 +54,16 @@ class Policy(unittest.TestCase):
                                  "/var/lib/kailo-ci/ci-fs/dev-check/test-target",
                                  "/var/lib/kailo-ci/ci-fs/dev-check/slot-1/test-target",
                                  "/var/lib/kailo-ci/ci-fs/dev-check/slot-2/test-target",
-                                 "/var/lib/kailo-ci/ci-fs/dev-check/slot-3/test-target"])
+                                 "/var/lib/kailo-ci/ci-fs/dev-check/slot-3/test-target",
+                                 "/volumes/data/kailo/capacity/dep-cache/sccache/data"])
         self.assertEqual(policy["grace_seconds"], 2 * HOUR)
         # NVMe budget (2026-11-23): three CI target slots of 27 GiB, kailo-dev-check slot 0 only (target 15 GiB,
-        # test-target 10 GiB), slots 1-3 at the 1 GiB minimum for both; all on ci-fs
-        self.assertEqual(sum(r.get("max_bytes", 0) for r in policy["roots"]), 112 * 2**30)
+        # test-target 10 GiB), slots 1-3 at the 1 GiB minimum for both, the release build directory 28 GiB; all on ci-fs
+        self.assertEqual(sum(r.get("max_bytes", 0) for r in policy["roots"] if r["path"].startswith("/var/lib/kailo-ci/")),
+                         140 * 2**30)
+        # 4T disk: the image builds' shared compile cache (sccache WebDAV), 50 GiB, key partitions idle 14 days go
+        sccache = next(r for r in policy["roots"] if r["path"].endswith("/dep-cache/sccache/data"))
+        self.assertEqual((sccache["max_bytes"], sccache["max_idle_seconds"]), (50 * 2**30, 14 * DAY))
         # default builder: same limit as daemon.json builder.gc; kailo-builder: buildkitd.toml's total GC cap (state on
         # NVMe since 2026-11-22; 90GB since 2026-11-24 so the Rust target cache mounts survive GC)
         self.assertEqual(policy["docker_build_cache"]["keep_storage"], "10GB")
