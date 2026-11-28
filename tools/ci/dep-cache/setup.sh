@@ -55,7 +55,7 @@ FILES_SECURITY_UPSTREAM=${FILES_SECURITY_UPSTREAM:-https://mirrors.tuna.tsinghua
 # The hosts the image builds download pinned files from (kailo-macro kailo/deploy/images/files-mirror.sh keeps the same
 # list), plus the hosts GitHub redirects release and archive downloads to; api.github.com serves the repository
 # tarballs bun installs github: dependencies from (GITHUB_API_URL).
-FILES_HOSTS=${FILES_HOSTS:-github.com api.github.com objects.githubusercontent.com release-assets.githubusercontent.com codeload.github.com repo1.maven.org static.rust-lang.org nodejs.org}
+FILES_HOSTS=${FILES_HOSTS:-github.com api.github.com objects.githubusercontent.com release-assets.githubusercontent.com codeload.github.com repo1.maven.org static.rust-lang.org nodejs.org artifacts.opensearch.org}
 
 die() { printf 'dep-cache: %s\n' "$*" >&2; exit 2; }
 
