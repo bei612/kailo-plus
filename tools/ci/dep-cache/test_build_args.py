@@ -13,7 +13,7 @@ ORIGIN = "https://proxy.golang.org,direct"
 
 class Healthy(http.server.BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802 - http.server API
-        ok = self.path in ("/-/ping", "/healthz")
+        ok = self.path in ("/-/ping", "/healthz", "/health")
         self.send_response(200 if ok else 404)
         self.end_headers()
 
@@ -39,7 +39,7 @@ class BuildArgs(unittest.TestCase):
     def tearDownClass(cls):
         cls.server.shutdown()
 
-    def derive(self, dockerfile_text, npm, go):
+    def derive(self, dockerfile_text, npm, go, python=None):
         with tempfile.TemporaryDirectory() as tmp:
             dockerfile = os.path.join(tmp, "Dockerfile")
             with open(dockerfile, "w") as stream:
@@ -47,6 +47,8 @@ class BuildArgs(unittest.TestCase):
             script = ('. "$1"; dependency_cache_args "$2" >"$3"; '
                       'for a in "${DEPENDENCY_CACHE_ARGS[@]}"; do printf "%s\\n" "$a"; done')
             env = dict(os.environ, KAILO_NPM_CACHE_URL=npm, KAILO_GO_CACHE_URL=go)
+            for name in ("KAILO_PYPI_CACHE_URL", "KAILO_TORCH_CACHE_URL", "KAILO_HF_CACHE_URL"):
+                env[name] = go if python is None else python
             log = os.path.join(tmp, "log")
             r = subprocess.run(["bash", "-euo", "pipefail", "-c", script, "-", os.path.join(HERE, "build-args.sh"),
                                 dockerfile, log], capture_output=True, text=True, env=env, check=True)
@@ -75,6 +77,26 @@ class BuildArgs(unittest.TestCase):
         args, log = self.derive(self.BOTH, "", "")
         self.assertEqual(args, ["--build-arg", f"GOPROXY={ORIGIN}"])
         self.assertIn("npm 缓存不可用", log)
+
+    PYTHON = "FROM python\nARG PYPI_MIRROR=\nARG TORCH_INDEX=https://download.pytorch.org/whl/cpu\nARG HF_MIRROR=\n"
+
+    def test_python_and_hf_caches_are_passed_when_healthy(self):
+        args, log = self.derive(self.PYTHON, self.up, self.up)
+        self.assertEqual(args, ["--build-arg", f"PYPI_MIRROR={self.up}/index/", "--build-arg", f"TORCH_INDEX={self.up}/index/",
+                                "--build-arg", f"HF_MIRROR={self.up}"])
+        self.assertIn("PyTorch CPU", log)
+
+    def test_unhealthy_python_caches_leave_the_dockerfile_defaults(self):
+        args, log = self.derive(self.PYTHON, self.up, self.up, python=self.down)
+        self.assertEqual(args, [])
+        self.assertEqual(log.count("Dockerfile 缺省"), 3)
+
+    def test_kailo_env_lists_only_healthy_caches(self):
+        env = dict(os.environ, KAILO_PYPI_CACHE_URL=self.up + "/", KAILO_TORCH_CACHE_URL=self.down, KAILO_HF_CACHE_URL=self.up)
+        r = subprocess.run(["bash", "-euo", "pipefail", "-c", '. "$1"; dependency_cache_kailo_env', "-",
+                            os.path.join(HERE, "build-args.sh")], capture_output=True, text=True, env=env, check=True)
+        self.assertEqual(r.stdout.split("\n")[:-1], [f"KAILO_PYPI_MIRROR={self.up}/index/", f"KAILO_HF_MIRROR={self.up}"])
+        self.assertIn("不设置 KAILO_TORCH_INDEX", r.stderr)
 
     def test_repository_dockerfiles_declare_the_cached_downloads(self):
         root = os.path.realpath(os.path.join(HERE, "..", "..", ".."))

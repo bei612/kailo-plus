@@ -232,8 +232,8 @@
           },
           {
             "path": "/volumes/data/kailo/capacity/dep-cache",
-            "cap": "200G",
-            "role": "Verdaccio, Athens"
+            "cap": "600G",
+            "role": "image-build dependency caches (tools/ci/dep-cache): Verdaccio, Athens, crates 105G, files 205G, PyPI 60G and PyTorch CPU 30G (proxpi), Hugging Face 101G (nginx max_size), sccache (hot-retention)"
           },
           {
             "path": "/volumes/data/kailo/capacity/ci/check-cache",

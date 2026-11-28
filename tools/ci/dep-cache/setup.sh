@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Kailo CI 节点：npm（Verdaccio）与 Go 模块（Athens）依赖下载缓存。用途、数据位置与回源方式见 07-运行与运维基线.md §2.1。
+# Kailo CI 节点：镜像构建的依赖下载缓存（npm、Go 模块、crates、构建下载文件、编译缓存、PyPI、PyTorch CPU 索引、Hugging Face）。用途、数据位置与回源方式见 07-运行与运维基线.md §2.1。
 #
 # 用法（在 CI 节点以 ubuntu 身份，从仓库检出或固定发布树执行）：
-#   tools/ci/dep-cache/setup.sh up        安装运行副本、启动/更新两个缓存并等待 healthy，再经缓存实际取一次包与模块
+#   tools/ci/dep-cache/setup.sh up        安装运行副本、启动/更新各缓存并等待 healthy，再经缓存实际取一次各类样本（probe）
 #   tools/ci/dep-cache/setup.sh status    读回容器、健康、数据目录与占用
-#   tools/ci/dep-cache/setup.sh probe     只读：经缓存取 pnpm 的 packument 与一个 Go 模块版本列表
+#   tools/ci/dep-cache/setup.sh probe     经缓存取样本：pnpm packument、Go 版本列表、crates、Debian/rust/GitHub 文件、编译缓存读写、
+#                                         PyPI six 轮子（sha256）、PyTorch +cpu 轮子元数据、HF repo_info/树列表/普通与 LFS 文件
+#   tools/ci/dep-cache/setup.sh env       打印镜像构建用的 kailo.env 设置（只列健康的缓存：KAILO_PYPI_MIRROR、KAILO_TORCH_INDEX、…）
 #   tools/ci/dep-cache/setup.sh down      停止并删除容器（数据保留；构建入口探测失败后自动回源原站）
 #
 # 可覆盖的环境变量：
@@ -26,6 +28,15 @@
 #   FILES_HOSTS               可经缓存下载的站点（空格分隔；默认见下方 FILES_HOSTS）
 #   SCCACHE_CACHE_PORT        镜像构建共享 Rust 编译缓存端口（默认 55010）：sccache 的 WebDAV 后端（Apache mod_dav），数据在 4T：
 #                             $DEP_CACHE_DATA/sccache，容量由 hot-retention 管理
+#   PYPI_CACHE_PORT           PyPI 缓存端口（默认 55011，proxpi；简单索引 http://<bind>:<port>/index/，kailo-macro KAILO_PYPI_MIRROR）。
+#                             数据在 4T：$DEP_CACHE_DATA/pypi，上限 PYPI_CACHE_BYTES（默认 60 GiB，超过按最少使用淘汰）
+#   PYPI_UPSTREAM             PyPI 简单索引上游（默认 https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/）
+#   TORCH_CACHE_PORT          PyTorch CPU 轮子索引缓存端口（默认 55013，proxpi；http://<bind>:<port>/index/，KAILO_TORCH_INDEX）。
+#                             数据在 4T：$DEP_CACHE_DATA/torch，上限 TORCH_CACHE_BYTES（默认 30 GiB）
+#   TORCH_UPSTREAM            PyTorch 索引上游（默认 https://download.pytorch.org/whl/cpu/）
+#   HF_CACHE_PORT             Hugging Face 缓存端口（默认 55012，nginx；HF_ENDPOINT http://<bind>:<port>，KAILO_HF_MIRROR）。
+#                             数据在 4T：$DEP_CACHE_DATA/hf（文件 100g、API 1g 上限，nginx 按最久未用淘汰）
+#   HF_UPSTREAM               Hub 上游（默认 https://hf-mirror.com；其跳转，包括到 huggingface.co 与 CDN，由缓存自己跟随）
 #   DOCKER_CONFIG             Docker 客户端配置（默认 /var/lib/kailo-ci/docker-config）
 # 出网：缓存直连上游（路由器 OpenWrt 透明代理负责）；本脚本不读取、不写入任何代理设置（OPS-02）。
 set -euo pipefail
@@ -50,6 +61,14 @@ CRATES_INDEX_UPSTREAM=${CRATES_INDEX_UPSTREAM:-https://rsproxy.cn/index/}
 CRATES_DL_UPSTREAM=${CRATES_DL_UPSTREAM:-https://lf9-static.rsproxy.cn/obj/rsproxy/crates/}
 FILES_CACHE_PORT=${FILES_CACHE_PORT:-55008}
 SCCACHE_CACHE_PORT=${SCCACHE_CACHE_PORT:-55010}
+PYPI_CACHE_PORT=${PYPI_CACHE_PORT:-55011}
+PYPI_UPSTREAM=${PYPI_UPSTREAM:-https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/}
+PYPI_CACHE_BYTES=${PYPI_CACHE_BYTES:-64424509440}
+TORCH_CACHE_PORT=${TORCH_CACHE_PORT:-55013}
+TORCH_UPSTREAM=${TORCH_UPSTREAM:-https://download.pytorch.org/whl/cpu/}
+TORCH_CACHE_BYTES=${TORCH_CACHE_BYTES:-32212254720}
+HF_CACHE_PORT=${HF_CACHE_PORT:-55012}
+HF_UPSTREAM=${HF_UPSTREAM:-https://hf-mirror.com}
 FILES_DEBIAN_UPSTREAM=${FILES_DEBIAN_UPSTREAM:-https://mirrors.tuna.tsinghua.edu.cn/debian/}
 FILES_SECURITY_UPSTREAM=${FILES_SECURITY_UPSTREAM:-https://mirrors.tuna.tsinghua.edu.cn/debian-security/}
 # The hosts the image builds download pinned files from (kailo-macro kailo/deploy/images/files-mirror.sh keeps the same
@@ -67,7 +86,7 @@ install_runtime() {
   local stamp file
   mkdir -p "$DEP_CACHE_RUNTIME"
   stamp=$(date -u +%Y%m%dT%H%M%SZ)
-  for file in compose.yaml verdaccio.yaml crates-nginx.conf files-nginx.conf sccache-httpd.conf .env; do
+  for file in compose.yaml verdaccio.yaml crates-nginx.conf files-nginx.conf hf-nginx.conf sccache-httpd.conf .env; do
     [ -f "$DEP_CACHE_RUNTIME/$file" ] && cp -a "$DEP_CACHE_RUNTIME/$file" "$DEP_CACHE_RUNTIME/$file.bak-$stamp"
   done
   install -m 0644 "$here/compose.yaml" "$DEP_CACHE_RUNTIME/"
@@ -132,11 +151,128 @@ PY
   sed -e "s/@BIND@/$DEP_CACHE_BIND/" -e "s/@PORT@/$SCCACHE_CACHE_PORT/" "$here/sccache-httpd.conf" > "$DEP_CACHE_RUNTIME/sccache-httpd.conf.tmp"
   chmod 0644 "$DEP_CACHE_RUNTIME/sccache-httpd.conf.tmp"
   mv "$DEP_CACHE_RUNTIME/sccache-httpd.conf.tmp" "$DEP_CACHE_RUNTIME/sccache-httpd.conf"
-  printf 'DEP_CACHE_DATA=%s\nDEP_CACHE_USER=%s\nDEP_CACHE_BIND=%s\nNPM_CACHE_PORT=%s\nGO_CACHE_PORT=%s\nCRATES_CACHE_PORT=%s\nFILES_CACHE_PORT=%s\nSCCACHE_CACHE_PORT=%s\n' \
-    "$DEP_CACHE_DATA" "$(stat -c %u:%g "$DEP_CACHE_DATA")" "$DEP_CACHE_BIND" "$NPM_CACHE_PORT" "$GO_CACHE_PORT" "$CRATES_CACHE_PORT" "$FILES_CACHE_PORT" "$SCCACHE_CACHE_PORT" \
-    > "$DEP_CACHE_RUNTIME/.env.tmp"
+  # Hugging Face cache: nginx.conf from the template with the configured port and upstream origin.
+  python3 -I - "$here/hf-nginx.conf" "$DEP_CACHE_RUNTIME/hf-nginx.conf.tmp" "$HF_CACHE_PORT" "$HF_UPSTREAM" "$resolver" "$DEP_CACHE_BIND" <<'PY'
+import re, sys
+src, dst, port, origin, resolver, bind = sys.argv[1:7]
+if not re.fullmatch(r"https://[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+)?", origin):
+    sys.exit("HF_UPSTREAM must be an https:// origin without a path, e.g. https://hf-mirror.com")
+text = open(src).read()
+for key, value in (("@BIND@", bind), ("@PORT@", port), ("@HF_ORIGIN@", origin), ("@RESOLVER@", resolver),
+                   ("@API_MAX@", "1g"), ("@FILES_MAX@", "100g")):
+    text = text.replace(key, value)
+if re.search(r"@[A-Z_]+@", text):
+    sys.exit("hf-nginx.conf: unrendered placeholder")
+open(dst, "w").write(text)
+PY
+  chmod 0644 "$DEP_CACHE_RUNTIME/hf-nginx.conf.tmp"
+  mv "$DEP_CACHE_RUNTIME/hf-nginx.conf.tmp" "$DEP_CACHE_RUNTIME/hf-nginx.conf"
+  # PyPI and PyTorch caches (proxpi): configured through compose's environment from .env.
+  local url
+  for url in "$PYPI_UPSTREAM" "$TORCH_UPSTREAM"; do
+    [[ $url =~ ^https://[^[:space:]\'\"]+/$ ]] || die "PYPI_UPSTREAM / TORCH_UPSTREAM must be https:// simple-index URLs ending in /"
+  done
+  [[ $PYPI_CACHE_BYTES =~ ^[1-9][0-9]*$ && $TORCH_CACHE_BYTES =~ ^[1-9][0-9]*$ ]] || die "PYPI_CACHE_BYTES / TORCH_CACHE_BYTES must be byte counts"
+  {
+    printf 'DEP_CACHE_DATA=%s\nDEP_CACHE_USER=%s\nDEP_CACHE_BIND=%s\nNPM_CACHE_PORT=%s\nGO_CACHE_PORT=%s\nCRATES_CACHE_PORT=%s\nFILES_CACHE_PORT=%s\nSCCACHE_CACHE_PORT=%s\n' \
+      "$DEP_CACHE_DATA" "$(stat -c %u:%g "$DEP_CACHE_DATA")" "$DEP_CACHE_BIND" "$NPM_CACHE_PORT" "$GO_CACHE_PORT" "$CRATES_CACHE_PORT" "$FILES_CACHE_PORT" "$SCCACHE_CACHE_PORT"
+    printf 'PYPI_CACHE_PORT=%s\nPYPI_UPSTREAM=%s\nPYPI_CACHE_BYTES=%s\nTORCH_CACHE_PORT=%s\nTORCH_UPSTREAM=%s\nTORCH_CACHE_BYTES=%s\nHF_CACHE_PORT=%s\n' \
+      "$PYPI_CACHE_PORT" "$PYPI_UPSTREAM" "$PYPI_CACHE_BYTES" "$TORCH_CACHE_PORT" "$TORCH_UPSTREAM" "$TORCH_CACHE_BYTES" "$HF_CACHE_PORT"
+  } > "$DEP_CACHE_RUNTIME/.env.tmp"
   chmod 0600 "$DEP_CACHE_RUNTIME/.env.tmp"
   mv "$DEP_CACHE_RUNTIME/.env.tmp" "$DEP_CACHE_RUNTIME/.env"
+}
+
+probe_python_indexes() {
+  # PyPI: the simple index of six links back to this cache, and the file comes from it (200, no redirect to the
+  # upstream) with the sha256 the index names.
+  local pypi="http://$DEP_CACHE_BIND:$PYPI_CACHE_PORT/index" torch="http://$DEP_CACHE_BIND:$TORCH_CACHE_PORT/index"
+  curl -fsS --noproxy '*' -m 10 -o /dev/null "http://$DEP_CACHE_BIND:$PYPI_CACHE_PORT/health" || die "PyPI 缓存未在 $pypi 响应"
+  curl -fsS --noproxy '*' -m 10 -o /dev/null "http://$DEP_CACHE_BIND:$TORCH_CACHE_PORT/health" || die "PyTorch 索引缓存未在 $torch 响应"
+  python3 -I - "$pypi" six 'six-1.17.0-py2.py3-none-any.whl' "$torch" torch <<'PY' || die "PyPI / PyTorch 索引缓存的校验未通过"
+import hashlib, re, sys, urllib.request
+pypi, project, filename, torch, torch_project = sys.argv[1:6]
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args):  # a redirect would send the build to the upstream
+        return None
+strict = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect)
+
+def links(index, name):
+    html = opener.open(f"{index}/{name}/", timeout=180).read().decode()
+    return re.findall(r'<a href="([^"#]+)(?:#([^"]*))?"([^>]*)>', html)
+
+def fetch(index, name, href):
+    if "://" in href:
+        sys.exit(f"{index}/{name}/ links outside the cache: {href}")
+    with strict.open(f"{index}/{name}/{href}", timeout=600) as r:
+        if r.status != 200:
+            sys.exit(f"{href}: HTTP {r.status}")
+        return r.read()
+
+found = [(h, f) for h, f, _ in links(pypi, project) if h == filename]
+if not found or not found[0][1].startswith("sha256="):
+    sys.exit(f"PyPI 缓存的 {project} 索引缺少 {filename}（带 sha256）")
+body = fetch(pypi, project, filename)
+if hashlib.sha256(body).hexdigest() != found[0][1][7:]:
+    sys.exit(f"{filename} 的 sha256 与索引不一致")
+print(f"PyPI 缓存：{project} 索引与 {filename}（{len(body)} 字节，sha256 一致）可取")
+
+# PyTorch CPU index: torch's +cpu wheels are listed; the core metadata of the newest x86_64 one (a small file on
+# download-r2.pytorch.org) comes through the cache with the hash the index names.
+cpu = [(h, a) for h, _, a in links(torch, torch_project) if re.fullmatch(r"torch-[0-9.]+\+cpu-cp3\d+-cp3\d+-manylinux[^\"]*x86_64\.whl", h)]
+meta = [(h, m.group(1)) for h, a in cpu for m in [re.search(r'data-(?:core|dist-info)-metadata="sha256=([0-9a-f]{64})"', a)] if m]
+if not meta:
+    sys.exit("PyTorch 索引缓存没有带元数据哈希的 torch +cpu x86_64 轮子")
+href, digest = meta[-1]
+body = fetch(torch, torch_project, href + ".metadata")
+if hashlib.sha256(body).hexdigest() != digest:
+    sys.exit(f"{href}.metadata 的 sha256 与索引不一致")
+print(f"PyTorch 索引缓存：{len(cpu)} 个 torch +cpu x86_64 轮子，{href} 的元数据可取（sha256 一致）")
+PY
+}
+
+probe_hf() {
+  # Hugging Face: repo_info and a regular file (the Hub's relative redirect), and a small LFS/Xet file in full (the
+  # CDN redirect, followed by the cache): Hub headers present, no Xet headers, content matching X-Linked-Etag (sha256).
+  local hf="http://$DEP_CACHE_BIND:$HF_CACHE_PORT"
+  curl -fsS --noproxy '*' -m 10 -o /dev/null "$hf/healthz" || die "Hugging Face 缓存未在 $hf 响应"
+  python3 -I - "$hf" <<'PY' || die "Hugging Face 缓存的校验未通过"
+import hashlib, json, sys, urllib.request
+hf = sys.argv[1]
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args):
+        return None
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect)
+
+def get(path, method="GET"):
+    req = urllib.request.Request(hf + path, method=method, headers={"Accept-Encoding": "identity"})
+    with opener.open(req, timeout=600) as r:
+        if r.status != 200:
+            sys.exit(f"{path}: HTTP {r.status}")
+        return r.headers, r.read()
+
+_, body = get("/api/models/Systran/faster-whisper-small/revision/main")
+sha = json.loads(body)["sha"]
+_, tree = get(f"/api/models/hf-internal-testing/tiny-random-bert/tree/main")
+if b'"xetHash"' in tree:
+    sys.exit("树列表仍含 xetHash")
+for path, lfs in (("Systran/faster-whisper-small/resolve/main/config.json", False),
+                  ("hf-internal-testing/tiny-random-bert/resolve/main/pytorch_model.bin", True)):
+    for method in ("HEAD", "GET"):
+        headers, body = get("/" + path, method)
+        if not headers.get("X-Repo-Commit") or not (headers.get("X-Linked-Etag") or headers.get("ETag")):
+            sys.exit(f"{method} {path}: 缺少 X-Repo-Commit / ETag")
+        if any(k.lower().startswith("x-xet-") for k in headers) or "xet" in headers.get("Link", ""):
+            sys.exit(f"{method} {path}: 带有 Xet 头")
+    if path.startswith("Systran/") and headers["X-Repo-Commit"] != sha:
+        sys.exit(f"{path}: X-Repo-Commit {headers['X-Repo-Commit']} 与 repo_info {sha} 不一致")
+    if lfs and hashlib.sha256(body).hexdigest() != headers["X-Linked-Etag"].strip('"'):
+        sys.exit(f"{path}: 内容的 sha256 与 X-Linked-Etag 不一致")
+    if headers.get("X-Linked-Size") and int(headers["X-Linked-Size"]) != len(body):
+        sys.exit(f"{path}: 长度与 X-Linked-Size 不一致")
+print(f"Hugging Face 缓存：repo_info（{sha[:12]}）、树列表、config.json 与 LFS 文件 pytorch_model.bin（{len(body)} 字节，sha256 一致）可取")
+PY
 }
 
 cmd_probe() {
@@ -178,21 +314,29 @@ print("npm 缓存：pnpm", doc["dist-tags"]["latest"], "packument 含 integrity 
   curl -fsS --noproxy '*' -m 180 "$go/github.com/google/uuid/@v/list" | grep -qx 'v1.6.0' \
     || die "Go 缓存未返回 github.com/google/uuid 的版本列表"
   echo "Go 缓存：github.com/google/uuid 版本列表可取"
+  probe_python_indexes
+  probe_hf
 }
 
 cmd_up() {
   [ -f "$apps/tools/container-safety.sh" ] || die "找不到 tools/container-safety.sh"
   # shellcheck source=../../container-safety.sh
   . "$apps/tools/container-safety.sh"
-  mkdir -p "$DEP_CACHE_DATA/npm" "$DEP_CACHE_DATA/go" "$DEP_CACHE_DATA/crates" "$DEP_CACHE_DATA/files/tmp" "$DEP_CACHE_DATA/sccache/data" "$DEP_CACHE_DATA/sccache/.tmp"
+  mkdir -p "$DEP_CACHE_DATA/npm" "$DEP_CACHE_DATA/go" "$DEP_CACHE_DATA/crates" "$DEP_CACHE_DATA/files/tmp" "$DEP_CACHE_DATA/sccache/data" "$DEP_CACHE_DATA/sccache/.tmp" \
+    "$DEP_CACHE_DATA/pypi" "$DEP_CACHE_DATA/torch" "$DEP_CACHE_DATA/hf/tmp"
   container_require_data_path "$DEP_CACHE_DATA" >/dev/null || die "缓存数据必须位于项目数据根：$DEP_CACHE_DATA"
   grep -q "\${NPM_CACHE_PORT:-$NPM_CACHE_PORT}" "$here/build-args.sh" && grep -q "\${GO_CACHE_PORT:-$GO_CACHE_PORT}" "$here/build-args.sh" \
     || die "build-args.sh 的缺省端口与 NPM_CACHE_PORT/GO_CACHE_PORT 不一致"
-  local before crates_before files_before sccache_before
+  local port_var
+  for port_var in PYPI_CACHE_PORT TORCH_CACHE_PORT HF_CACHE_PORT; do
+    grep -q "\${$port_var:-${!port_var}}" "$here/build-args.sh" || die "build-args.sh 的缺省端口与 $port_var 不一致"
+  done
+  local before crates_before files_before sccache_before hf_before
   before=$(sha256sum "$DEP_CACHE_RUNTIME/verdaccio.yaml" 2>/dev/null || true)
   crates_before=$(sha256sum "$DEP_CACHE_RUNTIME/crates-nginx.conf" 2>/dev/null || true)
   files_before=$(sha256sum "$DEP_CACHE_RUNTIME/files-nginx.conf" 2>/dev/null || true)
   sccache_before=$(sha256sum "$DEP_CACHE_RUNTIME/sccache-httpd.conf" 2>/dev/null || true)
+  hf_before=$(sha256sum "$DEP_CACHE_RUNTIME/hf-nginx.conf" 2>/dev/null || true)
   install_runtime
   compose config --quiet
   compose up -d --wait --wait-timeout 120
@@ -209,19 +353,27 @@ cmd_up() {
   if [ -n "$sccache_before" ] && [ "$sccache_before" != "$(sha256sum "$DEP_CACHE_RUNTIME/sccache-httpd.conf")" ]; then
     compose up -d --force-recreate --wait --wait-timeout 120 sccache
   fi
+  if [ -n "$hf_before" ] && [ "$hf_before" != "$(sha256sum "$DEP_CACHE_RUNTIME/hf-nginx.conf")" ]; then
+    compose up -d --force-recreate --wait --wait-timeout 120 hf
+  fi
   cmd_probe
-  printf '依赖缓存就绪：npm %s:%s、Go %s:%s、crates %s:%s、文件 %s:%s，数据 %s，运行副本 %s\n' \
+  printf '依赖缓存就绪：npm %s:%s、Go %s:%s、crates %s:%s、文件 %s:%s、PyPI %s:%s、PyTorch %s:%s、Hugging Face %s:%s，数据 %s，运行副本 %s\n' \
     "$DEP_CACHE_BIND" "$NPM_CACHE_PORT" "$DEP_CACHE_BIND" "$GO_CACHE_PORT" "$DEP_CACHE_BIND" "$CRATES_CACHE_PORT" "$DEP_CACHE_BIND" "$FILES_CACHE_PORT" \
+    "$DEP_CACHE_BIND" "$PYPI_CACHE_PORT" "$DEP_CACHE_BIND" "$TORCH_CACHE_PORT" "$DEP_CACHE_BIND" "$HF_CACHE_PORT" \
     "$DEP_CACHE_DATA" "$DEP_CACHE_RUNTIME"
 }
 
 cmd_status() {
   compose ps
-  du -sh "$DEP_CACHE_DATA"/npm "$DEP_CACHE_DATA"/go "$DEP_CACHE_DATA"/crates "$DEP_CACHE_DATA"/files 2>/dev/null || true
+  du -sh "$DEP_CACHE_DATA"/npm "$DEP_CACHE_DATA"/go "$DEP_CACHE_DATA"/crates "$DEP_CACHE_DATA"/files \
+    "$DEP_CACHE_DATA"/pypi "$DEP_CACHE_DATA"/torch "$DEP_CACHE_DATA"/hf 2>/dev/null || true
   findmnt -n -o SOURCE --target "$DEP_CACHE_DATA"
   curl -sS --noproxy '*' -m 5 -o /dev/null -w "npm /-/ping HTTP %{http_code}\n" "http://$DEP_CACHE_BIND:$NPM_CACHE_PORT/-/ping" || true
   curl -sS --noproxy '*' -m 5 -o /dev/null -w "go /healthz HTTP %{http_code}\n" "http://$DEP_CACHE_BIND:$GO_CACHE_PORT/healthz" || true
   curl -sS --noproxy '*' -m 5 -o /dev/null -w "files /healthz HTTP %{http_code}\n" "http://$DEP_CACHE_BIND:$FILES_CACHE_PORT/healthz" || true
+  curl -sS --noproxy '*' -m 5 -o /dev/null -w "pypi /health HTTP %{http_code}\n" "http://$DEP_CACHE_BIND:$PYPI_CACHE_PORT/health" || true
+  curl -sS --noproxy '*' -m 5 -o /dev/null -w "torch /health HTTP %{http_code}\n" "http://$DEP_CACHE_BIND:$TORCH_CACHE_PORT/health" || true
+  curl -sS --noproxy '*' -m 5 -o /dev/null -w "hf /healthz HTTP %{http_code}\n" "http://$DEP_CACHE_BIND:$HF_CACHE_PORT/healthz" || true
 }
 
 case "${1:-}" in
@@ -229,5 +381,6 @@ case "${1:-}" in
   status) shift; cmd_status "$@" ;;
   probe) shift; cmd_probe "$@" ;;
   down) shift; compose down ;;
-  *) sed -n '2,17p' "$0" >&2; exit 2 ;;
+  env) shift; . "$here/build-args.sh"; dependency_cache_kailo_env ;;
+  *) sed -n '2,11p' "$0" >&2; exit 2 ;;
 esac

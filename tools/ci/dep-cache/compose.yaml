@@ -1,4 +1,4 @@
-# Kailo CI 依赖下载缓存：npm（Verdaccio）、Go 模块（Athens）、crates.io 与构建下载文件（nginx）。用途、数据位置与回源方式见 07-运行与运维基线.md §2.1。
+# Kailo CI 依赖下载缓存：npm（Verdaccio）、Go 模块（Athens）、crates.io 与构建下载文件（nginx）、PyPI 与 PyTorch CPU 索引（proxpi）、Hugging Face（nginx）。用途、数据位置与回源方式见 07-运行与运维基线.md §2.1。
 # 由 tools/ci/dep-cache/setup.sh up 安装到运行副本目录并启动；改配置先改本仓库。
 # 出网直连上游（路由器 OpenWrt 透明代理负责），不设置任何代理变量；数据在 4T 容量盘。
 name: kailo-dep-cache
@@ -100,6 +100,86 @@ services:
     cpus: 1.0
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://${DEP_CACHE_BIND:-10.239.0.1}:${FILES_CACHE_PORT:-55008}/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+  # PyPI pull-through cache of the image builds (kailo-macro KAILO_PYPI_MIRROR, a simple-index URL: http://<bind>:<port>/index/):
+  # proxpi, which serves the upstream's simple index (HTML and PEP 691 JSON) with every file link rewritten to itself and
+  # keeps the downloaded files on the capacity disk (least-used evicted above PROXPI_CACHE_SIZE). Hashes are the
+  # upstream's, so pip --require-hashes / uv still verify every file. A download in flight is waited for
+  # (PROXPI_DOWNLOAD_TIMEOUT): proxpi's default answers a slow download with a redirect to the upstream, which a build
+  # without internet access cannot follow. The index is held in memory for PROXPI_INDEX_TTL.
+  pypi:
+    <<: *hardening
+    image: epicwink/proxpi@sha256:c1c21a5dba50385918116bea30a96fd7227193deef85fdde2d015897dcf4eb5c  # 1.3.1
+    command: ["--bind", "${DEP_CACHE_BIND:-10.239.0.1}:${PYPI_CACHE_PORT:-55011}", "--threads", "16", "--no-control-socket", "--worker-tmp-dir", "/tmp"]
+    environment: &proxpi-env
+      PROXPI_INDEX_URL: ${PYPI_UPSTREAM:-https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/}
+      PROXPI_INDEX_TTL: "600"
+      PROXPI_CACHE_DIR: /var/cache/proxpi
+      PROXPI_CACHE_SIZE: ${PYPI_CACHE_BYTES:-64424509440}
+      PROXPI_DOWNLOAD_TIMEOUT: "1800"
+      PROXPI_CONNECT_TIMEOUT: "20"
+      PROXPI_READ_TIMEOUT: "120"
+      PROXPI_BINARY_FILE_MIME_TYPE: "1"
+      PROXPI_LOGGING_LEVEL: WARNING
+      PYTHONDONTWRITEBYTECODE: "1"
+      HOME: /tmp
+    volumes:
+      - ${DEP_CACHE_DATA:-/volumes/data/kailo/capacity/dep-cache}/pypi:/var/cache/proxpi
+    tmpfs: ["/tmp:size=256m"]
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 2.0
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://${DEP_CACHE_BIND:-10.239.0.1}:${PYPI_CACHE_PORT:-55011}/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+  # PyTorch CPU wheel index (kailo-macro KAILO_TORCH_INDEX: http://<bind>:<port>/index/), the same proxpi over
+  # download.pytorch.org/whl/cpu: a separate index, so a build that asks it for torch gets the CPU build and never PyPI's
+  # CUDA one. Its links point at download-r2.pytorch.org; proxpi rewrites them like PyPI's.
+  torch:
+    <<: *hardening
+    image: epicwink/proxpi@sha256:c1c21a5dba50385918116bea30a96fd7227193deef85fdde2d015897dcf4eb5c  # 1.3.1
+    command: ["--bind", "${DEP_CACHE_BIND:-10.239.0.1}:${TORCH_CACHE_PORT:-55013}", "--threads", "8", "--no-control-socket", "--worker-tmp-dir", "/tmp"]
+    environment:
+      <<: *proxpi-env
+      PROXPI_INDEX_URL: ${TORCH_UPSTREAM:-https://download.pytorch.org/whl/cpu/}
+      PROXPI_CACHE_SIZE: ${TORCH_CACHE_BYTES:-32212254720}
+    volumes:
+      - ${DEP_CACHE_DATA:-/volumes/data/kailo/capacity/dep-cache}/torch:/var/cache/proxpi
+    tmpfs: ["/tmp:size=256m"]
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 2.0
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://${DEP_CACHE_BIND:-10.239.0.1}:${TORCH_CACHE_PORT:-55013}/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+  # Hugging Face Hub cache (kailo-macro KAILO_HF_MIRROR, an HF_ENDPOINT: http://<bind>:<port>): nginx's proxy_cache in
+  # front of an internal server that talks to the Hub and follows its redirects (relative /api/resolve-cache, absolute
+  # CDN and mirror hops) itself, keeping the Hub headers huggingface_hub needs (X-Repo-Commit, X-Linked-Etag/Size) and
+  # dropping the Xet ones, so clients download over plain HTTP from this cache only. Files under a commit id are kept;
+  # branch revisions and API answers are revalidated every 10 minutes and served stale when the upstream fails.
+  # nginx.conf is rendered by setup.sh (HF_* settings).
+  hf:
+    <<: *hardening
+    image: nginx:alpine@sha256:713fc2ebfd92e8217db451477182ee91944b123d2b1ee9fd5a8c6e91ca6c3a11
+    entrypoint: ["nginx", "-g", "daemon off;"]
+    volumes:
+      - ./hf-nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${DEP_CACHE_DATA:-/volumes/data/kailo/capacity/dep-cache}/hf:/var/cache/kailo-hf
+    tmpfs: ["/tmp:size=256m"]
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://${DEP_CACHE_BIND:-10.239.0.1}:${HF_CACHE_PORT:-55012}/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
