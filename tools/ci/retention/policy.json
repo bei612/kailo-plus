@@ -159,7 +159,7 @@
           {
             "path": "/var/lib/kailo-ci/ci-cache.xfs",
             "cap": "204G",
-            "role": "loop XFS image (240G sparse since OPS-05) holding the kailo-macro CI targets, sccache and kailo-dev-check: 3x27G (CHECK_SLOT_CAP_GB) + 45G + 70G (2 dev-check slots incl. their --test targets) + ~10G XFS = 206G, the 85 % of 240G the envguard floor leaves (own log; trimmed hourly)"
+            "role": "loop XFS image (240G sparse since OPS-05) holding the kailo-macro CI targets, sccache and kailo-dev-check: 3x27G (CHECK_SLOT_CAP_GB) + 45G + 70G (2 dev-check slots incl. their --test targets) + ~10G XFS = 206G, the 85 % of 240G the envguard floor leaves (own log; trimmed hourly by fstrim.timer and by hot-retention right after deleting inside it, policy.trim)"
           },
           {
             "path": "/var/lib/kailo-ci/check-target/kailo-macro",
@@ -282,6 +282,16 @@
       "ci_peaks": "/volumes/data/kailo/capacity/logs/peaks/ci-peaks.jsonl",
       "build_peaks": "/volumes/data/kailo/capacity/logs/peaks/build-peaks.jsonl"
     }
+  },
+  "trim": {
+    "comment": "2026-11-28：ci-fs 内删除的块要 fstrim 打洞才还给 NVMe（当天镜像实占 144G、ci-fs 已用远少于此，envguard 要求 NVMe 余量 ≥71.2G 而拒绝准入，手动 fstrim 回收约 50G）。本轮在其中删过东西或镜像实占比已用多 min_reclaimable_bytes 即 fstrim；fstrim.timer 每小时兜底（tools/ci/host-io）；不用 discard 挂载选项",
+    "min_reclaimable_bytes": 4294967296,
+    "filesystems": [
+      {
+        "path": "/var/lib/kailo-ci/ci-fs",
+        "backing_file": "/var/lib/kailo-ci/ci-cache.xfs"
+      }
+    ]
   },
   "status_file": "/var/lib/kailo-ci/queue/cleanup/last-run.json"
 }

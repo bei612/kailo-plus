@@ -14,6 +14,11 @@ cargo target），逐个判定其直接子项：
 根可带 max_bytes：闲置判定后仍超过上限时，按最近活动从旧到新删除未被使用的子项（见 cap_root）。policy.docker_build_cache
 给出 BuildKit 构建缓存的保留上限（可按 builder 分别设置），每轮对列出的 builder 执行 buildx prune --max-used-space（buildx 0.38 的 --keep-storage 是保留量，单用不删任何记录）。
 
+policy.trim 列出 loop 镜像上的文件系统（ci-fs：/var/lib/kailo-ci/ci-cache.xfs 以 loop 挂在 /var/lib/kailo-ci/ci-fs）：在其中删除的
+块要经 fstrim 打洞才还给 NVMe。本轮在其中删过东西，或镜像实占比文件系统已用多出 min_reclaimable_bytes（任务自己删的 target、
+sccache 淘汰），即对它执行 fstrim，并把镜像实占的减少量写进报告与 status_file（trim、trim_released_bytes）。不用 discard 挂载选项：
+在线 discard 把延迟摊到每次删除上（tools/ci/host-io）。
+
 安全：进程或容器事实读不全（非 root 运行、docker 不可用）即整轮不删除；根必须是规范绝对路径且不是软链接；每个子项
 在删除前重新判定。同一时刻只运行一份（flock）。输出不含文件内容，只有路径、大小与原因。
 """
@@ -23,6 +28,7 @@ import calendar
 import fcntl
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -31,6 +37,8 @@ import time
 
 sys.dont_write_bytecode = True
 DOCKER = ["docker"]
+FSTRIM = ["/usr/sbin/fstrim"]
+FSTRIM_TIMEOUT = 1800
 LOCK = "/run/lock/kailo-ci-hot-retention.lock"
 ACTIVE_JOB_STATES = ("QUEUED", "RUNNING", "DEPLOYING")
 
@@ -373,6 +381,107 @@ def prune_superseded_images(policy, report, dry_run, now=None):
     report["images"] = dict(state="dry-run" if dry_run else "ok", removed=removed)
 
 
+class Probe:
+    """文件系统事实（测试可替换）。"""
+
+    def is_mount(self, path):
+        return os.path.ismount(path)
+
+    def device(self, path):
+        return os.stat(path).st_dev
+
+    def allocated(self, path):
+        return os.stat(path).st_blocks * 512
+
+    def used(self, path):
+        st = os.statvfs(path)
+        return (st.f_blocks - st.f_bfree) * st.f_frsize
+
+    def free(self, path):
+        return shutil.disk_usage(path).free
+
+    def discard_max(self, path, mountinfo="/proc/self/mountinfo", sysfs="/sys/class/block"):
+        """挂载源块设备的 queue/discard_max_bytes（0 = 不支持 discard，fstrim 无效）；读不到返回 None。"""
+        source = None
+        try:
+            with open(mountinfo, encoding="utf-8") as stream:
+                for line in stream:
+                    parts = line.split()
+                    if "-" not in parts[6:]:
+                        continue
+                    sep = parts.index("-", 6)
+                    point = re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), parts[4])
+                    if point == path and parts[3] == "/":
+                        source = parts[sep + 2]  # the last match wins (over-mounts)
+        except OSError:
+            return None
+        if not source or not source.startswith("/dev/"):
+            return None
+        name = os.path.basename(os.path.realpath(source))
+        for queue in (os.path.join(sysfs, name, "queue"), os.path.join(sysfs, name, "..", "queue")):
+            try:
+                with open(os.path.join(queue, "discard_max_bytes"), encoding="utf-8") as stream:
+                    return int(stream.read().strip())
+            except (OSError, ValueError):
+                continue
+        return None
+
+
+def trim_filesystems(policy, report, dry_run, probe=None):
+    """policy.trim = {filesystems: [{path, backing_file}], min_reclaimable_bytes}：loop 镜像上的文件系统删除后执行 fstrim，
+    让镜像文件的空洞立即还给宿主盘（envguard 按宿主盘余量准入，不能等每小时的 fstrim.timer）。
+    触发：本轮删除的子项在该文件系统上（按 st_dev，bind mount 进来的根也算），或镜像实占 − 已用 ≥ min_reclaimable_bytes。
+    报告每个文件系统的 released_bytes（镜像实占的减少量，即宿主盘真正回收的字节；fstrim -v 报的是全部空闲空间，不是新回收量）。"""
+    spec = policy.get("trim")
+    if not spec:
+        return
+    probe = probe or Probe()
+    threshold = int(spec.get("min_reclaimable_bytes", 4 << 30))
+    report.setdefault("trim", [])
+    report.setdefault("trim_released_bytes", 0)
+    for fs in spec.get("filesystems", []):
+        path, backing = fs["path"], fs["backing_file"]
+        item = dict(path=path, backing_file=backing)
+        report["trim"].append(item)
+        if not probe.is_mount(path) or not os.path.isfile(backing):
+            item["state"] = "未挂载或镜像文件缺失，跳过"
+            continue
+        dev = probe.device(path)
+        deleted = 0
+        for entry in report.get("deleted", []):
+            try:
+                if probe.device(os.path.dirname(entry["path"])) == dev:
+                    deleted += 1
+            except OSError:
+                continue
+        before, used = probe.allocated(backing), probe.used(path)
+        host = os.path.dirname(backing)
+        host_before = probe.free(host)
+        reclaimable = max(0, before - used)
+        item.update(deleted=deleted, backing_allocated_before=before, fs_used_bytes=used,
+                    reclaimable_estimate=reclaimable, host_free_before=host_before)
+        if not deleted and reclaimable < threshold:
+            item["state"] = "无需（本轮未在其中删除，镜像实占与已用相差不足阈值）"
+            continue
+        if probe.discard_max(path) == 0:
+            item["state"] = "块设备不支持 discard（fstrim 无法打洞），跳过"
+            continue
+        if dry_run:
+            item["state"] = "dry-run（将执行 fstrim）"
+            continue
+        started = time.time()
+        try:
+            r = subprocess.run(FSTRIM + ["-v", path], capture_output=True, text=True, timeout=FSTRIM_TIMEOUT)
+            item["state"] = "ok" if r.returncode == 0 else f"失败：{(r.stderr or r.stdout).strip()[-200:]}"
+            item["fstrim"] = r.stdout.strip()[-200:]
+        except (OSError, subprocess.TimeoutExpired) as error:
+            item["state"] = f"失败：{error}"
+        after = probe.allocated(backing)
+        item.update(seconds=round(time.time() - started, 1), backing_allocated_after=after,
+                    released_bytes=max(0, before - after), host_free_after=probe.free(host))
+        report["trim_released_bytes"] += item["released_bytes"]
+
+
 def write_status(policy, report):
     """Summary of the finished run for whoever asked for it (OPS-05: the CI worker, check.sh and kailo-dev-check request
     a run through kailo-ci-cleanup.path when a job is short of disk and wait for finished_at to pass their request)."""
@@ -381,7 +490,8 @@ def write_status(policy, report):
         return
     summary = dict(finished_at=time.time(), started_at=report["at"], freed_bytes=report["freed_bytes"],
                    deleted=len(report["deleted"]), aborted=report.get("aborted"),
-                   build_cache=report.get("build_cache", []))
+                   build_cache=report.get("build_cache", []), trim=report.get("trim", []),
+                   trim_released_bytes=report.get("trim_released_bytes", 0))
     directory = os.path.dirname(path)
     if not os.path.isdir(directory):
         # The request directory belongs to the CI user (the worker writes request.json there); this run is root, so a
@@ -419,6 +529,9 @@ def main():
             if not report.get("aborted"):
                 prune_build_cache(policy, report, args.dry_run)
                 prune_superseded_images(policy, report, args.dry_run)
+            # Trim even after an aborted round: nothing is deleted then, but blocks freed by the jobs themselves
+            # (cargo, sccache eviction) still occupy the NVMe until trimmed; fstrim never touches live data.
+            trim_filesystems(policy, report, args.dry_run)
             if not args.dry_run:
                 write_status(policy, report)
     except (RetentionError, OSError, ValueError) as error:
@@ -437,6 +550,9 @@ def main():
     say(f"{verb} {len(report['deleted'])} 项，约 {report['freed_bytes'] / 2**30:.1f} GiB；保留 {len(report['kept'])} 项")
     for item in report.get("build_cache", []):
         say(f"构建缓存 {item['builder']}：保留上限 {item['keep_storage']}，{item['state']}")
+    for item in report.get("trim", []):
+        extra = f"，宿主盘回收 {item['released_bytes'] / 2**30:.1f} GiB（{item['seconds']} s）" if "released_bytes" in item else ""
+        say(f"fstrim {item['path']}：{item['state']}{extra}")
     if "images" in report:
         say(f"过期镜像：{report['images']['state']}，{len(report['images'].get('removed', []))} 个 {' '.join(report['images'].get('removed', []))}")
 

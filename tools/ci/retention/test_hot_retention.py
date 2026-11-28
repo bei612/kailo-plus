@@ -279,5 +279,113 @@ class SupersededImages(unittest.TestCase):
                          ["kailo/x:2"])
 
 
+class Trim(unittest.TestCase):
+    """policy.trim：loop 镜像上的文件系统在删除后立即 fstrim，报告镜像实占的减少量（2026-11-28 ci-fs 镜像 144G 卡住准入）。"""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = tmp.name
+        self.fs = os.path.join(self.tmp, "ci-fs")
+        os.makedirs(os.path.join(self.fs, "slot1"))
+        self.image = os.path.join(self.tmp, "ci-cache.xfs")
+        with open(self.image, "wb") as stream:
+            stream.write(os.urandom(1 << 20))  # 1 MiB really allocated
+        self.log = os.path.join(self.tmp, "argv")
+        exe = os.path.join(self.tmp, "fstrim")
+        # Stand-in fstrim: records its arguments and turns the image sparse, as the loop's hole punching does.
+        with open(exe, "w") as script:
+            script.write(f'#!/bin/sh\necho "$*" >> {self.log}\n: > {self.image}\ntruncate -s 1M {self.image}\n'
+                         f'echo "{self.fs}: 1 MiB (1048576 bytes) trimmed"\n')
+        os.chmod(exe, 0o755)
+        saved = hr.FSTRIM
+        hr.FSTRIM = [exe]
+        self.addCleanup(setattr, hr, "FSTRIM", saved)
+        self.policy = dict(trim=dict(min_reclaimable_bytes=4 << 30,
+                                     filesystems=[dict(path=self.fs, backing_file=self.image)]))
+
+    def probe(self, *, used=1 << 20, discard=4096, mounted=True):
+        class P(hr.Probe):
+            def is_mount(self, path):
+                return mounted
+
+            def used(self, path):
+                return used
+
+            def discard_max(self, path):
+                return discard
+        return P()
+
+    def trimmed(self):
+        return open(self.log).read().split() if os.path.exists(self.log) else []
+
+    def test_trims_after_deleting_inside_and_reports_released_bytes(self):
+        report = dict(deleted=[dict(path=os.path.join(self.fs, "slot1", "debug"), bytes=1 << 30)])
+        hr.trim_filesystems(self.policy, report, dry_run=False, probe=self.probe())
+        self.assertEqual(self.trimmed(), ["-v", self.fs])
+        item = report["trim"][0]
+        self.assertEqual(item["state"], "ok")
+        self.assertEqual(item["deleted"], 1)
+        self.assertGreaterEqual(item["released_bytes"], 1 << 20)
+        self.assertEqual(report["trim_released_bytes"], item["released_bytes"])
+        self.assertLess(item["backing_allocated_after"], item["backing_allocated_before"])
+
+    def test_no_deletion_and_little_reclaimable_skips_fstrim(self):
+        report = dict(deleted=[dict(path=os.path.join(tempfile.gettempdir(), "elsewhere"), bytes=1)])
+        probe = self.probe()
+        probe.device = lambda path: 1 if path.startswith(self.fs) else 2  # the deletion is on another filesystem
+        hr.trim_filesystems(self.policy, report, dry_run=False, probe=probe)
+        self.assertEqual(self.trimmed(), [])
+        self.assertTrue(report["trim"][0]["state"].startswith("无需"))
+        self.assertEqual(report["trim_released_bytes"], 0)
+
+    def test_blocks_freed_by_jobs_are_trimmed_without_a_deletion(self):
+        # Image allocates more than the filesystem uses by the threshold: cargo or sccache deleted files themselves.
+        report = dict(deleted=[])
+        probe = self.probe(used=0)
+        probe.allocated = lambda path: 8 << 30 if not os.path.exists(self.log) else os.stat(path).st_blocks * 512
+        hr.trim_filesystems(self.policy, report, dry_run=False, probe=probe)
+        self.assertEqual(self.trimmed(), ["-v", self.fs])
+        self.assertGreater(report["trim_released_bytes"], 7 << 30)
+
+    def test_dry_run_unmounted_and_no_discard_do_not_trim(self):
+        deleted = [dict(path=os.path.join(self.fs, "slot1", "debug"), bytes=1)]
+        for kwargs, dry, state in ((dict(), True, "dry-run"), (dict(mounted=False), False, "未挂载"),
+                                   (dict(discard=0), False, "块设备不支持 discard")):
+            report = dict(deleted=deleted)
+            hr.trim_filesystems(self.policy, report, dry_run=dry, probe=self.probe(**kwargs))
+            self.assertTrue(report["trim"][0]["state"].startswith(state), report["trim"][0]["state"])
+        self.assertEqual(self.trimmed(), [])
+
+    def test_discard_max_reads_the_mount_source_queue(self):
+        info = os.path.join(self.tmp, "mountinfo")
+        with open(info, "w") as stream:
+            stream.write("36 25 7:0 /check-target /var/lib/kailo-ci/check-target/kailo-macro rw - xfs /dev/loop0 rw\n")
+            stream.write("35 25 7:0 / /var/lib/kailo-ci/ci-fs rw,noatime shared:1 - xfs /dev/loop0 rw,attr2\n")
+        os.makedirs(os.path.join(self.tmp, "block", "loop0", "queue"))
+        with open(os.path.join(self.tmp, "block", "loop0", "queue", "discard_max_bytes"), "w") as stream:
+            stream.write("4294966784\n")
+        probe = hr.Probe()
+        sysfs = os.path.join(self.tmp, "block")
+        self.assertEqual(probe.discard_max("/var/lib/kailo-ci/ci-fs", mountinfo=info, sysfs=sysfs), 4294966784)
+        self.assertIsNone(probe.discard_max("/var/lib/kailo-ci/other", mountinfo=info, sysfs=sysfs))
+
+    def test_status_carries_the_trim_result(self):
+        status = os.path.join(self.tmp, "cleanup", "last-run.json")
+        os.makedirs(os.path.dirname(status))
+        report = dict(at=1.0, freed_bytes=5, deleted=[], trim=[dict(path=self.fs, released_bytes=7)],
+                      trim_released_bytes=7)
+        hr.write_status(dict(status_file=status), report)
+        with open(status) as stream:
+            summary = json.load(stream)
+        self.assertEqual(summary["trim_released_bytes"], 7)
+        self.assertEqual(summary["trim"][0]["path"], self.fs)
+
+    def test_repository_policy_trims_ci_fs(self):
+        policy = hr.load_policy(os.path.join(os.path.dirname(__file__), "policy.json"))
+        self.assertEqual(policy["trim"]["filesystems"],
+                         [dict(path="/var/lib/kailo-ci/ci-fs", backing_file="/var/lib/kailo-ci/ci-cache.xfs")])
+
+
 if __name__ == "__main__":
     unittest.main()

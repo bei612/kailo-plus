@@ -4,7 +4,7 @@
 # 用法（CI 节点，ubuntu，需 sudo -n；从仓库检出或固定发布树执行）：
 #   tools/ci/retention/setup.sh install         复制脚本与策略到运行副本目录，安装 unit，启用 timer 并回读
 #   tools/ci/retention/setup.sh run [--dry-run] 以 root 立即执行一轮（--dry-run 只列出将删除的子项）
-#   tools/ci/retention/setup.sh status          回读 timer、上次执行结果与运行副本摘要
+#   tools/ci/retention/setup.sh status          回读 timer、上次执行结果、运行副本摘要与 ci-fs 的 discard/镜像实占
 #   tools/ci/retention/setup.sh uninstall       停用并删除 unit（运行副本保留）
 # 运行副本目录：RETENTION_RUNTIME（缺省 /volumes/kailo/ci/hot-retention），与仓库检出无关；替换前的文件备份为 *.bak-<时间>。
 set -euo pipefail
@@ -63,6 +63,17 @@ cmd_status() {
     "$(systemctl is-active kailo-ci-cleanup.path 2>&1)"
   systemctl list-timers "$UNIT.timer" --no-pager | sed -n '1,3p'
   systemctl show "$UNIT.service" -p Result -p ExecMainStatus -p ExecMainExitTimestamp --no-pager
+  cifs_status
+}
+
+# ci-fs (policy.trim): loop XFS image on the NVMe; space deleted inside returns to the NVMe only through fstrim, which
+# needs a loop device that accepts discard (discard_max_bytes > 0; the loop punches holes in the image file).
+cifs_status() {
+  local fs=/var/lib/kailo-ci/ci-fs image=/var/lib/kailo-ci/ci-cache.xfs src
+  src=$(findmnt -no SOURCE "$fs" 2>/dev/null) || { echo "ci-fs：未挂载"; return 0; }
+  printf 'ci-fs：%s（%s），discard_max_bytes=%s；镜像实占 %s GiB，文件系统已用 %s GiB\n' "$src" \
+    "$(findmnt -no OPTIONS "$fs")" "$(cat "/sys/class/block/$(basename "$src")/queue/discard_max_bytes" 2>/dev/null || echo ?)" \
+    "$(( $(stat -c %b "$image") * $(stat -c %B "$image") >> 30 ))" "$(( $(stat -f -c '(%b-%f)*%S' "$fs") >> 30 ))"
 }
 
 cmd_uninstall() {

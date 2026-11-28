@@ -336,7 +336,9 @@ def request_cleanup(cfg, reason, wait=0, say=print):
     while time.time() < deadline:
         status = last_cleanup(cfg)
         if status.get("finished_at", 0) >= since:
-            say(f"envguard: cleanup done, freed {human(status.get('freed_bytes', 0))}")
+            trimmed = status.get("trim_released_bytes") or 0
+            say(f"envguard: cleanup done, freed {human(status.get('freed_bytes', 0))}"
+                + (f", fstrim returned {human(trimmed)} to the host disk" if trimmed else ""))
             return status
         time.sleep(10)
     return None
