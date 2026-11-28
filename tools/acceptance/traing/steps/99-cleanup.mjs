@@ -61,11 +61,26 @@ export default {
       h.check('已删除对等用例建的文档、任务与上传文件', left.length === 0, left.map((d) => d.id));
       forgetMade(h, 'doc');
     }
-    for (const [kind, type] of [['form', 'FORM'], ['database', 'DATABASE'], ['initiative', 'INITIATIVE']]) {
+    for (const [kind, type] of [['form', 'FORM'], ['database', 'DATABASE']]) {
       if (!parity[kind]?.length) continue;
       const errs = await deleteEntities(h, 'alice', type, parity[kind]);
-      h.check(`已删除对等用例建的${{ form: '表单', database: '数据库', initiative: '项目' }[kind]}`, errs.length === 0, errs);
+      h.check(`已删除对等用例建的${{ form: '表单', database: '数据库' }[kind]}`, errs.length === 0, errs);
       forgetMade(h, kind);
+    }
+    // Projects are not entity-mutation targets (trashEntities / deleteEntitiesPermanently answer UNSUPPORTED_OPERATION
+    // for INITIATIVE); the project menu's 删除 calls DELETE /dss/initiatives/{id} (project-sources.ts client.delete,
+    // crates/initiative delete.rs), and so does this.
+    if (parity.initiative?.length) {
+      const failed = [];
+      for (const id of parity.initiative) {
+        const r = await h.api('alice', 'DELETE', `/dss/initiatives/${id}`);
+        h.log('delete project', id, r.status);
+        if (r.status !== 200 && r.status !== 404) failed.push({ id, status: r.status, body: r.body });
+      }
+      const list = await h.api('alice', 'GET', '/dss/initiatives');
+      const left = parity.initiative.filter((id) => JSON.stringify(list.body ?? '').includes(id));
+      h.check('已删除对等用例建的项目', failed.length === 0 && list.status === 200 && left.length === 0, { failed, left });
+      forgetMade(h, 'initiative');
     }
     // This round's channel: the one 22 recorded in this run, deleted only when it is still, by every mark, a round
     // channel of W (isRoundChannel: alice's, auto-join off, named "TG 客户回访 <run>", not W's own team channel).

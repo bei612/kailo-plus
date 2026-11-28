@@ -30,10 +30,18 @@ export default {
     if (!id) return;
     const db = await h.api('alice', 'GET', `/dss/databases/${id}`);
     // DatabaseDetail.tables are TableDetail: { table: { id, name, … }, sql_name, columns, views } (crates/databases models.rs).
-    const table = (db.body?.tables || [])[0]?.table;
+    const detail = (db.body?.tables || [])[0];
+    const table = detail?.table;
     h.check('数据库有起始表（GET /dss/databases/{id}）', db.status === 200 && !!table?.name, { status: db.status, tables: (db.body?.tables || []).map((t) => t.table?.name) });
     if (!table?.name) return;
+    // SQL names columns by their display names, and the starter table's title column takes its name from the UI
+    // language (zh-CN: 名称, not Name); ColumnDetail.sql_name is that name, quoted (crates/databases models.rs).
     const T = quote(table.name);
+    const cols = detail.columns || [];
+    const titleCol = cols.find((c) => /^"(Name|名称)"$/.test(c.sql_name ?? '')) ?? cols[0];
+    const N = titleCol?.sql_name;
+    h.check('起始表有标题列', !!N, cols.map((c) => c.sql_name));
+    if (!N) return;
     await h.shot(a, 'database-new');
 
     // A record from the UI. In a table New record (aria-label 新建记录, shown as 新建) opens the blank row's title cell for
@@ -45,7 +53,7 @@ export default {
     let rows = null;
     for (let i = 0; i < 5; i++) {
       await a.waitForTimeout(2000);
-      rows = await sql(h, id, `SELECT "Name" FROM ${T}`);
+      rows = await sql(h, id, `SELECT ${N} FROM ${T}`);
       if (JSON.stringify(rows.body?.result?.rows ?? '').includes(first)) break;
     }
     h.check('界面新建了一条记录（SQL 读到该行）', rows.status === 200 && JSON.stringify(rows.body?.result?.rows ?? '').includes(first), { status: rows.status, rows: (rows.body?.result?.rowIds || []).length, err: rows.body?.message });
@@ -53,9 +61,9 @@ export default {
     // A select column and two named records.
     const alter = await sql(h, id, `ALTER TABLE ${T} ADD COLUMN "阶段" select OPTIONS ('待采购', '已到货')`);
     h.check('新增选择列“阶段”', alter.status === 200, alter.body?.message ?? alter.status);
-    const ins = await sql(h, id, `INSERT INTO ${T} ("Name", "阶段") VALUES ('显示器', '待采购'), ('办公椅', '已到货')`);
+    const ins = await sql(h, id, `INSERT INTO ${T} (${N}, "阶段") VALUES ('显示器', '待采购'), ('办公椅', '已到货')`);
     h.check('写入两条记录', ins.status === 200 && (ins.body?.insertedRowIds || []).length === 2, ins.body?.message ?? ins.body?.insertedRowIds);
-    rows = await sql(h, id, `SELECT "Name", "阶段" FROM ${T} WHERE "阶段" = '已到货'`);
+    rows = await sql(h, id, `SELECT ${N}, "阶段" FROM ${T} WHERE "阶段" = '已到货'`);
     h.check('按选择列筛选读回记录', rows.status === 200 && JSON.stringify(rows.body?.result?.rows ?? '').includes('办公椅'), rows.body?.result?.rows);
 
     // A board view from the UI.
